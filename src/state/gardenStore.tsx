@@ -1,67 +1,11 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, type ReactNode } from 'react';
 import type { GardenPlan, PlantInstance, Profile } from '../types';
+import { parsePlan, reducer } from './reducer';
 
 const STORAGE_KEY = 'garden-planner-plan/v1';
 
-const DEFAULT_PLAN: GardenPlan = {
-  version: 1,
-  profile: { zoneId: '6', sunExposure: 'full-sun', onboarded: false },
-  bed: { id: 'bed-1', name: 'My garden bed', widthIn: 96, heightIn: 48 }, // fixed 8x4 ft bed
-  plants: [],
-};
-
 function loadPlan(): GardenPlan {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_PLAN;
-    const parsed = JSON.parse(raw) as GardenPlan;
-    if (parsed.version !== 1) return DEFAULT_PLAN;
-    return parsed;
-  } catch {
-    return DEFAULT_PLAN;
-  }
-}
-
-type Action =
-  | { type: 'setProfile'; profile: Profile }
-  | { type: 'addPlants'; plants: PlantInstance[] }
-  | { type: 'movePlant'; id: string; x: number; y: number }
-  | { type: 'removePlant'; id: string }
-  | { type: 'removeGroup'; groupId: string }
-  | { type: 'setVariety'; id: string; variety: string | undefined }
-  | { type: 'dismissWarning'; id: string }
-  | { type: 'reset' };
-
-function reducer(state: GardenPlan, action: Action): GardenPlan {
-  switch (action.type) {
-    case 'setProfile':
-      return { ...state, profile: action.profile };
-    case 'addPlants':
-      return { ...state, plants: [...state.plants, ...action.plants] };
-    case 'movePlant':
-      return {
-        ...state,
-        plants: state.plants.map((p) => (p.id === action.id ? { ...p, x: action.x, y: action.y } : p)),
-      };
-    case 'removePlant':
-      return { ...state, plants: state.plants.filter((p) => p.id !== action.id) };
-    case 'removeGroup':
-      return { ...state, plants: state.plants.filter((p) => p.groupId !== action.groupId) };
-    case 'setVariety':
-      return {
-        ...state,
-        plants: state.plants.map((p) => (p.id === action.id ? { ...p, variety: action.variety } : p)),
-      };
-    case 'dismissWarning':
-      return {
-        ...state,
-        plants: state.plants.map((p) => (p.id === action.id ? { ...p, warningDismissed: true } : p)),
-      };
-    case 'reset':
-      return DEFAULT_PLAN;
-    default:
-      return state;
-  }
+  return parsePlan(localStorage.getItem(STORAGE_KEY));
 }
 
 interface GardenContextValue {
