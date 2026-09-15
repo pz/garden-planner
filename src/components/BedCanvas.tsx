@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useGarden } from '../state/gardenStore';
+import type { PlantInstance } from '../types';
 import { getCrop } from '../data/crops';
 import { findOverlapWarnings, fitsAt } from '../utils/spacing';
 import { PlantToken, LONG_PRESS_MS, MOVE_THRESHOLD_PX, type GestureHandlers } from './PlantToken';
@@ -21,6 +22,49 @@ function clamp(v: number, min: number, max: number): number {
 interface Point {
   x: number;
   y: number;
+}
+
+interface GroupBox {
+  groupId: string;
+  cropId: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+const GROUP_BOX_PAD_IN = 3;
+
+/** Bounding box (in inches) around every point, expanded by each point's own radius. */
+function boundingBox(points: { x: number; y: number; r: number }[], padIn: number): Omit<GroupBox, 'groupId' | 'cropId'> {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of points) {
+    minX = Math.min(minX, p.x - p.r);
+    minY = Math.min(minY, p.y - p.r);
+    maxX = Math.max(maxX, p.x + p.r);
+    maxY = Math.max(maxY, p.y + p.r);
+  }
+  return { left: minX - padIn, top: minY - padIn, width: maxX - minX + padIn * 2, height: maxY - minY + padIn * 2 };
+}
+
+/** One bounding box per patch (a groupId shared by more than one plant) so it reads as a single entity. */
+function computeGroupBoxes(plants: PlantInstance[]): GroupBox[] {
+  const byGroup = new Map<string, PlantInstance[]>();
+  for (const p of plants) {
+    const members = byGroup.get(p.groupId);
+    if (members) members.push(p);
+    else byGroup.set(p.groupId, [p]);
+  }
+  const boxes: GroupBox[] = [];
+  for (const [groupId, members] of byGroup) {
+    if (members.length < 2) continue;
+    const points = members.map((m) => ({ x: m.x, y: m.y, r: getCrop(m.cropId).spacingIn / 2 }));
+    boxes.push({ groupId, cropId: members[0].cropId, ...boundingBox(points, GROUP_BOX_PAD_IN) });
+  }
+  return boxes;
 }
 
 function computeGhosts(origin: Point, cursor: Point, spacingIn: number, boundW: number, boundH: number): Point[] {
@@ -61,6 +105,15 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
   const [multiply, setMultiply] = useState<{ id: string; origin: Point; ghosts: Point[] } | null>(null);
 
   const warned = useMemo(() => findOverlapWarnings(plants), [plants]);
+
+  // Apply the live move-preview position so a dragged patch member's bounding box
+  // (and the plant itself) tracks the pointer instead of its last-committed spot.
+  const effectivePlants = useMemo(
+    () => plants.map((p) => (movePreview?.id === p.id ? { ...p, x: movePreview.x, y: movePreview.y } : p)),
+    [plants, movePreview],
+  );
+
+  const groupBoxes = useMemo(() => computeGroupBoxes(effectivePlants), [effectivePlants]);
 
   function toBedCoords(clientX: number, clientY: number): Point | null {
     if (!bedRef.current) return null;
@@ -165,6 +218,17 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
     },
   };
 
+  // Live bounding box while a patch is actively being dragged out, so it reads as
+  // one entity from the first ghost rather than only once the drag is released.
+  const multiplyBox = useMemo(() => {
+    if (!multiply || multiply.ghosts.length === 0) return null;
+    const origin = plants.find((p) => p.id === multiply.id);
+    if (!origin) return null;
+    const r = getCrop(origin.cropId).spacingIn / 2;
+    const points = [multiply.origin, ...multiply.ghosts].map((pt) => ({ x: pt.x, y: pt.y, r }));
+    return { cropId: origin.cropId, ...boundingBox(points, GROUP_BOX_PAD_IN) };
+  }, [multiply, plants]);
+
   const selectedPlant = selectedId ? plants.find((p) => p.id === selectedId) ?? null : null;
   const groupCount = selectedPlant ? plants.filter((p) => p.groupId === selectedPlant.groupId).length : 0;
   const quickActionsPlant = quickActions ? plants.find((p) => p.id === quickActions.id) ?? null : null;
@@ -205,14 +269,17 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
           boxShadow: 'var(--shadow-md)',
         }}
       >
-        {plants.map((p) => {
-          const isMoving = movePreview?.id === p.id;
+        {groupBoxes.map((box) => (
+          <GroupBoundingBox key={box.groupId} box={box} pxPerInch={PX_PER_INCH} />
+        ))}
+        {multiplyBox && <GroupBoundingBox box={multiplyBox} pxPerInch={PX_PER_INCH} active />}
+
+        {effectivePlants.map((p) => {
           const isMultiplyOrigin = multiply?.id === p.id;
-          const renderPlant = isMoving ? { ...p, x: movePreview!.x, y: movePreview!.y } : p;
           return (
             <div key={p.id} style={{ opacity: isMultiplyOrigin ? 0.85 : 1 }}>
               <PlantToken
-                plant={renderPlant}
+                plant={p}
                 pxPerInch={PX_PER_INCH}
                 diameter={PLANT_DIAMETER}
                 warned={warned.has(p.id) && !p.warningDismissed}
@@ -346,6 +413,34 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
         />
       )}
     </div>
+  );
+}
+
+function GroupBoundingBox({
+  box,
+  pxPerInch,
+  active = false,
+}: {
+  box: { cropId: string; left: number; top: number; width: number; height: number };
+  pxPerInch: number;
+  active?: boolean;
+}) {
+  const color = CROP_COLORS[box.cropId] ?? 'var(--color-text)';
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: box.left * pxPerInch,
+        top: box.top * pxPerInch,
+        width: box.width * pxPerInch,
+        height: box.height * pxPerInch,
+        border: `1.5px dashed ${color}`,
+        borderRadius: 'var(--radius-md)',
+        background: `color-mix(in oklch, ${color} ${active ? 10 : 6}%, transparent)`,
+        opacity: active ? 0.9 : 1,
+        pointerEvents: 'none',
+      }}
+    />
   );
 }
 
