@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { addGardenId, parseGardenIndex, removeGardenId, setActiveGardenId, type GardenIndex } from './gardenIndex';
 import { LEGACY_PLAN_KEY, planStorageKey } from './gardenStore';
+import { resolveMigration } from './migration';
 import { createPlan, parsePlan } from './reducer';
 
 const INDEX_KEY = 'garden-planner-index/v1';
@@ -20,16 +21,15 @@ function saveIndex(index: GardenIndex) {
  * garden to show.
  */
 function loadOrInitIndex(): GardenIndex {
-  let index = parseGardenIndex(localStorage.getItem(INDEX_KEY));
-  if (index.gardenIds.length > 0) return index;
-
-  const id = uid();
+  const currentIndex = parseGardenIndex(localStorage.getItem(INDEX_KEY));
   const legacyRaw = localStorage.getItem(LEGACY_PLAN_KEY);
-  const plan = legacyRaw ? parsePlan(legacyRaw, id) : createPlan(id);
-  localStorage.setItem(planStorageKey(id), JSON.stringify(plan));
-  localStorage.removeItem(LEGACY_PLAN_KEY);
+  const newId = uid();
+  const { index, newPlan, hadLegacyData } = resolveMigration(currentIndex, legacyRaw, newId);
 
-  index = addGardenId(index, id);
+  if (newPlan) {
+    localStorage.setItem(planStorageKey(newId), JSON.stringify(newPlan));
+  }
+  if (hadLegacyData) localStorage.removeItem(LEGACY_PLAN_KEY);
   saveIndex(index);
   return index;
 }
