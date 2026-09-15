@@ -17,6 +17,7 @@ import { PlantToken, LONG_PRESS_MS, MOVE_THRESHOLD_PX, type GestureHandlers } fr
 import { PlantMenu } from './PlantMenu';
 import { PlantInfoCard } from './PlantInfoCard';
 import { PlantingCalendar } from './PlantingCalendar';
+import { GardenSwitcher } from './GardenSwitcher';
 import { CROP_COLORS } from './PlantMark';
 
 const PX_PER_INCH = 7;
@@ -241,6 +242,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
             <ViewTab label="Bed layout" active={view === 'bed'} onClick={() => setView('bed')} />
             <ViewTab label="Planting calendar" active={view === 'calendar'} onClick={() => setView('calendar')} />
           </div>
+          <GardenSwitcher />
           <button
             onClick={onEditSetup}
             style={{

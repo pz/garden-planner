@@ -1,23 +1,35 @@
 import type { GardenPlan, PlantInstance, Profile } from '../types';
 import { conflictKey, findOverlapConflicts } from '../utils/spacing';
 
+/** Template for a fresh garden; always used via createPlan so every garden gets its own id. */
 export const DEFAULT_PLAN: GardenPlan = {
   version: 2,
+  id: '',
   profile: { zoneId: '6', sunExposure: 'full-sun', onboarded: false },
   bed: { id: 'bed-1', name: 'My garden bed', widthIn: 96, heightIn: 48 }, // fixed 8x4 ft bed
   plants: [],
   dismissedConflictKeys: [],
 };
 
-/** Parses a plan from raw storage content, falling back to the default plan for anything unusable. */
-export function parsePlan(raw: string | null): GardenPlan {
+/** A fresh, empty garden with the given id. */
+export function createPlan(id: string): GardenPlan {
+  return { ...DEFAULT_PLAN, id };
+}
+
+/**
+ * Parses a garden plan from raw storage content, falling back to a fresh plan for anything
+ * unusable. `id` is always authoritative — it comes from the storage key the plan was read
+ * from, and is forced onto the result even if the stored JSON disagrees (or lacks one, from
+ * before gardens had ids).
+ */
+export function parsePlan(raw: string | null, id: string): GardenPlan {
   try {
-    if (!raw) return DEFAULT_PLAN;
+    if (!raw) return createPlan(id);
     const parsed = JSON.parse(raw) as GardenPlan;
-    if (parsed.version !== 2) return DEFAULT_PLAN;
-    return parsed;
+    if (parsed.version !== 2) return createPlan(id);
+    return { ...parsed, id };
   } catch {
-    return DEFAULT_PLAN;
+    return createPlan(id);
   }
 }
 
@@ -66,7 +78,7 @@ export function reducer(state: GardenPlan, action: Action): GardenPlan {
       return { ...state, dismissedConflictKeys: [...merged] };
     }
     case 'reset':
-      return DEFAULT_PLAN;
+      return createPlan(state.id);
     default:
       return state;
   }

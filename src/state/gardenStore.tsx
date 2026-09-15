@@ -2,10 +2,11 @@ import { createContext, useContext, useEffect, useMemo, useReducer, type ReactNo
 import type { GardenPlan, PlantInstance, Profile } from '../types';
 import { parsePlan, reducer } from './reducer';
 
-const STORAGE_KEY = 'garden-planner-plan/v1';
+/** Pre-multi-garden storage key, kept only so gardensStore can migrate it into the new scheme. */
+export const LEGACY_PLAN_KEY = 'garden-planner-plan/v1';
 
-function loadPlan(): GardenPlan {
-  return parsePlan(localStorage.getItem(STORAGE_KEY));
+export function planStorageKey(gardenId: string): string {
+  return `garden-planner-plan:${gardenId}`;
 }
 
 interface GardenContextValue {
@@ -22,12 +23,17 @@ interface GardenContextValue {
 
 const GardenContext = createContext<GardenContextValue | null>(null);
 
-export function GardenProvider({ children }: { children: ReactNode }) {
-  const [plan, dispatch] = useReducer(reducer, undefined, loadPlan);
+/**
+ * Loads, holds, and persists a single garden's plan. `gardenId` selects which one — mount
+ * this with `key={gardenId}` at the call site so switching gardens gets a clean remount
+ * (fresh reducer state, fresh load) instead of trying to rehydrate reducer state in place.
+ */
+export function GardenProvider({ gardenId, children }: { gardenId: string; children: ReactNode }) {
+  const [plan, dispatch] = useReducer(reducer, gardenId, (id) => parsePlan(localStorage.getItem(planStorageKey(id)), id));
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(plan));
-  }, [plan]);
+    localStorage.setItem(planStorageKey(gardenId), JSON.stringify(plan));
+  }, [gardenId, plan]);
 
   const value = useMemo<GardenContextValue>(
     () => ({

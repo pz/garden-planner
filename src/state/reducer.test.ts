@@ -1,28 +1,47 @@
 import { describe, expect, it } from 'vitest';
 import type { GardenPlan, PlantInstance } from '../types';
-import { DEFAULT_PLAN, parsePlan, reducer } from './reducer';
+import { DEFAULT_PLAN, createPlan, parsePlan, reducer } from './reducer';
+
+const TEST_ID = 'test-garden';
 
 function basePlan(plants: PlantInstance[] = []): GardenPlan {
-  return { ...DEFAULT_PLAN, plants };
+  return { ...DEFAULT_PLAN, id: TEST_ID, plants };
 }
 
+describe('createPlan', () => {
+  it('produces a fresh, empty garden stamped with the given id', () => {
+    expect(createPlan('g1')).toEqual({ ...DEFAULT_PLAN, id: 'g1' });
+  });
+
+  it('gives two different ids two independent plans', () => {
+    expect(createPlan('a').id).toBe('a');
+    expect(createPlan('b').id).toBe('b');
+  });
+});
+
 describe('parsePlan', () => {
-  it('returns the default plan when there is nothing stored', () => {
-    expect(parsePlan(null)).toEqual(DEFAULT_PLAN);
+  it('returns a fresh plan stamped with the given id when there is nothing stored', () => {
+    expect(parsePlan(null, TEST_ID)).toEqual(createPlan(TEST_ID));
   });
 
-  it('returns the default plan for malformed JSON instead of throwing', () => {
-    expect(parsePlan('{not valid json')).toEqual(DEFAULT_PLAN);
+  it('returns a fresh plan for malformed JSON instead of throwing', () => {
+    expect(parsePlan('{not valid json', TEST_ID)).toEqual(createPlan(TEST_ID));
   });
 
-  it('returns the default plan when the stored version does not match', () => {
-    const stored = JSON.stringify({ ...DEFAULT_PLAN, version: 1 });
-    expect(parsePlan(stored)).toEqual(DEFAULT_PLAN);
+  it('returns a fresh plan when the stored version does not match', () => {
+    const stored = JSON.stringify({ ...basePlan(), version: 1 });
+    expect(parsePlan(stored, TEST_ID)).toEqual(createPlan(TEST_ID));
   });
 
   it('returns the parsed plan when it is well-formed and versioned correctly', () => {
     const plan = basePlan([{ id: 'p1', cropId: 'tomato', x: 1, y: 2, groupId: 'g1' }]);
-    expect(parsePlan(JSON.stringify(plan))).toEqual(plan);
+    expect(parsePlan(JSON.stringify(plan), TEST_ID)).toEqual(plan);
+  });
+
+  it('forces the id from the storage key, ignoring whatever id the stored JSON carries', () => {
+    const stored = JSON.stringify(basePlan()); // stored under TEST_ID
+    // simulate reading it back under a different key, e.g. after a copy/rename bug
+    expect(parsePlan(stored, 'a-different-id').id).toBe('a-different-id');
   });
 });
 
@@ -129,8 +148,8 @@ describe('reducer', () => {
     });
   });
 
-  it('reset returns exactly the default plan, discarding all prior state', () => {
+  it('reset returns a fresh plan for the same garden id, discarding all prior state', () => {
     const state = basePlan([{ id: 'a', cropId: 'tomato', x: 0, y: 0, groupId: 'g1' }]);
-    expect(reducer(state, { type: 'reset' })).toEqual(DEFAULT_PLAN);
+    expect(reducer(state, { type: 'reset' })).toEqual(createPlan(TEST_ID));
   });
 });
