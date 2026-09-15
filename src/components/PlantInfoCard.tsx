@@ -14,7 +14,7 @@ export function PlantInfoCard({
   onSetVariety,
   onRemove,
   onRemoveGroup,
-  onDismissWarning,
+  onDismissConflict,
 }: {
   plant: PlantInstance;
   zoneId: string;
@@ -24,7 +24,7 @@ export function PlantInfoCard({
   onSetVariety: (variety: string | undefined) => void;
   onRemove: () => void;
   onRemoveGroup: () => void;
-  onDismissWarning: () => void;
+  onDismissConflict: () => void;
 }) {
   const crop = getCrop(plant.cropId);
   const zone = getZone(zoneId);
@@ -86,14 +86,14 @@ export function PlantInfoCard({
             }}
           >
             <p style={{ font: '600 12.5px Figtree', color: 'var(--color-warning)', marginBottom: 6 }}>
-              ! Planted too close to a neighbor
+              ! {groupCount > 1 ? 'This patch is' : 'Planted'} too close to a neighbor
             </p>
             <p style={{ font: '400 11.5px/1.4 Figtree', color: 'var(--color-text-muted)', marginBottom: 8 }}>
-              {crop.name} wants at least {crop.spacingIn}" from the next plant. Move one of them apart, or dismiss
-              if you're fine with it.
+              {crop.name} wants at least {crop.spacingIn}" from the next plant or patch. Move{' '}
+              {groupCount > 1 ? 'this patch' : 'one of them'} apart, or dismiss if you're fine with it.
             </p>
-            <button onClick={onDismissWarning} className="btn btn-secondary" style={{ padding: '5px 12px', font: '600 11.5px Figtree' }}>
-              Dismiss for this plant
+            <button onClick={onDismissConflict} className="btn btn-secondary" style={{ padding: '5px 12px', font: '600 11.5px Figtree' }}>
+              Dismiss this warning
             </button>
           </div>
         )}

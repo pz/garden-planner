@@ -46,10 +46,8 @@ export interface PlantInstance {
   x: number;
   y: number;
   variety?: string;
-  /** Instances sharing a groupId were placed together as one patch. */
+  /** Instances sharing a groupId are one patch — moved, warned, and dismissed as a unit. */
   groupId: string;
-  /** User has dismissed the spacing warning for this specific plant. */
-  warningDismissed?: boolean;
 }
 
 export interface Bed {
@@ -60,8 +58,10 @@ export interface Bed {
 }
 
 export interface GardenPlan {
-  version: 1;
+  version: 2;
   profile: Profile;
   bed: Bed;
   plants: PlantInstance[];
+  /** Canonical (sorted, "::"-joined) groupId pairs whose overlap warning the user dismissed. */
+  dismissedConflictKeys: string[];
 }

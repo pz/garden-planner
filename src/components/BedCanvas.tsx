@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useGarden } from '../state/gardenStore';
 import type { PlantInstance } from '../types';
 import { getCrop } from '../data/crops';
-import { findOverlapWarnings, fitsAt } from '../utils/spacing';
+import { conflictKey, findOverlapConflicts, fitsAt } from '../utils/spacing';
 import { PlantToken, LONG_PRESS_MS, MOVE_THRESHOLD_PX, type GestureHandlers } from './PlantToken';
 import { PlantMenu } from './PlantMenu';
 import { PlantInfoCard } from './PlantInfoCard';
@@ -17,6 +17,32 @@ function uid(): string {
 
 function clamp(v: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, v));
+}
+
+/**
+ * Clamp a proposed (dx, dy) translation so every member of a group stays within
+ * the bed once moved — keeping the whole patch rigid (all members shift by the
+ * same amount) rather than letting the bed edge distort its shape.
+ */
+function clampGroupDelta(
+  members: PlantInstance[],
+  dx: number,
+  dy: number,
+  boundW: number,
+  boundH: number,
+): Point {
+  let minDx = -Infinity;
+  let maxDx = Infinity;
+  let minDy = -Infinity;
+  let maxDy = Infinity;
+  for (const m of members) {
+    const r = getCrop(m.cropId).spacingIn / 2;
+    minDx = Math.max(minDx, r - m.x);
+    maxDx = Math.min(maxDx, boundW - r - m.x);
+    minDy = Math.max(minDy, r - m.y);
+    maxDy = Math.min(maxDy, boundH - r - m.y);
+  }
+  return { x: clamp(dx, minDx, maxDx), y: clamp(dy, minDy, maxDy) };
 }
 
 interface Point {
@@ -173,7 +199,7 @@ function computeGridGhosts(
 }
 
 export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
-  const { plan, addPlants, movePlant, removePlant, removeGroup, setVariety, dismissWarning } = useGarden();
+  const { plan, addPlants, moveGroup, removePlant, removeGroup, setVariety, dismissConflictsForGroup } = useGarden();
   const { bed, plants, profile } = plan;
 
   const bedRef = useRef<HTMLDivElement>(null);
@@ -187,18 +213,46 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
   const [quickActions, setQuickActions] = useState<{ id: string; clientX: number; clientY: number } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const [movePreview, setMovePreview] = useState<{ id: string; x: number; y: number } | null>(null);
+  // A drag moves the whole patch (every plant sharing groupId) rigidly, never a single
+  // member on its own — `members` is a snapshot of the group's positions at drag start,
+  // and (dx, dy) is the same translation applied to every one of them.
+  const [moveState, setMoveState] = useState<{
+    groupId: string;
+    anchorOriginal: Point;
+    members: PlantInstance[];
+    dx: number;
+    dy: number;
+  } | null>(null);
   const [multiply, setMultiply] = useState<{ id: string; origin: Point; axis: Point | null; ghosts: Point[] } | null>(
     null,
   );
 
-  const warned = useMemo(() => findOverlapWarnings(plants), [plants]);
+  const conflicts = useMemo(() => findOverlapConflicts(plants), [plants]);
+  const dismissedKeys = useMemo(() => new Set(plan.dismissedConflictKeys), [plan.dismissedConflictKeys]);
+  const warnedGroupIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const c of conflicts) {
+      if (!dismissedKeys.has(conflictKey(c.a, c.b))) {
+        s.add(c.a);
+        s.add(c.b);
+      }
+    }
+    return s;
+  }, [conflicts, dismissedKeys]);
+  const groupSizes = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of plants) m.set(p.groupId, (m.get(p.groupId) ?? 0) + 1);
+    return m;
+  }, [plants]);
 
-  // Apply the live move-preview position so a dragged patch member's bounding box
-  // (and the plant itself) tracks the pointer instead of its last-committed spot.
+  // Apply the live move-preview offset so a dragged patch's bounding box (and every
+  // member plant) tracks the pointer together, instead of only the grabbed one.
   const effectivePlants = useMemo(
-    () => plants.map((p) => (movePreview?.id === p.id ? { ...p, x: movePreview.x, y: movePreview.y } : p)),
-    [plants, movePreview],
+    () =>
+      plants.map((p) =>
+        moveState && p.groupId === moveState.groupId ? { ...p, x: p.x + moveState.dx, y: p.y + moveState.dy } : p,
+      ),
+    [plants, moveState],
   );
 
   const groupBoxes = useMemo(() => computeGroupBoxes(effectivePlants), [effectivePlants]);
@@ -260,17 +314,26 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
     onQuickActions: (id, clientX, clientY) => setQuickActions({ id, clientX, clientY }),
     onMoveStart: (id) => {
       const p = plants.find((pl) => pl.id === id);
-      if (p) setMovePreview({ id, x: p.x, y: p.y });
+      if (!p) return;
+      const members = plants.filter((pl) => pl.groupId === p.groupId);
+      setMoveState({ groupId: p.groupId, anchorOriginal: { x: p.x, y: p.y }, members, dx: 0, dy: 0 });
     },
-    onMoveUpdate: (id, clientX, clientY) => {
+    onMoveUpdate: (_id, clientX, clientY) => {
       const coords = toBedCoords(clientX, clientY);
-      if (coords) setMovePreview({ id, x: coords.x, y: coords.y });
+      if (!coords) return;
+      setMoveState((prev) => {
+        if (!prev) return prev;
+        const rawDx = coords.x - prev.anchorOriginal.x;
+        const rawDy = coords.y - prev.anchorOriginal.y;
+        const { x: dx, y: dy } = clampGroupDelta(prev.members, rawDx, rawDy, bed.widthIn, bed.heightIn);
+        return { ...prev, dx, dy };
+      });
     },
-    onMoveEnd: (id, committed) => {
-      if (committed && movePreview && movePreview.id === id) {
-        movePlant(id, movePreview.x, movePreview.y);
+    onMoveEnd: (_id, committed) => {
+      if (committed && moveState && (moveState.dx !== 0 || moveState.dy !== 0)) {
+        moveGroup(moveState.groupId, moveState.dx, moveState.dy);
       }
-      setMovePreview(null);
+      setMoveState(null);
     },
     onMultiplyStart: (id) => {
       const p = plants.find((pl) => pl.id === id);
@@ -365,19 +428,25 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
         }}
       >
         {groupBoxes.map((box) => (
-          <GroupBoundingBox key={box.groupId} box={box} pxPerInch={PX_PER_INCH} />
+          <GroupBoundingBox
+            key={box.groupId}
+            box={box}
+            pxPerInch={PX_PER_INCH}
+            warned={warnedGroupIds.has(box.groupId)}
+          />
         ))}
         {multiplyBox && <GroupBoundingBox box={multiplyBox} pxPerInch={PX_PER_INCH} active />}
 
         {effectivePlants.map((p) => {
           const isMultiplyOrigin = multiply?.id === p.id;
+          const isSolo = (groupSizes.get(p.groupId) ?? 1) === 1;
           return (
             <div key={p.id} style={{ opacity: isMultiplyOrigin ? 0.85 : 1 }}>
               <PlantToken
                 plant={p}
                 pxPerInch={PX_PER_INCH}
                 diameter={PLANT_DIAMETER}
-                warned={warned.has(p.id) && !p.warningDismissed}
+                warned={isSolo && warnedGroupIds.has(p.groupId)}
                 handlers={gestureHandlers}
               />
             </div>
@@ -492,7 +561,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
         <PlantInfoCard
           plant={selectedPlant}
           zoneId={profile.zoneId}
-          warned={warned.has(selectedPlant.id) && !selectedPlant.warningDismissed}
+          warned={warnedGroupIds.has(selectedPlant.groupId)}
           groupCount={groupCount}
           onClose={() => setSelectedId(null)}
           onSetVariety={(variety) => setVariety(selectedPlant.id, variety)}
@@ -504,7 +573,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
             removeGroup(selectedPlant.groupId);
             setSelectedId(null);
           }}
-          onDismissWarning={() => dismissWarning(selectedPlant.id)}
+          onDismissConflict={() => dismissConflictsForGroup(selectedPlant.groupId)}
         />
       )}
     </div>
@@ -515,10 +584,12 @@ function GroupBoundingBox({
   box,
   pxPerInch,
   active = false,
+  warned = false,
 }: {
   box: { cropId: string; centerX: number; centerY: number; width: number; height: number; angleDeg: number };
   pxPerInch: number;
   active?: boolean;
+  warned?: boolean;
 }) {
   const color = CROP_COLORS[box.cropId] ?? 'var(--color-text)';
   return (
@@ -530,13 +601,37 @@ function GroupBoundingBox({
         width: box.width * pxPerInch,
         height: box.height * pxPerInch,
         transform: `translate(-50%, -50%) rotate(${box.angleDeg}deg)`,
-        border: `1.5px dashed ${color}`,
+        border: `1.5px dashed ${warned ? 'var(--color-warning)' : color}`,
         borderRadius: 'var(--radius-md)',
         background: `color-mix(in oklch, ${color} ${active ? 10 : 6}%, transparent)`,
         opacity: active ? 0.9 : 1,
         pointerEvents: 'none',
       }}
-    />
+    >
+      {warned && (
+        <div
+          style={{
+            position: 'absolute',
+            top: -8,
+            right: -8,
+            width: 18,
+            height: 18,
+            borderRadius: '999px',
+            background: 'var(--color-warning)',
+            color: '#fffdf8',
+            font: '700 11px Figtree',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: '1.5px solid #fffdf8',
+            // Counter-rotate so the badge stays upright regardless of the patch's orientation.
+            transform: `rotate(${-box.angleDeg}deg)`,
+          }}
+        >
+          !
+        </div>
+      )}
+    </div>
   );
 }
 
