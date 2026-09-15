@@ -37,7 +37,7 @@ interface GroupBox {
   angleDeg: number;
 }
 
-const GROUP_BOX_PAD_IN = 3;
+const GROUP_BOX_PAD_IN = 1.25;
 
 /**
  * Minimum-footprint oriented bounding box around a set of circles, so a diagonal
