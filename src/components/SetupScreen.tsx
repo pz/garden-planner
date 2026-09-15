@@ -150,12 +150,13 @@ export function SetupScreen({ onDone }: { onDone: () => void }) {
                 alignItems: 'flex-start',
                 gap: 2,
                 padding: '12px 14px',
+                borderRadius: 'var(--radius-md)',
                 borderColor: sunExposure === opt.id ? 'var(--color-accent)' : 'var(--color-divider)',
                 background: sunExposure === opt.id ? 'color-mix(in srgb, var(--color-accent) 12%, transparent)' : 'var(--color-surface-raised)',
               }}
             >
               <span style={{ font: '600 13px Figtree' }}>{opt.label}</span>
-              <span style={{ font: '400 11px Figtree', color: 'var(--color-text-muted)' }}>{opt.hint}</span>
+              <span style={{ font: '400 11px/1.4 Figtree', color: 'var(--color-text-muted)' }}>{opt.hint}</span>
             </button>
           ))}
         </div>
