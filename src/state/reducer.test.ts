@@ -34,6 +34,13 @@ describe('reducer', () => {
     expect(next).not.toBe(state); // immutability: new object identity
   });
 
+  it('setBedName replaces only the bed name, leaving its dimensions untouched', () => {
+    const state = basePlan();
+    const next = reducer(state, { type: 'setBedName', name: 'The north bed' });
+    expect(next.bed).toEqual({ ...state.bed, name: 'The north bed' });
+    expect(next).not.toBe(state);
+  });
+
   it('addPlants appends without mutating the previous plants array', () => {
     const original: PlantInstance[] = [{ id: 'a', cropId: 'tomato', x: 0, y: 0, groupId: 'g1' }];
     const state = basePlan(original);

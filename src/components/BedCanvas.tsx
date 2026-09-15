@@ -236,10 +236,33 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
             {view === 'bed' ? ' · long-press or right-click anywhere to plant' : ''}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <ViewTab label="Bed layout" active={view === 'bed'} onClick={() => setView('bed')} />
-          <ViewTab label="Planting calendar" active={view === 'calendar'} onClick={() => setView('calendar')} />
-          <button onClick={onEditSetup} className="btn btn-secondary">
+        <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <ViewTab label="Bed layout" active={view === 'bed'} onClick={() => setView('bed')} />
+            <ViewTab label="Planting calendar" active={view === 'calendar'} onClick={() => setView('calendar')} />
+          </div>
+          <button
+            onClick={onEditSetup}
+            style={{
+              border: 'none',
+              background: 'none',
+              padding: '4px 2px',
+              font: '500 12px Figtree',
+              color: 'var(--color-text-muted)',
+              textDecoration: 'underline',
+              textDecorationColor: 'transparent',
+              textUnderlineOffset: 3,
+              transition: 'text-decoration-color 0.12s ease, color 0.12s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = 'var(--color-text)';
+              e.currentTarget.style.textDecorationColor = 'var(--color-divider)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = 'var(--color-text-muted)';
+              e.currentTarget.style.textDecorationColor = 'transparent';
+            }}
+          >
             Edit setup
           </button>
         </div>
