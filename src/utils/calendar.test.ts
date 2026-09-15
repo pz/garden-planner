@@ -1,12 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import type { PlantInstance } from '../types';
-import { buildCalendarEntries, earliestScheduledDate } from './calendar';
+import { buildCalendarEntries, earliestScheduledDate, groupByMonth, type CalendarEntry } from './calendar';
 import { scheduleFor } from './dates';
 import { getCrop } from '../data/crops';
 import { getZone } from '../data/zones';
 
 function plant(overrides: Partial<PlantInstance>): PlantInstance {
   return { id: 'p1', cropId: 'carrot', x: 0, y: 0, groupId: 'g1', ...overrides };
+}
+
+function entryScheduledOn(groupId: string, date: Date): CalendarEntry {
+  return {
+    groupId,
+    cropId: 'carrot',
+    cropName: 'Carrot',
+    count: 1,
+    schedule: { sowOrTransplant: date, sowOrTransplantLabel: 'Sow outside', harvest: date },
+  };
 }
 
 describe('buildCalendarEntries', () => {
@@ -62,5 +72,55 @@ describe('earliestScheduledDate', () => {
     const schedule = scheduleFor(getCrop('carrot'), getZone('6'), 2024);
     expect(schedule.startIndoors).toBeUndefined();
     expect(earliestScheduledDate(schedule)).toEqual(schedule.sowOrTransplant);
+  });
+});
+
+describe('groupByMonth', () => {
+  it('returns an empty list for no entries', () => {
+    expect(groupByMonth([])).toEqual([]);
+  });
+
+  it('collapses entries in the same month into one group', () => {
+    const entries = [
+      entryScheduledOn('a', new Date(2024, 3, 1)),
+      entryScheduledOn('b', new Date(2024, 3, 15)),
+    ];
+    const groups = groupByMonth(entries);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].label).toMatch(/April/);
+    expect(groups[0].entries.map((e) => e.groupId)).toEqual(['a', 'b']);
+  });
+
+  it('produces separate groups, in order, for entries in different months', () => {
+    const entries = [
+      entryScheduledOn('a', new Date(2024, 3, 1)), // April
+      entryScheduledOn('b', new Date(2024, 4, 1)), // May
+    ];
+    const groups = groupByMonth(entries);
+    expect(groups.map((g) => g.entries.map((e) => e.groupId))).toEqual([['a'], ['b']]);
+    expect(groups[0].label).toMatch(/April/);
+    expect(groups[1].label).toMatch(/May/);
+  });
+
+  it('does not collapse the same calendar month across different years', () => {
+    const entries = [
+      entryScheduledOn('a', new Date(2024, 3, 1)),
+      entryScheduledOn('b', new Date(2025, 3, 1)),
+    ];
+    const groups = groupByMonth(entries);
+    expect(groups).toHaveLength(2);
+    expect(groups[0].label).not.toEqual(groups[1].label);
+  });
+
+  it('only merges same-month runs that are adjacent, since it assumes sorted input', () => {
+    // Out-of-order input (April, May, April) produces three groups, not two —
+    // groupByMonth doesn't re-sort, it only collapses consecutive matching labels.
+    const entries = [
+      entryScheduledOn('a', new Date(2024, 3, 1)),
+      entryScheduledOn('b', new Date(2024, 4, 1)),
+      entryScheduledOn('c', new Date(2024, 3, 10)),
+    ];
+    const groups = groupByMonth(entries);
+    expect(groups).toHaveLength(3);
   });
 });

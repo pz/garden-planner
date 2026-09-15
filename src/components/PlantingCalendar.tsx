@@ -1,7 +1,7 @@
 import type { PlantInstance } from '../types';
 import { getCrop } from '../data/crops';
 import { getZone, zoneFirstFrostDate, zoneLastFrostDate } from '../data/zones';
-import { buildCalendarEntries, earliestScheduledDate, type CalendarEntry } from '../utils/calendar';
+import { buildCalendarEntries, groupByMonth, type CalendarEntry } from '../utils/calendar';
 import { formatDate } from '../utils/dates';
 import { CROP_COLORS, PlantMark } from './PlantMark';
 
@@ -41,20 +41,6 @@ export function PlantingCalendar({ plants, zoneId }: { plants: PlantInstance[]; 
       ))}
     </div>
   );
-}
-
-function groupByMonth(entries: CalendarEntry[]): { label: string; entries: CalendarEntry[] }[] {
-  const groups: { label: string; entries: CalendarEntry[] }[] = [];
-  for (const entry of entries) {
-    const label = earliestScheduledDate(entry.schedule).toLocaleDateString(undefined, {
-      month: 'long',
-      year: 'numeric',
-    });
-    const last = groups.at(-1);
-    if (last && last.label === label) last.entries.push(entry);
-    else groups.push({ label, entries: [entry] });
-  }
-  return groups;
 }
 
 function CalendarRow({ entry }: { entry: CalendarEntry }) {
