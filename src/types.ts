@@ -59,6 +59,8 @@ export interface Bed {
 
 export interface GardenPlan {
   version: 2;
+  /** Identifies this garden among the user's saved gardens; also its localStorage key. */
+  id: string;
   profile: Profile;
   bed: Bed;
   plants: PlantInstance[];

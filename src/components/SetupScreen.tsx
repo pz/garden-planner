@@ -3,6 +3,7 @@ import { useGarden } from '../state/gardenStore';
 import { ZONES, getZone, zoneFirstFrostDate, zoneLastFrostDate } from '../data/zones';
 import { formatDate } from '../utils/dates';
 import { detectZoneFromLocation, type GeoZoneStatus } from '../utils/geoZone';
+import { GardenSwitcher } from './GardenSwitcher';
 import type { SunExposure } from '../types';
 
 const SUN_OPTIONS: { id: SunExposure; label: string; hint: string }[] = [
@@ -53,6 +54,9 @@ export function SetupScreen({ onDone }: { onDone: () => void }) {
 
   return (
     <div style={{ maxWidth: 560, margin: '0 auto', padding: '64px 24px' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: -8 }}>
+        <GardenSwitcher />
+      </div>
       <p style={{ font: '400 17px Caveat, cursive', color: 'var(--color-text-muted)', marginBottom: 4 }}>
         Let&rsquo;s get your garden started
       </p>
