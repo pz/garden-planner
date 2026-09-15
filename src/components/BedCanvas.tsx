@@ -111,21 +111,63 @@ function computeGroupBoxes(plants: PlantInstance[]): GroupBox[] {
   return boxes;
 }
 
-function computeGhosts(origin: Point, cursor: Point, spacingIn: number, boundW: number, boundH: number): Point[] {
-  const dx = cursor.x - origin.x;
-  const dy = cursor.y - origin.y;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  if (dist < spacingIn * 0.6) return [];
-  const steps = Math.floor(dist / spacingIn);
+const AXIS_LOCK_THRESHOLD_FACTOR = 0.6;
+const AXIS_SNAP_TOLERANCE_DEG = 8;
+
+/**
+ * A drag direction, snapped to the nearest bed-aligned cardinal (0/90/180/270)
+ * when it's within a few degrees of one — so a row meant to run straight along
+ * the bed doesn't end up a hair off from imprecise pointer movement — and left
+ * alone otherwise, so a deliberately diagonal patch (turn 6a-style) still works.
+ */
+function snappedDirection(dx: number, dy: number): Point {
+  const dist = Math.hypot(dx, dy);
   const ux = dx / dist;
   const uy = dy / dist;
+  const angleDeg = (Math.atan2(uy, ux) * 180) / Math.PI;
+  const nearestCardinal = Math.round(angleDeg / 90) * 90;
+  if (Math.abs(angleDeg - nearestCardinal) <= AXIS_SNAP_TOLERANCE_DEG) {
+    const rad = (nearestCardinal * Math.PI) / 180;
+    return { x: Math.cos(rad), y: Math.sin(rad) };
+  }
+  return { x: ux, y: uy };
+}
+
+/**
+ * Ghost points for a patch dragged out from `origin` along a locked `axis` —
+ * one column per spacing step along the axis, one row per spacing step
+ * perpendicular to it, so a single drag sweeps out a line (rows = 0) or a
+ * rectangular grid (rows > 0), matching "drag a patch to size."
+ */
+function computeGridGhosts(
+  origin: Point,
+  axis: Point,
+  cursor: Point,
+  spacingIn: number,
+  boundW: number,
+  boundH: number,
+): Point[] {
+  const dx = cursor.x - origin.x;
+  const dy = cursor.y - origin.y;
+  const u = dx * axis.x + dy * axis.y; // signed distance along the axis
+  const v = -dx * axis.y + dy * axis.x; // signed distance perpendicular to it
+  const cols = Math.max(0, Math.floor(Math.abs(u) / spacingIn));
+  const rows = Math.max(0, Math.floor(Math.abs(v) / spacingIn));
+  const colSign = u < 0 ? -1 : 1;
+  const rowSign = v < 0 ? -1 : 1;
+  const perpX = -axis.y;
+  const perpY = axis.x;
+  const r = spacingIn / 2;
+
   const pts: Point[] = [];
-  for (let i = 1; i <= steps; i++) {
-    const x = origin.x + ux * spacingIn * i;
-    const y = origin.y + uy * spacingIn * i;
-    const r = spacingIn / 2;
-    if (x - r < 0 || y - r < 0 || x + r > boundW || y + r > boundH) continue;
-    pts.push({ x, y });
+  for (let row = 0; row <= rows; row++) {
+    for (let col = 0; col <= cols; col++) {
+      if (row === 0 && col === 0) continue; // origin is already a placed plant
+      const x = origin.x + axis.x * spacingIn * col * colSign + perpX * spacingIn * row * rowSign;
+      const y = origin.y + axis.y * spacingIn * col * colSign + perpY * spacingIn * row * rowSign;
+      if (x - r < 0 || y - r < 0 || x + r > boundW || y + r > boundH) continue;
+      pts.push({ x, y });
+    }
   }
   return pts;
 }
@@ -146,7 +188,9 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const [movePreview, setMovePreview] = useState<{ id: string; x: number; y: number } | null>(null);
-  const [multiply, setMultiply] = useState<{ id: string; origin: Point; ghosts: Point[] } | null>(null);
+  const [multiply, setMultiply] = useState<{ id: string; origin: Point; axis: Point | null; ghosts: Point[] } | null>(
+    null,
+  );
 
   const warned = useMemo(() => findOverlapWarnings(plants), [plants]);
 
@@ -230,18 +274,25 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
     },
     onMultiplyStart: (id) => {
       const p = plants.find((pl) => pl.id === id);
-      if (p) setMultiply({ id, origin: { x: p.x, y: p.y }, ghosts: [] });
+      if (p) setMultiply({ id, origin: { x: p.x, y: p.y }, axis: null, ghosts: [] });
     },
     onMultiplyUpdate: (id, clientX, clientY) => {
       const coords = toBedCoords(clientX, clientY);
       const p = plants.find((pl) => pl.id === id);
       if (!coords || !p) return;
       const spacing = getCrop(p.cropId).spacingIn;
-      setMultiply((prev) =>
-        prev && prev.id === id
-          ? { ...prev, ghosts: computeGhosts(prev.origin, coords, spacing, bed.widthIn, bed.heightIn) }
-          : prev,
-      );
+      setMultiply((prev) => {
+        if (!prev || prev.id !== id) return prev;
+        const dx = coords.x - prev.origin.x;
+        const dy = coords.y - prev.origin.y;
+        let axis = prev.axis;
+        if (!axis && Math.hypot(dx, dy) >= spacing * AXIS_LOCK_THRESHOLD_FACTOR) {
+          axis = snappedDirection(dx, dy);
+        }
+        if (!axis) return { ...prev, ghosts: [] };
+        const ghosts = computeGridGhosts(prev.origin, axis, coords, spacing, bed.widthIn, bed.heightIn);
+        return { ...prev, axis, ghosts };
+      });
     },
     onMultiplyEnd: (id, committed) => {
       if (committed && multiply && multiply.id === id && multiply.ghosts.length > 0) {
