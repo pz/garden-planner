@@ -27,27 +27,71 @@ interface Point {
 interface GroupBox {
   groupId: string;
   cropId: string;
-  left: number;
-  top: number;
+  /** Center of the box, in inches. */
+  centerX: number;
+  centerY: number;
+  /** Extent along the box's own axes, in inches (not world-axis-aligned). */
   width: number;
   height: number;
+  /** Rotation of the box's width-axis from the world x-axis, in degrees. */
+  angleDeg: number;
 }
 
 const GROUP_BOX_PAD_IN = 3;
 
-/** Bounding box (in inches) around every point, expanded by each point's own radius. */
-function boundingBox(points: { x: number; y: number; r: number }[], padIn: number): Omit<GroupBox, 'groupId' | 'cropId'> {
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
+/**
+ * Minimum-footprint oriented bounding box around a set of circles, so a diagonal
+ * line of plants gets a diagonal box instead of an axis-aligned one that balloons
+ * to fit the diagonal. Orientation comes from the points' principal axis (PCA on
+ * the 2x2 covariance matrix) — exact for a line of points, and a reasonable
+ * best-fit for any other cluster shape.
+ */
+function computeOrientedBox(
+  points: { x: number; y: number; r: number }[],
+  padIn: number,
+): Omit<GroupBox, 'groupId' | 'cropId'> {
+  const n = points.length;
+  const cx = points.reduce((sum, p) => sum + p.x, 0) / n;
+  const cy = points.reduce((sum, p) => sum + p.y, 0) / n;
+
+  let sxx = 0;
+  let syy = 0;
+  let sxy = 0;
   for (const p of points) {
-    minX = Math.min(minX, p.x - p.r);
-    minY = Math.min(minY, p.y - p.r);
-    maxX = Math.max(maxX, p.x + p.r);
-    maxY = Math.max(maxY, p.y + p.r);
+    const dx = p.x - cx;
+    const dy = p.y - cy;
+    sxx += dx * dx;
+    syy += dy * dy;
+    sxy += dx * dy;
   }
-  return { left: minX - padIn, top: minY - padIn, width: maxX - minX + padIn * 2, height: maxY - minY + padIn * 2 };
+  const angle = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+  const cosA = Math.cos(angle);
+  const sinA = Math.sin(angle);
+
+  let minU = Infinity;
+  let maxU = -Infinity;
+  let minV = Infinity;
+  let maxV = -Infinity;
+  for (const p of points) {
+    const dx = p.x - cx;
+    const dy = p.y - cy;
+    const u = dx * cosA + dy * sinA;
+    const v = -dx * sinA + dy * cosA;
+    minU = Math.min(minU, u - p.r);
+    maxU = Math.max(maxU, u + p.r);
+    minV = Math.min(minV, v - p.r);
+    maxV = Math.max(maxV, v + p.r);
+  }
+
+  const localCenterU = (minU + maxU) / 2;
+  const localCenterV = (minV + maxV) / 2;
+  return {
+    centerX: cx + localCenterU * cosA - localCenterV * sinA,
+    centerY: cy + localCenterU * sinA + localCenterV * cosA,
+    width: maxU - minU + padIn * 2,
+    height: maxV - minV + padIn * 2,
+    angleDeg: (angle * 180) / Math.PI,
+  };
 }
 
 /** One bounding box per patch (a groupId shared by more than one plant) so it reads as a single entity. */
@@ -62,7 +106,7 @@ function computeGroupBoxes(plants: PlantInstance[]): GroupBox[] {
   for (const [groupId, members] of byGroup) {
     if (members.length < 2) continue;
     const points = members.map((m) => ({ x: m.x, y: m.y, r: getCrop(m.cropId).spacingIn / 2 }));
-    boxes.push({ groupId, cropId: members[0].cropId, ...boundingBox(points, GROUP_BOX_PAD_IN) });
+    boxes.push({ groupId, cropId: members[0].cropId, ...computeOrientedBox(points, GROUP_BOX_PAD_IN) });
   }
   return boxes;
 }
@@ -226,7 +270,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
     if (!origin) return null;
     const r = getCrop(origin.cropId).spacingIn / 2;
     const points = [multiply.origin, ...multiply.ghosts].map((pt) => ({ x: pt.x, y: pt.y, r }));
-    return { cropId: origin.cropId, ...boundingBox(points, GROUP_BOX_PAD_IN) };
+    return { cropId: origin.cropId, ...computeOrientedBox(points, GROUP_BOX_PAD_IN) };
   }, [multiply, plants]);
 
   const selectedPlant = selectedId ? plants.find((p) => p.id === selectedId) ?? null : null;
@@ -421,7 +465,7 @@ function GroupBoundingBox({
   pxPerInch,
   active = false,
 }: {
-  box: { cropId: string; left: number; top: number; width: number; height: number };
+  box: { cropId: string; centerX: number; centerY: number; width: number; height: number; angleDeg: number };
   pxPerInch: number;
   active?: boolean;
 }) {
@@ -430,10 +474,11 @@ function GroupBoundingBox({
     <div
       style={{
         position: 'absolute',
-        left: box.left * pxPerInch,
-        top: box.top * pxPerInch,
+        left: box.centerX * pxPerInch,
+        top: box.centerY * pxPerInch,
         width: box.width * pxPerInch,
         height: box.height * pxPerInch,
+        transform: `translate(-50%, -50%) rotate(${box.angleDeg}deg)`,
         border: `1.5px dashed ${color}`,
         borderRadius: 'var(--radius-md)',
         background: `color-mix(in oklch, ${color} ${active ? 10 : 6}%, transparent)`,
