@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import type { PlantInstance } from '../types';
 import { getCrop } from '../data/crops';
 import { PlantMark, CROP_COLORS } from './PlantMark';
@@ -32,6 +32,7 @@ export function PlantToken({
 }) {
   const crop = getCrop(plant.cropId);
   const color = CROP_COLORS[plant.cropId] ?? 'var(--color-accent)';
+  const [dragging, setDragging] = useState(false);
 
   const stateRef = useRef<{
     startX: number;
@@ -85,6 +86,7 @@ export function PlantToken({
         st.mode = 'move';
         handlers.onMoveStart(plant.id);
       }
+      setDragging(true);
     }
     if (st.mode === 'move') handlers.onMoveUpdate(plant.id, e.clientX, e.clientY);
     if (st.mode === 'multiply') handlers.onMultiplyUpdate(plant.id, e.clientX, e.clientY);
@@ -93,6 +95,7 @@ export function PlantToken({
   function handlePointerUp(e: React.PointerEvent) {
     const st = stateRef.current;
     clearTimer();
+    setDragging(false);
     if (!st) return;
     if (st.mode === 'move') {
       handlers.onMoveEnd(plant.id, true);
@@ -121,7 +124,7 @@ export function PlantToken({
         left: plant.x * pxPerInch,
         top: plant.y * pxPerInch,
         transform: 'translate(-50%, -50%)',
-        cursor: 'pointer',
+        cursor: dragging ? 'grabbing' : 'grab',
         touchAction: 'none',
       }}
     >

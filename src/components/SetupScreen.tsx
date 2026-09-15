@@ -12,7 +12,8 @@ const SUN_OPTIONS: { id: SunExposure; label: string; hint: string }[] = [
 ];
 
 export function SetupScreen({ onDone }: { onDone: () => void }) {
-  const { plan, setProfile } = useGarden();
+  const { plan, setProfile, setBedName } = useGarden();
+  const [bedName, setBedNameInput] = useState(plan.bed.name);
   const [zoneId, setZoneId] = useState(plan.profile.zoneId);
   const [sunExposure, setSunExposure] = useState<SunExposure>(plan.profile.sunExposure);
   const [geoStatus, setGeoStatus] = useState<GeoZoneStatus>('idle');
@@ -46,6 +47,7 @@ export function SetupScreen({ onDone }: { onDone: () => void }) {
 
   function handleContinue() {
     setProfile({ zoneId, sunExposure, onboarded: true });
+    setBedName(bedName.trim() || plan.bed.name);
     onDone();
   }
 
@@ -55,6 +57,24 @@ export function SetupScreen({ onDone }: { onDone: () => void }) {
         Let&rsquo;s get your garden started
       </p>
       <h1 style={{ fontSize: 30, marginBottom: 28 }}>A little about your garden</h1>
+
+      <label style={{ display: 'block', marginBottom: 22 }}>
+        <span style={{ display: 'block', font: '600 13px Figtree', marginBottom: 8 }}>Bed name</span>
+        <input
+          value={bedName}
+          placeholder="e.g. The back porch bed"
+          onChange={(e) => setBedNameInput(e.target.value)}
+          style={{
+            width: '100%',
+            padding: '12px 14px',
+            borderRadius: 'var(--radius-md)',
+            border: '1.5px solid var(--color-divider)',
+            font: '500 15px Figtree',
+            background: 'var(--color-surface-raised)',
+            color: 'var(--color-text)',
+          }}
+        />
+      </label>
 
       <div style={{ marginBottom: 22 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
