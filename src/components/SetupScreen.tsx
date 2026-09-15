@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useGarden } from '../state/gardenStore';
 import { ZONES, getZone, zoneFirstFrostDate, zoneLastFrostDate } from '../data/zones';
 import { formatDate } from '../utils/dates';
+import { detectZoneFromLocation, type GeoZoneStatus } from '../utils/geoZone';
 import type { SunExposure } from '../types';
 
 const SUN_OPTIONS: { id: SunExposure; label: string; hint: string }[] = [
@@ -14,9 +15,34 @@ export function SetupScreen({ onDone }: { onDone: () => void }) {
   const { plan, setProfile } = useGarden();
   const [zoneId, setZoneId] = useState(plan.profile.zoneId);
   const [sunExposure, setSunExposure] = useState<SunExposure>(plan.profile.sunExposure);
+  const [geoStatus, setGeoStatus] = useState<GeoZoneStatus>('idle');
+  const [detectedFromLocation, setDetectedFromLocation] = useState(false);
 
   const zone = getZone(zoneId);
   const year = new Date().getFullYear();
+
+  async function handleUseLocation() {
+    setGeoStatus('locating');
+    try {
+      const result = await detectZoneFromLocation();
+      setZoneId(result.zoneId);
+      setDetectedFromLocation(true);
+      setGeoStatus('done');
+    } catch (err) {
+      if (err instanceof Error && err.message === 'unsupported') {
+        setGeoStatus('unsupported');
+      } else if (err instanceof GeolocationPositionError && err.code === err.PERMISSION_DENIED) {
+        setGeoStatus('denied');
+      } else {
+        setGeoStatus('error');
+      }
+    }
+  }
+
+  function handleZoneSelect(id: string) {
+    setZoneId(id);
+    setDetectedFromLocation(false);
+  }
 
   function handleContinue() {
     setProfile({ zoneId, sunExposure, onboarded: true });
@@ -30,13 +56,32 @@ export function SetupScreen({ onDone }: { onDone: () => void }) {
       </p>
       <h1 style={{ fontSize: 30, marginBottom: 28 }}>A little about your garden</h1>
 
-      <label style={{ display: 'block', marginBottom: 22 }}>
-        <span style={{ display: 'block', font: '600 13px Figtree', marginBottom: 8 }}>
-          USDA hardiness zone
-        </span>
+      <div style={{ marginBottom: 22 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
+          <label htmlFor="zone-select" style={{ font: '600 13px Figtree' }}>
+            USDA hardiness zone
+          </label>
+          <button
+            type="button"
+            onClick={handleUseLocation}
+            disabled={geoStatus === 'locating'}
+            style={{
+              border: 'none',
+              background: 'none',
+              padding: 0,
+              font: '600 12.5px Figtree',
+              color: 'var(--color-accent-700)',
+              cursor: geoStatus === 'locating' ? 'default' : 'pointer',
+              opacity: geoStatus === 'locating' ? 0.6 : 1,
+            }}
+          >
+            {geoStatus === 'locating' ? 'Locating…' : '📍 Use my location'}
+          </button>
+        </div>
         <select
+          id="zone-select"
           value={zoneId}
-          onChange={(e) => setZoneId(e.target.value)}
+          onChange={(e) => handleZoneSelect(e.target.value)}
           style={{
             width: '100%',
             padding: '12px 14px',
@@ -53,7 +98,23 @@ export function SetupScreen({ onDone }: { onDone: () => void }) {
             </option>
           ))}
         </select>
-      </label>
+        {geoStatus === 'done' && detectedFromLocation && (
+          <p style={{ font: '400 12px Figtree', color: 'var(--color-accent-700)', marginTop: 6 }}>
+            Estimated from your location — it&rsquo;s a rough guess from latitude alone, so adjust it if it&rsquo;s
+            not right.
+          </p>
+        )}
+        {geoStatus === 'denied' && (
+          <p style={{ font: '400 12px Figtree', color: 'var(--color-text-muted)', marginTop: 6 }}>
+            Location access was denied — pick your zone from the list instead.
+          </p>
+        )}
+        {(geoStatus === 'error' || geoStatus === 'unsupported') && (
+          <p style={{ font: '400 12px Figtree', color: 'var(--color-text-muted)', marginTop: 6 }}>
+            Couldn&rsquo;t detect your location — pick your zone from the list instead.
+          </p>
+        )}
+      </div>
 
       <div style={{ marginBottom: 28 }}>
         <span style={{ display: 'block', font: '600 13px Figtree', marginBottom: 8 }}>Sun exposure</span>
