@@ -23,6 +23,7 @@ export function parsePlan(raw: string | null): GardenPlan {
 
 export type Action =
   | { type: 'setProfile'; profile: Profile }
+  | { type: 'setBedName'; name: string }
   | { type: 'addPlants'; plants: PlantInstance[] }
   | { type: 'moveGroup'; groupId: string; dx: number; dy: number }
   | { type: 'removePlant'; id: string }
@@ -35,6 +36,8 @@ export function reducer(state: GardenPlan, action: Action): GardenPlan {
   switch (action.type) {
     case 'setProfile':
       return { ...state, profile: action.profile };
+    case 'setBedName':
+      return { ...state, bed: { ...state.bed, name: action.name } };
     case 'addPlants':
       return { ...state, plants: [...state.plants, ...action.plants] };
     case 'moveGroup':

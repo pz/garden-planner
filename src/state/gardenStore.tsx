@@ -11,6 +11,7 @@ function loadPlan(): GardenPlan {
 interface GardenContextValue {
   plan: GardenPlan;
   setProfile: (profile: Profile) => void;
+  setBedName: (name: string) => void;
   addPlants: (plants: PlantInstance[]) => void;
   moveGroup: (groupId: string, dx: number, dy: number) => void;
   removePlant: (id: string) => void;
@@ -32,6 +33,7 @@ export function GardenProvider({ children }: { children: ReactNode }) {
     () => ({
       plan,
       setProfile: (profile) => dispatch({ type: 'setProfile', profile }),
+      setBedName: (name) => dispatch({ type: 'setBedName', name }),
       addPlants: (plants) => dispatch({ type: 'addPlants', plants }),
       moveGroup: (groupId, dx, dy) => dispatch({ type: 'moveGroup', groupId, dx, dy }),
       removePlant: (id) => dispatch({ type: 'removePlant', id }),
