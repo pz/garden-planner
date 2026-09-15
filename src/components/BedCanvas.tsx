@@ -16,6 +16,7 @@ import {
 import { PlantToken, LONG_PRESS_MS, MOVE_THRESHOLD_PX, type GestureHandlers } from './PlantToken';
 import { PlantMenu } from './PlantMenu';
 import { PlantInfoCard } from './PlantInfoCard';
+import { PlantingCalendar } from './PlantingCalendar';
 import { CROP_COLORS } from './PlantMark';
 
 const PX_PER_INCH = 7;
@@ -38,6 +39,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
     null,
   );
 
+  const [view, setView] = useState<'bed' | 'calendar'>('bed');
   const [menuState, setMenuState] = useState<{ clientX: number; clientY: number; xIn: number; yIn: number } | null>(
     null,
   );
@@ -226,209 +228,233 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
 
   return (
     <div style={{ padding: '28px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1 style={{ fontSize: 22 }}>{bed.name}</h1>
           <p style={{ font: '400 13px Figtree', color: 'var(--color-text-muted)', marginTop: 4 }}>
-            {bed.widthIn / 12}′ × {bed.heightIn / 12}′ bed · {profile.sunExposure.replace('-', ' ')} · long-press or
-            right-click anywhere to plant
+            {bed.widthIn / 12}′ × {bed.heightIn / 12}′ bed · {profile.sunExposure.replace('-', ' ')}
+            {view === 'bed' ? ' · long-press or right-click anywhere to plant' : ''}
           </p>
         </div>
-        <button
-          onClick={onEditSetup}
-          style={{
-            border: 'none',
-            background: 'none',
-            padding: '4px 2px',
-            font: '500 12px Figtree',
-            color: 'var(--color-text-muted)',
-            textDecoration: 'underline',
-            textDecorationColor: 'transparent',
-            textUnderlineOffset: 3,
-            transition: 'text-decoration-color 0.12s ease, color 0.12s ease',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.color = 'var(--color-text)';
-            e.currentTarget.style.textDecorationColor = 'var(--color-divider)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.color = 'var(--color-text-muted)';
-            e.currentTarget.style.textDecorationColor = 'transparent';
-          }}
-        >
-          Edit setup
-        </button>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <ViewTab label="Bed layout" active={view === 'bed'} onClick={() => setView('bed')} />
+            <ViewTab label="Planting calendar" active={view === 'calendar'} onClick={() => setView('calendar')} />
+          </div>
+          <button
+            onClick={onEditSetup}
+            style={{
+              border: 'none',
+              background: 'none',
+              padding: '4px 2px',
+              font: '500 12px Figtree',
+              color: 'var(--color-text-muted)',
+              textDecoration: 'underline',
+              textDecorationColor: 'transparent',
+              textUnderlineOffset: 3,
+              transition: 'text-decoration-color 0.12s ease, color 0.12s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = 'var(--color-text)';
+              e.currentTarget.style.textDecorationColor = 'var(--color-divider)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = 'var(--color-text-muted)';
+              e.currentTarget.style.textDecorationColor = 'transparent';
+            }}
+          >
+            Edit setup
+          </button>
+        </div>
       </div>
 
-      <div
-        ref={bedRef}
-        onContextMenu={handleBedContextMenu}
-        onPointerDown={handleBedPointerDown}
-        onPointerMove={handleBedPointerMove}
-        onPointerUp={handleBedPointerUp}
-        style={{
-          position: 'relative',
-          width: bed.widthIn * PX_PER_INCH,
-          maxWidth: '100%',
-          height: bed.heightIn * PX_PER_INCH,
-          border: '2.5px solid var(--color-text)',
-          borderRadius: 'var(--radius-lg)',
-          background: `repeating-linear-gradient(90deg, transparent 0 ${gridPx - 1}px, #e6dbc6 ${gridPx - 1}px ${gridPx}px), repeating-linear-gradient(0deg, #f6efe0 0 ${gridPx - 1}px, #efe6d2 ${gridPx - 1}px ${gridPx}px)`,
-          touchAction: 'none',
-          userSelect: 'none',
-          boxShadow: 'var(--shadow-md)',
-        }}
-      >
-        {groupBoxes.map((box) => (
-          <GroupBoundingBox
-            key={box.groupId}
-            box={box}
-            pxPerInch={PX_PER_INCH}
-            warned={warnedGroupIds.has(box.groupId)}
-          />
-        ))}
-        {multiplyBox && <GroupBoundingBox box={multiplyBox} pxPerInch={PX_PER_INCH} active />}
+      {view === 'calendar' && <PlantingCalendar plants={plants} zoneId={profile.zoneId} />}
 
-        {effectivePlants.map((p) => {
-          const isMultiplyOrigin = multiply?.id === p.id;
-          const isSolo = (groupSizes.get(p.groupId) ?? 1) === 1;
-          return (
-            <div key={p.id} style={{ opacity: isMultiplyOrigin ? 0.85 : 1 }}>
-              <PlantToken
-                plant={p}
+      {view === 'bed' && (
+        <>
+          <div
+            ref={bedRef}
+            onContextMenu={handleBedContextMenu}
+            onPointerDown={handleBedPointerDown}
+            onPointerMove={handleBedPointerMove}
+            onPointerUp={handleBedPointerUp}
+            style={{
+              position: 'relative',
+              width: bed.widthIn * PX_PER_INCH,
+              maxWidth: '100%',
+              height: bed.heightIn * PX_PER_INCH,
+              border: '2.5px solid var(--color-text)',
+              borderRadius: 'var(--radius-lg)',
+              background: `repeating-linear-gradient(90deg, transparent 0 ${gridPx - 1}px, #e6dbc6 ${gridPx - 1}px ${gridPx}px), repeating-linear-gradient(0deg, #f6efe0 0 ${gridPx - 1}px, #efe6d2 ${gridPx - 1}px ${gridPx}px)`,
+              touchAction: 'none',
+              userSelect: 'none',
+              boxShadow: 'var(--shadow-md)',
+            }}
+          >
+            {groupBoxes.map((box) => (
+              <GroupBoundingBox
+                key={box.groupId}
+                box={box}
                 pxPerInch={PX_PER_INCH}
-                diameter={PLANT_DIAMETER}
-                warned={isSolo && warnedGroupIds.has(p.groupId)}
-                handlers={gestureHandlers}
+                warned={warnedGroupIds.has(box.groupId)}
               />
-            </div>
-          );
-        })}
+            ))}
+            {multiplyBox && <GroupBoundingBox box={multiplyBox} pxPerInch={PX_PER_INCH} active />}
 
-        {multiply?.ghosts.map((g, i) => {
-          const origin = plants.find((p) => p.id === multiply.id);
-          if (!origin) return null;
-          const color = CROP_COLORS[origin.cropId];
-          return (
-            <div
-              key={i}
-              style={{
-                position: 'absolute',
-                left: g.x * PX_PER_INCH,
-                top: g.y * PX_PER_INCH,
-                transform: 'translate(-50%, -50%)',
-                pointerEvents: 'none',
-                opacity: 0.55,
-              }}
-            >
+            {effectivePlants.map((p) => {
+              const isMultiplyOrigin = multiply?.id === p.id;
+              const isSolo = (groupSizes.get(p.groupId) ?? 1) === 1;
+              return (
+                <div key={p.id} style={{ opacity: isMultiplyOrigin ? 0.85 : 1 }}>
+                  <PlantToken
+                    plant={p}
+                    pxPerInch={PX_PER_INCH}
+                    diameter={PLANT_DIAMETER}
+                    warned={isSolo && warnedGroupIds.has(p.groupId)}
+                    handlers={gestureHandlers}
+                  />
+                </div>
+              );
+            })}
+
+            {multiply?.ghosts.map((g, i) => {
+              const origin = plants.find((p) => p.id === multiply.id);
+              if (!origin) return null;
+              const color = CROP_COLORS[origin.cropId];
+              return (
+                <div
+                  key={i}
+                  style={{
+                    position: 'absolute',
+                    left: g.x * PX_PER_INCH,
+                    top: g.y * PX_PER_INCH,
+                    transform: 'translate(-50%, -50%)',
+                    pointerEvents: 'none',
+                    opacity: 0.55,
+                  }}
+                >
+                  <div
+                    style={{
+                      border: `1.5px dashed ${color}`,
+                      borderRadius: '999px',
+                      width: PLANT_DIAMETER,
+                      height: PLANT_DIAMETER,
+                    }}
+                  />
+                </div>
+              );
+            })}
+
+            {multiply && multiply.ghosts.length > 0 && (
               <div
                 style={{
-                  border: `1.5px dashed ${color}`,
+                  position: 'absolute',
+                  left: 12,
+                  bottom: 12,
+                  background: 'var(--color-text)',
+                  color: '#fffdf8',
                   borderRadius: '999px',
-                  width: PLANT_DIAMETER,
-                  height: PLANT_DIAMETER,
+                  padding: '5px 12px',
+                  font: '600 12px Figtree',
+                  pointerEvents: 'none',
                 }}
-              />
-            </div>
-          );
-        })}
+              >
+                +{multiply.ghosts.length}
+              </div>
+            )}
 
-        {multiply && multiply.ghosts.length > 0 && (
-          <div
-            style={{
-              position: 'absolute',
-              left: 12,
-              bottom: 12,
-              background: 'var(--color-text)',
-              color: '#fffdf8',
-              borderRadius: '999px',
-              padding: '5px 12px',
-              font: '600 12px Figtree',
-              pointerEvents: 'none',
-            }}
-          >
-            +{multiply.ghosts.length}
+            {plants.length === 0 && !menuState && (
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  pointerEvents: 'none',
+                  padding: 24,
+                  textAlign: 'center',
+                }}
+              >
+                <p style={{ font: '400 17px Caveat, cursive', color: '#9a8c76', maxWidth: 320 }}>
+                  Empty so far — long-press or right-click the bed to plant something.
+                </p>
+              </div>
+            )}
           </div>
-        )}
 
-        {plants.length === 0 && !menuState && (
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              pointerEvents: 'none',
-              padding: 24,
-              textAlign: 'center',
-            }}
-          >
-            <p style={{ font: '400 17px Caveat, cursive', color: '#9a8c76', maxWidth: 320 }}>
-              Empty so far — long-press or right-click the bed to plant something.
-            </p>
-          </div>
-        )}
-      </div>
+          {menuState && (
+            <PlantMenu
+              clientX={menuState.clientX}
+              clientY={menuState.clientY}
+              bedXIn={menuState.xIn}
+              bedYIn={menuState.yIn}
+              bedWidthIn={bed.widthIn}
+              bedHeightIn={bed.heightIn}
+              existingPlants={plants}
+              onPick={(cropId) => {
+                addPlants([{ id: uid(), cropId, x: menuState.xIn, y: menuState.yIn, groupId: uid() }]);
+                setMenuState(null);
+              }}
+              onClose={() => setMenuState(null)}
+            />
+          )}
 
-      {menuState && (
-        <PlantMenu
-          clientX={menuState.clientX}
-          clientY={menuState.clientY}
-          bedXIn={menuState.xIn}
-          bedYIn={menuState.yIn}
-          bedWidthIn={bed.widthIn}
-          bedHeightIn={bed.heightIn}
-          existingPlants={plants}
-          onPick={(cropId) => {
-            addPlants([{ id: uid(), cropId, x: menuState.xIn, y: menuState.yIn, groupId: uid() }]);
-            setMenuState(null);
-          }}
-          onClose={() => setMenuState(null)}
-        />
-      )}
+          {quickActionsPlant && quickActions && (
+            <QuickActionsPopover
+              clientX={quickActions.clientX}
+              clientY={quickActions.clientY}
+              onClose={() => setQuickActions(null)}
+              onRemove={() => {
+                removePlant(quickActionsPlant.id);
+                setQuickActions(null);
+              }}
+              onDuplicate={() => {
+                const spacing = getCrop(quickActionsPlant.cropId).spacingIn;
+                const nx = clamp(quickActionsPlant.x + spacing * 0.8, 0, bed.widthIn);
+                const ny = clamp(quickActionsPlant.y, 0, bed.heightIn);
+                if (fitsAt(nx, ny, spacing, bed.widthIn, bed.heightIn, plants)) {
+                  addPlants([{ id: uid(), cropId: quickActionsPlant.cropId, x: nx, y: ny, groupId: uid() }]);
+                }
+                setQuickActions(null);
+              }}
+            />
+          )}
 
-      {quickActionsPlant && quickActions && (
-        <QuickActionsPopover
-          clientX={quickActions.clientX}
-          clientY={quickActions.clientY}
-          onClose={() => setQuickActions(null)}
-          onRemove={() => {
-            removePlant(quickActionsPlant.id);
-            setQuickActions(null);
-          }}
-          onDuplicate={() => {
-            const spacing = getCrop(quickActionsPlant.cropId).spacingIn;
-            const nx = clamp(quickActionsPlant.x + spacing * 0.8, 0, bed.widthIn);
-            const ny = clamp(quickActionsPlant.y, 0, bed.heightIn);
-            if (fitsAt(nx, ny, spacing, bed.widthIn, bed.heightIn, plants)) {
-              addPlants([{ id: uid(), cropId: quickActionsPlant.cropId, x: nx, y: ny, groupId: uid() }]);
-            }
-            setQuickActions(null);
-          }}
-        />
-      )}
-
-      {selectedPlant && (
-        <PlantInfoCard
-          plant={selectedPlant}
-          zoneId={profile.zoneId}
-          warned={warnedGroupIds.has(selectedPlant.groupId)}
-          groupCount={groupCount}
-          onClose={() => setSelectedId(null)}
-          onSetVariety={(variety) => setVariety(selectedPlant.id, variety)}
-          onRemove={() => {
-            removePlant(selectedPlant.id);
-            setSelectedId(null);
-          }}
-          onRemoveGroup={() => {
-            removeGroup(selectedPlant.groupId);
-            setSelectedId(null);
-          }}
-          onDismissConflict={() => dismissConflictsForGroup(selectedPlant.groupId)}
-        />
+          {selectedPlant && (
+            <PlantInfoCard
+              plant={selectedPlant}
+              zoneId={profile.zoneId}
+              warned={warnedGroupIds.has(selectedPlant.groupId)}
+              groupCount={groupCount}
+              onClose={() => setSelectedId(null)}
+              onSetVariety={(variety) => setVariety(selectedPlant.id, variety)}
+              onRemove={() => {
+                removePlant(selectedPlant.id);
+                setSelectedId(null);
+              }}
+              onRemoveGroup={() => {
+                removeGroup(selectedPlant.groupId);
+                setSelectedId(null);
+              }}
+              onDismissConflict={() => dismissConflictsForGroup(selectedPlant.groupId)}
+            />
+          )}
+        </>
       )}
     </div>
+  );
+}
+
+function ViewTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={active ? 'btn btn-primary' : 'btn btn-secondary'}
+      style={{ padding: '8px 14px', font: '600 12.5px Figtree' }}
+    >
+      {label}
+    </button>
   );
 }
 
