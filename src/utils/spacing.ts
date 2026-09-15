@@ -43,7 +43,11 @@ export function findOverlapConflicts(plants: PlantInstance[]): OverlapConflict[]
   return conflicts;
 }
 
-/** Whether a new plant of the given spacing fits at (x, y) without crowding existing plants or the bed edge. */
+/**
+ * Whether a new plant of the given spacing fits at (x, y) without crowding existing plants.
+ * Only the plant's own center has to stay inside the bed — its spacing ring (the area it
+ * needs to grow) may extend past the edge, e.g. into a path or the yard beyond the bed.
+ */
 export function fitsAt(
   x: number,
   y: number,
@@ -52,8 +56,8 @@ export function fitsAt(
   bedHeightIn: number,
   existing: PlantInstance[],
 ): boolean {
+  if (x < 0 || y < 0 || x > bedWidthIn || y > bedHeightIn) return false;
   const r = spacingIn / 2;
-  if (x - r < 0 || y - r < 0 || x + r > bedWidthIn || y + r > bedHeightIn) return false;
   for (const p of existing) {
     const otherR = getCrop(p.cropId).spacingIn / 2;
     const dx = p.x - x;

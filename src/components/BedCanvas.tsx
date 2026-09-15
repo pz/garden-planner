@@ -3,6 +3,16 @@ import { useGarden } from '../state/gardenStore';
 import type { PlantInstance } from '../types';
 import { getCrop } from '../data/crops';
 import { conflictKey, findOverlapConflicts, fitsAt } from '../utils/spacing';
+import {
+  boundingBox,
+  clampGroupDelta,
+  computeGhosts,
+  computeGroupBoxes,
+  lockedAxis,
+  GROUP_BOX_PAD_IN,
+  AXIS_LOCK_THRESHOLD_FACTOR,
+  type Point,
+} from '../utils/geometry';
 import { PlantToken, LONG_PRESS_MS, MOVE_THRESHOLD_PX, type GestureHandlers } from './PlantToken';
 import { PlantMenu } from './PlantMenu';
 import { PlantInfoCard } from './PlantInfoCard';
@@ -17,185 +27,6 @@ function uid(): string {
 
 function clamp(v: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, v));
-}
-
-/**
- * Clamp a proposed (dx, dy) translation so every member of a group stays within
- * the bed once moved — keeping the whole patch rigid (all members shift by the
- * same amount) rather than letting the bed edge distort its shape.
- */
-function clampGroupDelta(
-  members: PlantInstance[],
-  dx: number,
-  dy: number,
-  boundW: number,
-  boundH: number,
-): Point {
-  let minDx = -Infinity;
-  let maxDx = Infinity;
-  let minDy = -Infinity;
-  let maxDy = Infinity;
-  for (const m of members) {
-    const r = getCrop(m.cropId).spacingIn / 2;
-    minDx = Math.max(minDx, r - m.x);
-    maxDx = Math.min(maxDx, boundW - r - m.x);
-    minDy = Math.max(minDy, r - m.y);
-    maxDy = Math.min(maxDy, boundH - r - m.y);
-  }
-  return { x: clamp(dx, minDx, maxDx), y: clamp(dy, minDy, maxDy) };
-}
-
-interface Point {
-  x: number;
-  y: number;
-}
-
-interface GroupBox {
-  groupId: string;
-  cropId: string;
-  /** Center of the box, in inches. */
-  centerX: number;
-  centerY: number;
-  /** Extent along the box's own axes, in inches (not world-axis-aligned). */
-  width: number;
-  height: number;
-  /** Rotation of the box's width-axis from the world x-axis, in degrees. */
-  angleDeg: number;
-}
-
-const GROUP_BOX_PAD_IN = 1.25;
-
-/**
- * Minimum-footprint oriented bounding box around a set of circles, so a diagonal
- * line of plants gets a diagonal box instead of an axis-aligned one that balloons
- * to fit the diagonal. Orientation comes from the points' principal axis (PCA on
- * the 2x2 covariance matrix) — exact for a line of points, and a reasonable
- * best-fit for any other cluster shape.
- */
-function computeOrientedBox(
-  points: { x: number; y: number; r: number }[],
-  padIn: number,
-): Omit<GroupBox, 'groupId' | 'cropId'> {
-  const n = points.length;
-  const cx = points.reduce((sum, p) => sum + p.x, 0) / n;
-  const cy = points.reduce((sum, p) => sum + p.y, 0) / n;
-
-  let sxx = 0;
-  let syy = 0;
-  let sxy = 0;
-  for (const p of points) {
-    const dx = p.x - cx;
-    const dy = p.y - cy;
-    sxx += dx * dx;
-    syy += dy * dy;
-    sxy += dx * dy;
-  }
-  const angle = 0.5 * Math.atan2(2 * sxy, sxx - syy);
-  const cosA = Math.cos(angle);
-  const sinA = Math.sin(angle);
-
-  let minU = Infinity;
-  let maxU = -Infinity;
-  let minV = Infinity;
-  let maxV = -Infinity;
-  for (const p of points) {
-    const dx = p.x - cx;
-    const dy = p.y - cy;
-    const u = dx * cosA + dy * sinA;
-    const v = -dx * sinA + dy * cosA;
-    minU = Math.min(minU, u - p.r);
-    maxU = Math.max(maxU, u + p.r);
-    minV = Math.min(minV, v - p.r);
-    maxV = Math.max(maxV, v + p.r);
-  }
-
-  const localCenterU = (minU + maxU) / 2;
-  const localCenterV = (minV + maxV) / 2;
-  return {
-    centerX: cx + localCenterU * cosA - localCenterV * sinA,
-    centerY: cy + localCenterU * sinA + localCenterV * cosA,
-    width: maxU - minU + padIn * 2,
-    height: maxV - minV + padIn * 2,
-    angleDeg: (angle * 180) / Math.PI,
-  };
-}
-
-/** One bounding box per patch (a groupId shared by more than one plant) so it reads as a single entity. */
-function computeGroupBoxes(plants: PlantInstance[]): GroupBox[] {
-  const byGroup = new Map<string, PlantInstance[]>();
-  for (const p of plants) {
-    const members = byGroup.get(p.groupId);
-    if (members) members.push(p);
-    else byGroup.set(p.groupId, [p]);
-  }
-  const boxes: GroupBox[] = [];
-  for (const [groupId, members] of byGroup) {
-    if (members.length < 2) continue;
-    const points = members.map((m) => ({ x: m.x, y: m.y, r: getCrop(m.cropId).spacingIn / 2 }));
-    boxes.push({ groupId, cropId: members[0].cropId, ...computeOrientedBox(points, GROUP_BOX_PAD_IN) });
-  }
-  return boxes;
-}
-
-const AXIS_LOCK_THRESHOLD_FACTOR = 0.6;
-const AXIS_SNAP_TOLERANCE_DEG = 8;
-
-/**
- * A drag direction, snapped to the nearest bed-aligned cardinal (0/90/180/270)
- * when it's within a few degrees of one — so a row meant to run straight along
- * the bed doesn't end up a hair off from imprecise pointer movement — and left
- * alone otherwise, so a deliberately diagonal patch (turn 6a-style) still works.
- */
-function snappedDirection(dx: number, dy: number): Point {
-  const dist = Math.hypot(dx, dy);
-  const ux = dx / dist;
-  const uy = dy / dist;
-  const angleDeg = (Math.atan2(uy, ux) * 180) / Math.PI;
-  const nearestCardinal = Math.round(angleDeg / 90) * 90;
-  if (Math.abs(angleDeg - nearestCardinal) <= AXIS_SNAP_TOLERANCE_DEG) {
-    const rad = (nearestCardinal * Math.PI) / 180;
-    return { x: Math.cos(rad), y: Math.sin(rad) };
-  }
-  return { x: ux, y: uy };
-}
-
-/**
- * Ghost points for a patch dragged out from `origin` along a locked `axis` —
- * one column per spacing step along the axis, one row per spacing step
- * perpendicular to it, so a single drag sweeps out a line (rows = 0) or a
- * rectangular grid (rows > 0), matching "drag a patch to size."
- */
-function computeGridGhosts(
-  origin: Point,
-  axis: Point,
-  cursor: Point,
-  spacingIn: number,
-  boundW: number,
-  boundH: number,
-): Point[] {
-  const dx = cursor.x - origin.x;
-  const dy = cursor.y - origin.y;
-  const u = dx * axis.x + dy * axis.y; // signed distance along the axis
-  const v = -dx * axis.y + dy * axis.x; // signed distance perpendicular to it
-  const cols = Math.max(0, Math.floor(Math.abs(u) / spacingIn));
-  const rows = Math.max(0, Math.floor(Math.abs(v) / spacingIn));
-  const colSign = u < 0 ? -1 : 1;
-  const rowSign = v < 0 ? -1 : 1;
-  const perpX = -axis.y;
-  const perpY = axis.x;
-  const r = spacingIn / 2;
-
-  const pts: Point[] = [];
-  for (let row = 0; row <= rows; row++) {
-    for (let col = 0; col <= cols; col++) {
-      if (row === 0 && col === 0) continue; // origin is already a placed plant
-      const x = origin.x + axis.x * spacingIn * col * colSign + perpX * spacingIn * row * rowSign;
-      const y = origin.y + axis.y * spacingIn * col * colSign + perpY * spacingIn * row * rowSign;
-      if (x - r < 0 || y - r < 0 || x + r > boundW || y + r > boundH) continue;
-      pts.push({ x, y });
-    }
-  }
-  return pts;
 }
 
 export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
@@ -350,10 +181,10 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
         const dy = coords.y - prev.origin.y;
         let axis = prev.axis;
         if (!axis && Math.hypot(dx, dy) >= spacing * AXIS_LOCK_THRESHOLD_FACTOR) {
-          axis = snappedDirection(dx, dy);
+          axis = lockedAxis(dx, dy);
         }
         if (!axis) return { ...prev, ghosts: [] };
-        const ghosts = computeGridGhosts(prev.origin, axis, coords, spacing, bed.widthIn, bed.heightIn);
+        const ghosts = computeGhosts(prev.origin, axis, coords, spacing, bed.widthIn, bed.heightIn);
         return { ...prev, axis, ghosts };
       });
     },
@@ -384,7 +215,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
     if (!origin) return null;
     const r = getCrop(origin.cropId).spacingIn / 2;
     const points = [multiply.origin, ...multiply.ghosts].map((pt) => ({ x: pt.x, y: pt.y, r }));
-    return { cropId: origin.cropId, ...computeOrientedBox(points, GROUP_BOX_PAD_IN) };
+    return { cropId: origin.cropId, ...boundingBox(points, GROUP_BOX_PAD_IN) };
   }, [multiply, plants]);
 
   const selectedPlant = selectedId ? plants.find((p) => p.id === selectedId) ?? null : null;
@@ -586,7 +417,7 @@ function GroupBoundingBox({
   active = false,
   warned = false,
 }: {
-  box: { cropId: string; centerX: number; centerY: number; width: number; height: number; angleDeg: number };
+  box: { cropId: string; left: number; top: number; width: number; height: number };
   pxPerInch: number;
   active?: boolean;
   warned?: boolean;
@@ -596,11 +427,10 @@ function GroupBoundingBox({
     <div
       style={{
         position: 'absolute',
-        left: box.centerX * pxPerInch,
-        top: box.centerY * pxPerInch,
+        left: box.left * pxPerInch,
+        top: box.top * pxPerInch,
         width: box.width * pxPerInch,
         height: box.height * pxPerInch,
-        transform: `translate(-50%, -50%) rotate(${box.angleDeg}deg)`,
         border: `1.5px dashed ${warned ? 'var(--color-warning)' : color}`,
         borderRadius: 'var(--radius-md)',
         background: `color-mix(in oklch, ${color} ${active ? 10 : 6}%, transparent)`,
@@ -624,8 +454,6 @@ function GroupBoundingBox({
             alignItems: 'center',
             justifyContent: 'center',
             border: '1.5px solid #fffdf8',
-            // Counter-rotate so the badge stays upright regardless of the patch's orientation.
-            transform: `rotate(${-box.angleDeg}deg)`,
           }}
         >
           !
