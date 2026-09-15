@@ -1,29 +1,53 @@
 import type { PlantInstance } from '../types';
 import { getCrop } from '../data/crops';
 
-/** Ids of plants that are too close to another plant (crossing either one's minimum spacing). */
-export function findOverlapWarnings(plants: PlantInstance[]): Set<string> {
-  const warned = new Set<string>();
+export interface OverlapConflict {
+  /** groupIds of the two conflicting entities (a patch or a solo plant), canonically a < b. */
+  a: string;
+  b: string;
+}
+
+/** Canonical, order-independent key for a conflict between two groupIds. */
+export function conflictKey(a: string, b: string): string {
+  return a < b ? `${a}::${b}` : `${b}::${a}`;
+}
+
+/**
+ * Pairs of entities (a patch or a solo plant, identified by groupId) that sit closer than
+ * either crop's required spacing. Warnings live on the entity, not the individual plant, so
+ * two members of the same patch never conflict with each other, and one dismissal at the
+ * entity level (see conflictKey) resolves the warning on both sides of the pair.
+ */
+export function findOverlapConflicts(plants: PlantInstance[]): OverlapConflict[] {
+  const seen = new Set<string>();
+  const conflicts: OverlapConflict[] = [];
   for (let i = 0; i < plants.length; i++) {
     for (let j = i + 1; j < plants.length; j++) {
-      const a = plants[i];
-      const b = plants[j];
-      if (a.groupId === b.groupId) continue; // members of the same patch are meant to sit close
-      const dx = a.x - b.x;
-      const dy = a.y - b.y;
+      const p = plants[i];
+      const q = plants[j];
+      if (p.groupId === q.groupId) continue; // members of the same patch are meant to sit close
+      const dx = p.x - q.x;
+      const dy = p.y - q.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      // Two plants conflict once they're closer than the average of their required spacing.
-      const requiredGap = (getCrop(a.cropId).spacingIn + getCrop(b.cropId).spacingIn) / 2;
+      // Two entities conflict once any pair of their members is closer than the average of their required spacing.
+      const requiredGap = (getCrop(p.cropId).spacingIn + getCrop(q.cropId).spacingIn) / 2;
       if (dist < requiredGap) {
-        warned.add(a.id);
-        warned.add(b.id);
+        const key = conflictKey(p.groupId, q.groupId);
+        if (!seen.has(key)) {
+          seen.add(key);
+          conflicts.push(p.groupId < q.groupId ? { a: p.groupId, b: q.groupId } : { a: q.groupId, b: p.groupId });
+        }
       }
     }
   }
-  return warned;
+  return conflicts;
 }
 
-/** Whether a new plant of the given spacing fits at (x, y) without crowding existing plants or the bed edge. */
+/**
+ * Whether a new plant of the given spacing fits at (x, y) without crowding existing plants.
+ * Only the plant's own center has to stay inside the bed — its spacing ring (the area it
+ * needs to grow) may extend past the edge, e.g. into a path or the yard beyond the bed.
+ */
 export function fitsAt(
   x: number,
   y: number,
@@ -32,8 +56,8 @@ export function fitsAt(
   bedHeightIn: number,
   existing: PlantInstance[],
 ): boolean {
+  if (x < 0 || y < 0 || x > bedWidthIn || y > bedHeightIn) return false;
   const r = spacingIn / 2;
-  if (x - r < 0 || y - r < 0 || x + r > bedWidthIn || y + r > bedHeightIn) return false;
   for (const p of existing) {
     const otherR = getCrop(p.cropId).spacingIn / 2;
     const dx = p.x - x;

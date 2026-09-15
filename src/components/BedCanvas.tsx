@@ -1,8 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useGarden } from '../state/gardenStore';
+import type { PlantInstance } from '../types';
 import { getCrop } from '../data/crops';
-import { findOverlapWarnings, fitsAt } from '../utils/spacing';
-import { computeOrientedBox, computeGroupBoxes, computeGhosts, GROUP_BOX_PAD_IN, type Point } from '../utils/geometry';
+import { conflictKey, findOverlapConflicts, fitsAt } from '../utils/spacing';
+import {
+  boundingBox,
+  clampGroupDelta,
+  computeGhosts,
+  computeGroupBoxes,
+  lockedAxis,
+  GROUP_BOX_PAD_IN,
+  AXIS_LOCK_THRESHOLD_FACTOR,
+  type Point,
+} from '../utils/geometry';
 import { PlantToken, LONG_PRESS_MS, MOVE_THRESHOLD_PX, type GestureHandlers } from './PlantToken';
 import { PlantMenu } from './PlantMenu';
 import { PlantInfoCard } from './PlantInfoCard';
@@ -20,7 +30,7 @@ function clamp(v: number, min: number, max: number): number {
 }
 
 export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
-  const { plan, addPlants, movePlant, removePlant, removeGroup, setVariety, dismissWarning } = useGarden();
+  const { plan, addPlants, moveGroup, removePlant, removeGroup, setVariety, dismissConflictsForGroup } = useGarden();
   const { bed, plants, profile } = plan;
 
   const bedRef = useRef<HTMLDivElement>(null);
@@ -34,16 +44,46 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
   const [quickActions, setQuickActions] = useState<{ id: string; clientX: number; clientY: number } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const [movePreview, setMovePreview] = useState<{ id: string; x: number; y: number } | null>(null);
-  const [multiply, setMultiply] = useState<{ id: string; origin: Point; ghosts: Point[] } | null>(null);
+  // A drag moves the whole patch (every plant sharing groupId) rigidly, never a single
+  // member on its own — `members` is a snapshot of the group's positions at drag start,
+  // and (dx, dy) is the same translation applied to every one of them.
+  const [moveState, setMoveState] = useState<{
+    groupId: string;
+    anchorOriginal: Point;
+    members: PlantInstance[];
+    dx: number;
+    dy: number;
+  } | null>(null);
+  const [multiply, setMultiply] = useState<{ id: string; origin: Point; axis: Point | null; ghosts: Point[] } | null>(
+    null,
+  );
 
-  const warned = useMemo(() => findOverlapWarnings(plants), [plants]);
+  const conflicts = useMemo(() => findOverlapConflicts(plants), [plants]);
+  const dismissedKeys = useMemo(() => new Set(plan.dismissedConflictKeys), [plan.dismissedConflictKeys]);
+  const warnedGroupIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const c of conflicts) {
+      if (!dismissedKeys.has(conflictKey(c.a, c.b))) {
+        s.add(c.a);
+        s.add(c.b);
+      }
+    }
+    return s;
+  }, [conflicts, dismissedKeys]);
+  const groupSizes = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of plants) m.set(p.groupId, (m.get(p.groupId) ?? 0) + 1);
+    return m;
+  }, [plants]);
 
-  // Apply the live move-preview position so a dragged patch member's bounding box
-  // (and the plant itself) tracks the pointer instead of its last-committed spot.
+  // Apply the live move-preview offset so a dragged patch's bounding box (and every
+  // member plant) tracks the pointer together, instead of only the grabbed one.
   const effectivePlants = useMemo(
-    () => plants.map((p) => (movePreview?.id === p.id ? { ...p, x: movePreview.x, y: movePreview.y } : p)),
-    [plants, movePreview],
+    () =>
+      plants.map((p) =>
+        moveState && p.groupId === moveState.groupId ? { ...p, x: p.x + moveState.dx, y: p.y + moveState.dy } : p,
+      ),
+    [plants, moveState],
   );
 
   const groupBoxes = useMemo(() => computeGroupBoxes(effectivePlants), [effectivePlants]);
@@ -105,32 +145,48 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
     onQuickActions: (id, clientX, clientY) => setQuickActions({ id, clientX, clientY }),
     onMoveStart: (id) => {
       const p = plants.find((pl) => pl.id === id);
-      if (p) setMovePreview({ id, x: p.x, y: p.y });
+      if (!p) return;
+      const members = plants.filter((pl) => pl.groupId === p.groupId);
+      setMoveState({ groupId: p.groupId, anchorOriginal: { x: p.x, y: p.y }, members, dx: 0, dy: 0 });
     },
-    onMoveUpdate: (id, clientX, clientY) => {
+    onMoveUpdate: (_id, clientX, clientY) => {
       const coords = toBedCoords(clientX, clientY);
-      if (coords) setMovePreview({ id, x: coords.x, y: coords.y });
+      if (!coords) return;
+      setMoveState((prev) => {
+        if (!prev) return prev;
+        const rawDx = coords.x - prev.anchorOriginal.x;
+        const rawDy = coords.y - prev.anchorOriginal.y;
+        const { x: dx, y: dy } = clampGroupDelta(prev.members, rawDx, rawDy, bed.widthIn, bed.heightIn);
+        return { ...prev, dx, dy };
+      });
     },
-    onMoveEnd: (id, committed) => {
-      if (committed && movePreview && movePreview.id === id) {
-        movePlant(id, movePreview.x, movePreview.y);
+    onMoveEnd: (_id, committed) => {
+      if (committed && moveState && (moveState.dx !== 0 || moveState.dy !== 0)) {
+        moveGroup(moveState.groupId, moveState.dx, moveState.dy);
       }
-      setMovePreview(null);
+      setMoveState(null);
     },
     onMultiplyStart: (id) => {
       const p = plants.find((pl) => pl.id === id);
-      if (p) setMultiply({ id, origin: { x: p.x, y: p.y }, ghosts: [] });
+      if (p) setMultiply({ id, origin: { x: p.x, y: p.y }, axis: null, ghosts: [] });
     },
     onMultiplyUpdate: (id, clientX, clientY) => {
       const coords = toBedCoords(clientX, clientY);
       const p = plants.find((pl) => pl.id === id);
       if (!coords || !p) return;
       const spacing = getCrop(p.cropId).spacingIn;
-      setMultiply((prev) =>
-        prev && prev.id === id
-          ? { ...prev, ghosts: computeGhosts(prev.origin, coords, spacing, bed.widthIn, bed.heightIn) }
-          : prev,
-      );
+      setMultiply((prev) => {
+        if (!prev || prev.id !== id) return prev;
+        const dx = coords.x - prev.origin.x;
+        const dy = coords.y - prev.origin.y;
+        let axis = prev.axis;
+        if (!axis && Math.hypot(dx, dy) >= spacing * AXIS_LOCK_THRESHOLD_FACTOR) {
+          axis = lockedAxis(dx, dy);
+        }
+        if (!axis) return { ...prev, ghosts: [] };
+        const ghosts = computeGhosts(prev.origin, axis, coords, spacing, bed.widthIn, bed.heightIn);
+        return { ...prev, axis, ghosts };
+      });
     },
     onMultiplyEnd: (id, committed) => {
       if (committed && multiply && multiply.id === id && multiply.ghosts.length > 0) {
@@ -159,7 +215,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
     if (!origin) return null;
     const r = getCrop(origin.cropId).spacingIn / 2;
     const points = [multiply.origin, ...multiply.ghosts].map((pt) => ({ x: pt.x, y: pt.y, r }));
-    return { cropId: origin.cropId, ...computeOrientedBox(points, GROUP_BOX_PAD_IN) };
+    return { cropId: origin.cropId, ...boundingBox(points, GROUP_BOX_PAD_IN) };
   }, [multiply, plants]);
 
   const selectedPlant = selectedId ? plants.find((p) => p.id === selectedId) ?? null : null;
@@ -203,19 +259,25 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
         }}
       >
         {groupBoxes.map((box) => (
-          <GroupBoundingBox key={box.groupId} box={box} pxPerInch={PX_PER_INCH} />
+          <GroupBoundingBox
+            key={box.groupId}
+            box={box}
+            pxPerInch={PX_PER_INCH}
+            warned={warnedGroupIds.has(box.groupId)}
+          />
         ))}
         {multiplyBox && <GroupBoundingBox box={multiplyBox} pxPerInch={PX_PER_INCH} active />}
 
         {effectivePlants.map((p) => {
           const isMultiplyOrigin = multiply?.id === p.id;
+          const isSolo = (groupSizes.get(p.groupId) ?? 1) === 1;
           return (
             <div key={p.id} style={{ opacity: isMultiplyOrigin ? 0.85 : 1 }}>
               <PlantToken
                 plant={p}
                 pxPerInch={PX_PER_INCH}
                 diameter={PLANT_DIAMETER}
-                warned={warned.has(p.id) && !p.warningDismissed}
+                warned={isSolo && warnedGroupIds.has(p.groupId)}
                 handlers={gestureHandlers}
               />
             </div>
@@ -330,7 +392,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
         <PlantInfoCard
           plant={selectedPlant}
           zoneId={profile.zoneId}
-          warned={warned.has(selectedPlant.id) && !selectedPlant.warningDismissed}
+          warned={warnedGroupIds.has(selectedPlant.groupId)}
           groupCount={groupCount}
           onClose={() => setSelectedId(null)}
           onSetVariety={(variety) => setVariety(selectedPlant.id, variety)}
@@ -342,7 +404,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
             removeGroup(selectedPlant.groupId);
             setSelectedId(null);
           }}
-          onDismissWarning={() => dismissWarning(selectedPlant.id)}
+          onDismissConflict={() => dismissConflictsForGroup(selectedPlant.groupId)}
         />
       )}
     </div>
@@ -353,28 +415,51 @@ function GroupBoundingBox({
   box,
   pxPerInch,
   active = false,
+  warned = false,
 }: {
-  box: { cropId: string; centerX: number; centerY: number; width: number; height: number; angleDeg: number };
+  box: { cropId: string; left: number; top: number; width: number; height: number };
   pxPerInch: number;
   active?: boolean;
+  warned?: boolean;
 }) {
   const color = CROP_COLORS[box.cropId] ?? 'var(--color-text)';
   return (
     <div
       style={{
         position: 'absolute',
-        left: box.centerX * pxPerInch,
-        top: box.centerY * pxPerInch,
+        left: box.left * pxPerInch,
+        top: box.top * pxPerInch,
         width: box.width * pxPerInch,
         height: box.height * pxPerInch,
-        transform: `translate(-50%, -50%) rotate(${box.angleDeg}deg)`,
-        border: `1.5px dashed ${color}`,
+        border: `1.5px dashed ${warned ? 'var(--color-warning)' : color}`,
         borderRadius: 'var(--radius-md)',
         background: `color-mix(in oklch, ${color} ${active ? 10 : 6}%, transparent)`,
         opacity: active ? 0.9 : 1,
         pointerEvents: 'none',
       }}
-    />
+    >
+      {warned && (
+        <div
+          style={{
+            position: 'absolute',
+            top: -8,
+            right: -8,
+            width: 18,
+            height: 18,
+            borderRadius: '999px',
+            background: 'var(--color-warning)',
+            color: '#fffdf8',
+            font: '700 11px Figtree',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: '1.5px solid #fffdf8',
+          }}
+        >
+          !
+        </div>
+      )}
+    </div>
   );
 }
 

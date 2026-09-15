@@ -12,11 +12,11 @@ interface GardenContextValue {
   plan: GardenPlan;
   setProfile: (profile: Profile) => void;
   addPlants: (plants: PlantInstance[]) => void;
-  movePlant: (id: string, x: number, y: number) => void;
+  moveGroup: (groupId: string, dx: number, dy: number) => void;
   removePlant: (id: string) => void;
   removeGroup: (groupId: string) => void;
   setVariety: (id: string, variety: string | undefined) => void;
-  dismissWarning: (id: string) => void;
+  dismissConflictsForGroup: (groupId: string) => void;
 }
 
 const GardenContext = createContext<GardenContextValue | null>(null);
@@ -33,11 +33,11 @@ export function GardenProvider({ children }: { children: ReactNode }) {
       plan,
       setProfile: (profile) => dispatch({ type: 'setProfile', profile }),
       addPlants: (plants) => dispatch({ type: 'addPlants', plants }),
-      movePlant: (id, x, y) => dispatch({ type: 'movePlant', id, x, y }),
+      moveGroup: (groupId, dx, dy) => dispatch({ type: 'moveGroup', groupId, dx, dy }),
       removePlant: (id) => dispatch({ type: 'removePlant', id }),
       removeGroup: (groupId) => dispatch({ type: 'removeGroup', groupId }),
       setVariety: (id, variety) => dispatch({ type: 'setVariety', id, variety }),
-      dismissWarning: (id) => dispatch({ type: 'dismissWarning', id }),
+      dismissConflictsForGroup: (groupId) => dispatch({ type: 'dismissConflictsForGroup', groupId }),
     }),
     [plan],
   );

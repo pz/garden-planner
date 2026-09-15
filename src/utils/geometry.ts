@@ -9,71 +9,27 @@ export interface Point {
 export interface GroupBox {
   groupId: string;
   cropId: string;
-  /** Center of the box, in inches. */
-  centerX: number;
-  centerY: number;
-  /** Extent along the box's own axes, in inches (not world-axis-aligned). */
+  left: number;
+  top: number;
   width: number;
   height: number;
-  /** Rotation of the box's width-axis from the world x-axis, in degrees. */
-  angleDeg: number;
 }
 
 export const GROUP_BOX_PAD_IN = 1.25;
 
-/**
- * Minimum-footprint oriented bounding box around a set of circles, so a diagonal
- * line of plants gets a diagonal box instead of an axis-aligned one that balloons
- * to fit the diagonal. Orientation comes from the points' principal axis (PCA on
- * the 2x2 covariance matrix) — exact for a line of points, and a reasonable
- * best-fit for any other cluster shape.
- */
-export function computeOrientedBox(
-  points: { x: number; y: number; r: number }[],
-  padIn: number,
-): Omit<GroupBox, 'groupId' | 'cropId'> {
-  const n = points.length;
-  const cx = points.reduce((sum, p) => sum + p.x, 0) / n;
-  const cy = points.reduce((sum, p) => sum + p.y, 0) / n;
-
-  let sxx = 0;
-  let syy = 0;
-  let sxy = 0;
+/** Axis-aligned bounding box around a set of circles, expanded by each circle's own radius. */
+export function boundingBox(points: { x: number; y: number; r: number }[], padIn: number): Omit<GroupBox, 'groupId' | 'cropId'> {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
   for (const p of points) {
-    const dx = p.x - cx;
-    const dy = p.y - cy;
-    sxx += dx * dx;
-    syy += dy * dy;
-    sxy += dx * dy;
+    minX = Math.min(minX, p.x - p.r);
+    minY = Math.min(minY, p.y - p.r);
+    maxX = Math.max(maxX, p.x + p.r);
+    maxY = Math.max(maxY, p.y + p.r);
   }
-  const angle = 0.5 * Math.atan2(2 * sxy, sxx - syy);
-  const cosA = Math.cos(angle);
-  const sinA = Math.sin(angle);
-
-  let minU = Infinity;
-  let maxU = -Infinity;
-  let minV = Infinity;
-  let maxV = -Infinity;
-  for (const p of points) {
-    const dx = p.x - cx;
-    const dy = p.y - cy;
-    const u = dx * cosA + dy * sinA;
-    const v = -dx * sinA + dy * cosA;
-    minU = Math.min(minU, u - p.r);
-    maxU = Math.max(maxU, u + p.r);
-    minV = Math.min(minV, v - p.r);
-    maxV = Math.max(maxV, v + p.r);
-  }
-
-  const localCenterU = (minU + maxU) / 2;
-  const localCenterV = (minV + maxV) / 2;
-  return {
-    centerX: cx + localCenterU * cosA - localCenterV * sinA,
-    centerY: cy + localCenterU * sinA + localCenterV * cosA,
-    width: maxU - minU + padIn * 2,
-    height: maxV - minV + padIn * 2,
-    angleDeg: (angle * 180) / Math.PI,
-  };
+  return { left: minX - padIn, top: minY - padIn, width: maxX - minX + padIn * 2, height: maxY - minY + padIn * 2 };
 }
 
 /** One bounding box per patch (a groupId shared by more than one plant) so it reads as a single entity. */
@@ -88,14 +44,32 @@ export function computeGroupBoxes(plants: PlantInstance[]): GroupBox[] {
   for (const [groupId, members] of byGroup) {
     if (members.length < 2) continue;
     const points = members.map((m) => ({ x: m.x, y: m.y, r: getCrop(m.cropId).spacingIn / 2 }));
-    boxes.push({ groupId, cropId: members[0].cropId, ...computeOrientedBox(points, GROUP_BOX_PAD_IN) });
+    boxes.push({ groupId, cropId: members[0].cropId, ...boundingBox(points, GROUP_BOX_PAD_IN) });
   }
   return boxes;
 }
 
-/** Evenly-spaced points along the drag ray from `origin`, clipped to the bed bounds. */
+export const AXIS_LOCK_THRESHOLD_FACTOR = 0.6;
+
+/**
+ * Locks a drag to whichever of the bed's two edges it's more aligned with. Patches always
+ * run horizontal or vertical, never diagonal — simpler to reason about in a small bed than
+ * a freely-rotated patch, and it keeps every patch's footprint an axis-aligned rectangle.
+ */
+export function lockedAxis(dx: number, dy: number): Point {
+  return Math.abs(dx) >= Math.abs(dy) ? { x: 1, y: 0 } : { x: 0, y: 1 };
+}
+
+/**
+ * Ghost points for a patch dragged out from `origin` along a locked `axis` — one column per
+ * spacing step along the axis, one row per spacing step perpendicular to it, so a single drag
+ * sweeps out a line (rows = 0) or a rectangular grid (rows > 0), matching "drag a patch to
+ * size." Only a ghost's own center has to stay inside the bed, matching plant placement rules
+ * generally — its spacing ring may extend past the edge.
+ */
 export function computeGhosts(
   origin: Point,
+  axis: Point,
   cursor: Point,
   spacingIn: number,
   boundW: number,
@@ -103,18 +77,43 @@ export function computeGhosts(
 ): Point[] {
   const dx = cursor.x - origin.x;
   const dy = cursor.y - origin.y;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  if (dist < spacingIn * 0.6) return [];
-  const steps = Math.floor(dist / spacingIn);
-  const ux = dx / dist;
-  const uy = dy / dist;
+  const u = dx * axis.x + dy * axis.y; // signed distance along the axis
+  const v = -dx * axis.y + dy * axis.x; // signed distance perpendicular to it
+  const cols = Math.max(0, Math.floor(Math.abs(u) / spacingIn));
+  const rows = Math.max(0, Math.floor(Math.abs(v) / spacingIn));
+  const colSign = u < 0 ? -1 : 1;
+  const rowSign = v < 0 ? -1 : 1;
+  const perpX = -axis.y;
+  const perpY = axis.x;
+
   const pts: Point[] = [];
-  for (let i = 1; i <= steps; i++) {
-    const x = origin.x + ux * spacingIn * i;
-    const y = origin.y + uy * spacingIn * i;
-    const r = spacingIn / 2;
-    if (x - r < 0 || y - r < 0 || x + r > boundW || y + r > boundH) continue;
-    pts.push({ x, y });
+  for (let row = 0; row <= rows; row++) {
+    for (let col = 0; col <= cols; col++) {
+      if (row === 0 && col === 0) continue; // origin is already a placed plant
+      const x = origin.x + axis.x * spacingIn * col * colSign + perpX * spacingIn * row * rowSign;
+      const y = origin.y + axis.y * spacingIn * col * colSign + perpY * spacingIn * row * rowSign;
+      if (x < 0 || y < 0 || x > boundW || y > boundH) continue;
+      pts.push({ x, y });
+    }
   }
   return pts;
+}
+
+/**
+ * Clamp a proposed (dx, dy) translation so every member of a group keeps its center inside
+ * the bed once moved — keeping the whole patch rigid (every member shifts by the same
+ * amount) rather than letting the bed edge distort its shape.
+ */
+export function clampGroupDelta(members: PlantInstance[], dx: number, dy: number, boundW: number, boundH: number): Point {
+  let minDx = -Infinity;
+  let maxDx = Infinity;
+  let minDy = -Infinity;
+  let maxDy = Infinity;
+  for (const m of members) {
+    minDx = Math.max(minDx, -m.x);
+    maxDx = Math.min(maxDx, boundW - m.x);
+    minDy = Math.max(minDy, -m.y);
+    maxDy = Math.min(maxDy, boundH - m.y);
+  }
+  return { x: Math.min(maxDx, Math.max(minDx, dx)), y: Math.min(maxDy, Math.max(minDy, dy)) };
 }

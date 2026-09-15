@@ -16,7 +16,7 @@ describe('parsePlan', () => {
   });
 
   it('returns the default plan when the stored version does not match', () => {
-    const stored = JSON.stringify({ ...DEFAULT_PLAN, version: 2 });
+    const stored = JSON.stringify({ ...DEFAULT_PLAN, version: 1 });
     expect(parsePlan(stored)).toEqual(DEFAULT_PLAN);
   });
 
@@ -45,19 +45,22 @@ describe('reducer', () => {
     expect(state.plants).toHaveLength(1);
   });
 
-  it('movePlant updates only the targeted plant', () => {
+  it('moveGroup translates every member of the group by the same delta', () => {
     const state = basePlan([
-      { id: 'a', cropId: 'tomato', x: 0, y: 0, groupId: 'g1' },
-      { id: 'b', cropId: 'basil', x: 5, y: 5, groupId: 'g2' },
+      { id: 'a', cropId: 'carrot', x: 0, y: 0, groupId: 'patch' },
+      { id: 'b', cropId: 'carrot', x: 3, y: 0, groupId: 'patch' },
+      { id: 'c', cropId: 'basil', x: 5, y: 5, groupId: 'solo' },
     ]);
-    const next = reducer(state, { type: 'movePlant', id: 'a', x: 10, y: 20 });
-    expect(next.plants.find((p) => p.id === 'a')).toEqual({ id: 'a', cropId: 'tomato', x: 10, y: 20, groupId: 'g1' });
-    expect(next.plants.find((p) => p.id === 'b')).toEqual(state.plants[1]);
+    const next = reducer(state, { type: 'moveGroup', groupId: 'patch', dx: 10, dy: -2 });
+    expect(next.plants.find((p) => p.id === 'a')).toEqual({ id: 'a', cropId: 'carrot', x: 10, y: -2, groupId: 'patch' });
+    expect(next.plants.find((p) => p.id === 'b')).toEqual({ id: 'b', cropId: 'carrot', x: 13, y: -2, groupId: 'patch' });
+    // other groups are untouched
+    expect(next.plants.find((p) => p.id === 'c')).toEqual(state.plants[2]);
   });
 
-  it('movePlant is a no-op when the id is not found', () => {
+  it('moveGroup is a no-op when the groupId is not found', () => {
     const state = basePlan([{ id: 'a', cropId: 'tomato', x: 0, y: 0, groupId: 'g1' }]);
-    const next = reducer(state, { type: 'movePlant', id: 'missing', x: 10, y: 20 });
+    const next = reducer(state, { type: 'moveGroup', groupId: 'missing', dx: 10, dy: 20 });
     expect(next.plants).toEqual(state.plants);
   });
 
@@ -89,14 +92,34 @@ describe('reducer', () => {
     expect(cleared.plants[0].variety).toBeUndefined();
   });
 
-  it('dismissWarning marks only the targeted plant as dismissed', () => {
-    const state = basePlan([
-      { id: 'a', cropId: 'tomato', x: 0, y: 0, groupId: 'g1' },
-      { id: 'b', cropId: 'basil', x: 5, y: 5, groupId: 'g2' },
-    ]);
-    const next = reducer(state, { type: 'dismissWarning', id: 'a' });
-    expect(next.plants.find((p) => p.id === 'a')?.warningDismissed).toBe(true);
-    expect(next.plants.find((p) => p.id === 'b')?.warningDismissed).toBeUndefined();
+  describe('dismissConflictsForGroup', () => {
+    it('records the conflict key for every pair touching the dismissed group', () => {
+      // tomato spacing 24in, basil spacing 12in -> required gap = 18in; these are 10in apart.
+      const state = basePlan([
+        { id: 'a', cropId: 'tomato', x: 0, y: 0, groupId: 'g1' },
+        { id: 'b', cropId: 'basil', x: 10, y: 0, groupId: 'g2' },
+      ]);
+      const next = reducer(state, { type: 'dismissConflictsForGroup', groupId: 'g1' });
+      expect(next.dismissedConflictKeys).toEqual(['g1::g2']);
+    });
+
+    it('is a no-op when the group has no active conflict', () => {
+      const state = basePlan([{ id: 'a', cropId: 'tomato', x: 0, y: 0, groupId: 'g1' }]);
+      const next = reducer(state, { type: 'dismissConflictsForGroup', groupId: 'g1' });
+      expect(next).toBe(state);
+    });
+
+    it('does not duplicate a key already dismissed', () => {
+      const state: GardenPlan = {
+        ...basePlan([
+          { id: 'a', cropId: 'tomato', x: 0, y: 0, groupId: 'g1' },
+          { id: 'b', cropId: 'basil', x: 10, y: 0, groupId: 'g2' },
+        ]),
+        dismissedConflictKeys: ['g1::g2'],
+      };
+      const next = reducer(state, { type: 'dismissConflictsForGroup', groupId: 'g2' });
+      expect(next.dismissedConflictKeys).toEqual(['g1::g2']);
+    });
   });
 
   it('reset returns exactly the default plan, discarding all prior state', () => {
