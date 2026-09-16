@@ -6,6 +6,11 @@ export interface Point {
   y: number;
 }
 
+export interface Size {
+  width: number;
+  height: number;
+}
+
 export interface GroupBox {
   groupId: string;
   cropId: string;
@@ -116,4 +121,66 @@ export function clampGroupDelta(members: PlantInstance[], dx: number, dy: number
     maxDy = Math.min(maxDy, boundH - m.y);
   }
   return { x: Math.min(maxDx, Math.max(minDx, dx)), y: Math.min(maxDy, Math.max(minDy, dy)) };
+}
+
+export const MIN_ZOOM = 0.5;
+export const MAX_ZOOM = 2;
+
+export function clampZoom(zoom: number): number {
+  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+}
+
+/**
+ * Clamps a pan offset so the (already-zoomed) content never leaves the viewport fully out of
+ * view: an axis where content is smaller than the viewport is centered and can't be panned at
+ * all, otherwise pan is clamped so the viewport stays fully covered by content on that axis.
+ */
+export function clampPan(pan: Point, viewport: Size, content: Size): Point {
+  return {
+    x: clampPanAxis(pan.x, viewport.width, content.width),
+    y: clampPanAxis(pan.y, viewport.height, content.height),
+  };
+}
+
+function clampPanAxis(p: number, viewport: number, content: number): number {
+  if (content <= viewport) return (viewport - content) / 2;
+  return Math.min(0, Math.max(viewport - content, p));
+}
+
+/**
+ * The unscaled content-space point currently rendered at `viewportLocal` (viewport-relative
+ * pixels), given the content layer's current pan/zoom transform (`translate(pan) scale(zoom)`,
+ * origin 0,0). Inverse of `panToAlign`.
+ */
+export function contentPointAt(viewportLocal: Point, pan: Point, zoom: number): Point {
+  return { x: (viewportLocal.x - pan.x) / zoom, y: (viewportLocal.y - pan.y) / zoom };
+}
+
+/** The pan that renders unscaled content point `contentPoint` at `viewportLocal`, at `zoom`. */
+export function panToAlign(contentPoint: Point, viewportLocal: Point, zoom: number): Point {
+  return { x: viewportLocal.x - contentPoint.x * zoom, y: viewportLocal.y - contentPoint.y * zoom };
+}
+
+/** Converts a viewport-relative pixel point to bed inches, clamped to the bed's own bounds. */
+export function clientToBedCoords(
+  viewportLocal: Point,
+  pan: Point,
+  zoom: number,
+  pxPerInch: number,
+  boundW: number,
+  boundH: number,
+): Point {
+  const contentPx = contentPointAt(viewportLocal, pan, zoom);
+  return {
+    x: Math.min(boundW, Math.max(0, contentPx.x / pxPerInch)),
+    y: Math.min(boundH, Math.max(0, contentPx.y / pxPerInch)),
+  };
+}
+
+/**
+ * The zoom level that fits the whole content within the viewport, never exceeding 100% —
+ * "fit" only zooms out to reveal everything, it never zooms in past true scale.
+ */
+export function computeFitZoom(viewport: Size, content: Size): number {
+  return clampZoom(Math.min(1, viewport.width / content.width, viewport.height / content.height));
 }

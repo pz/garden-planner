@@ -1,6 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import type { PlantInstance } from '../types';
-import { clampGroupDelta, computeGhosts, computeGroupBoxes, lockedAxis } from './geometry';
+import {
+  clampGroupDelta,
+  clampPan,
+  clampZoom,
+  clientToBedCoords,
+  computeFitZoom,
+  computeGhosts,
+  computeGroupBoxes,
+  contentPointAt,
+  lockedAxis,
+  panToAlign,
+  MAX_ZOOM,
+  MIN_ZOOM,
+} from './geometry';
 
 function plant(id: string, cropId: string, x: number, y: number, groupId: string): PlantInstance {
   return { id, cropId, x, y, groupId };
@@ -120,5 +133,96 @@ describe('clampGroupDelta', () => {
     // pushing right would send 'b' past the 96-wide bed first; the whole delta clamps to that limit.
     const { x } = clampGroupDelta(members, 10, 0, bounds.w, bounds.h);
     expect(x).toBeCloseTo(2); // 94 + x <= 96
+  });
+});
+
+describe('clampZoom', () => {
+  it('passes values already inside the range through unchanged', () => {
+    expect(clampZoom(1)).toBe(1);
+  });
+
+  it('clamps to MIN_ZOOM/MAX_ZOOM at and past each boundary', () => {
+    expect(clampZoom(MIN_ZOOM)).toBe(MIN_ZOOM);
+    expect(clampZoom(MIN_ZOOM - 0.1)).toBe(MIN_ZOOM);
+    expect(clampZoom(MAX_ZOOM)).toBe(MAX_ZOOM);
+    expect(clampZoom(MAX_ZOOM + 0.1)).toBe(MAX_ZOOM);
+  });
+});
+
+describe('clampPan', () => {
+  it('centers an axis where content exactly fits the viewport (no panning possible)', () => {
+    const pan = clampPan({ x: 50, y: -30 }, { width: 200, height: 100 }, { width: 200, height: 100 });
+    expect(pan).toEqual({ x: 0, y: 0 });
+  });
+
+  it('centers an axis where content is smaller than the viewport, ignoring the proposed pan', () => {
+    const pan = clampPan({ x: 999, y: -999 }, { width: 200, height: 100 }, { width: 100, height: 40 });
+    expect(pan).toEqual({ x: 50, y: 30 });
+  });
+
+  it('clamps so the viewport stays fully covered when content is larger, at both edges', () => {
+    // content 300 wide in a 200-wide viewport: pan.x must stay within [-100, 0]. Height matches
+    // exactly (content == viewport) so y is uninteresting here — always centers to 0.
+    const viewport = { width: 200, height: 100 };
+    const content = { width: 300, height: 100 };
+    expect(clampPan({ x: 10, y: 0 }, viewport, content)).toEqual({ x: 0, y: 0 });
+    expect(clampPan({ x: -150, y: 0 }, viewport, content)).toEqual({ x: -100, y: 0 });
+    expect(clampPan({ x: -100, y: 0 }, viewport, content)).toEqual({ x: -100, y: 0 }); // exactly at the limit
+  });
+});
+
+describe('contentPointAt / panToAlign', () => {
+  it('round-trips: the pan that aligns a content point puts that same point back under the anchor', () => {
+    const zoom = 1.5;
+    const anchor = { x: 120, y: 80 };
+    const contentPoint = { x: 40, y: 200 };
+    const pan = panToAlign(contentPoint, anchor, zoom);
+    expect(contentPointAt(anchor, pan, zoom)).toEqual(contentPoint);
+  });
+
+  it('at zoom 1 and zero pan, viewport-local and content coordinates are identical', () => {
+    expect(contentPointAt({ x: 42, y: 7 }, { x: 0, y: 0 }, 1)).toEqual({ x: 42, y: 7 });
+  });
+});
+
+describe('clientToBedCoords', () => {
+  const pxPerInch = 7;
+  const bounds = { w: 96, h: 48 };
+
+  it('converts a viewport point to inches at zoom 1 with no pan', () => {
+    const p = clientToBedCoords({ x: 70, y: 35 }, { x: 0, y: 0 }, 1, pxPerInch, bounds.w, bounds.h);
+    expect(p).toEqual({ x: 10, y: 5 });
+  });
+
+  it('accounts for pan and zoom together', () => {
+    // content point (10in, 10in) = (70px, 70px) unscaled; at zoom 2 and pan (-50,-50):
+    // viewport-local = pan + zoom*contentPx = (-50 + 140, -50 + 140) = (90, 90).
+    const p = clientToBedCoords({ x: 90, y: 90 }, { x: -50, y: -50 }, 2, pxPerInch, bounds.w, bounds.h);
+    expect(p.x).toBeCloseTo(10);
+    expect(p.y).toBeCloseTo(10);
+  });
+
+  it('clamps to the bed edge rather than returning an out-of-bounds coordinate', () => {
+    const p = clientToBedCoords({ x: -500, y: 100000 }, { x: 0, y: 0 }, 1, pxPerInch, bounds.w, bounds.h);
+    expect(p).toEqual({ x: 0, y: bounds.h });
+  });
+});
+
+describe('computeFitZoom', () => {
+  it('stays at 100% when content already fits the viewport', () => {
+    expect(computeFitZoom({ width: 400, height: 400 }, { width: 300, height: 200 })).toBe(1);
+  });
+
+  it('shrinks to fit the more constraining axis, never exceeding 100%', () => {
+    // width would allow 2x, height only 0.5x — the smaller (height) wins.
+    expect(computeFitZoom({ width: 600, height: 100 }, { width: 300, height: 200 })).toBeCloseTo(0.5);
+  });
+
+  it('never zooms in past 100% even when content is much smaller than the viewport', () => {
+    expect(computeFitZoom({ width: 2000, height: 2000 }, { width: 100, height: 100 })).toBe(1);
+  });
+
+  it('clamps the result to MIN_ZOOM for content far larger than the viewport', () => {
+    expect(computeFitZoom({ width: 100, height: 100 }, { width: 10000, height: 10000 })).toBe(MIN_ZOOM);
   });
 });

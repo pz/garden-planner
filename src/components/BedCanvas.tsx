@@ -6,12 +6,19 @@ import { conflictKey, findOverlapConflicts, fitsAt } from '../utils/spacing';
 import {
   boundingBox,
   clampGroupDelta,
+  clampPan,
+  clampZoom,
+  clientToBedCoords,
+  computeFitZoom,
   computeGhosts,
   computeGroupBoxes,
+  contentPointAt,
   lockedAxis,
+  panToAlign,
   GROUP_BOX_PAD_IN,
   AXIS_LOCK_THRESHOLD_FACTOR,
   type Point,
+  type Size,
 } from '../utils/geometry';
 import { PlantToken, LONG_PRESS_MS, MOVE_THRESHOLD_PX, type GestureHandlers } from './PlantToken';
 import { PlantMenu } from './PlantMenu';
@@ -37,11 +44,38 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
   const { bed, plants, profile } = plan;
 
   const bedRef = useRef<HTMLDivElement>(null);
-  const emptyPressRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; startX: number; startY: number } | null>(
-    null,
-  );
+
+  // Single-pointer gesture on empty bed background: starts as a pending long-press (to open
+  // the add-plant menu) and switches to a pan the moment it moves past the threshold — the
+  // same "held still" vs. "dragging" split PlantToken uses for move vs. multiply.
+  const emptyGestureRef = useRef<{
+    pointerId: number;
+    startClientX: number;
+    startClientY: number;
+    mode: 'pending' | 'panning';
+    startPan: Point;
+    timer: ReturnType<typeof setTimeout> | null;
+  } | null>(null);
+
+  // Two-finger pinch-to-zoom, tracked independently of the single-pointer gesture above —
+  // a second finger touching down always cancels it and takes over.
+  const pinchRef = useRef<{
+    idA: number;
+    idB: number;
+    startDist: number;
+    startZoom: number;
+    // The bed-space (unscaled content px) point under the pinch's midpoint at gesture start,
+    // kept fixed under the *current* midpoint as fingers move — lets one continuous gesture
+    // pan and zoom together, the same way a real pinch does.
+    anchorContentPx: Point;
+  } | null>(null);
+  const activePointersRef = useRef<Map<number, Point>>(new Map());
 
   const [view, setView] = useState<'bed' | 'calendar'>('bed');
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
+  const [viewportSize, setViewportSize] = useState<Size>({ width: 0, height: 0 });
+  const [isPanning, setIsPanning] = useState(false);
   const [menuState, setMenuState] = useState<{ clientX: number; clientY: number; xIn: number; yIn: number } | null>(
     null,
   );
@@ -93,6 +127,76 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
 
   const groupBoxes = useMemo(() => computeGroupBoxes(effectivePlants), [effectivePlants]);
 
+  // The bed's true (unscaled) pixel size — fixed regardless of window width. Panning and
+  // zooming happen around this, instead of the bed itself resizing to fit the viewport.
+  const contentSize: Size = useMemo(
+    () => ({ width: bed.widthIn * PX_PER_INCH, height: bed.heightIn * PX_PER_INCH }),
+    [bed.widthIn, bed.heightIn],
+  );
+  const scaledContentSize: Size = useMemo(
+    () => ({ width: contentSize.width * zoom, height: contentSize.height * zoom }),
+    [contentSize, zoom],
+  );
+  // Lets the resize observer below read the latest zoom without re-subscribing on every change.
+  const zoomRef = useRef(zoom);
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
+
+  // A narrower window no longer shrinks the bed — it just reveals less of it. Re-clamp pan
+  // right where the resize is observed, so the viewport never ends up showing empty margin
+  // where content should be.
+  useEffect(() => {
+    const el = bedRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      const nextViewportSize = { width: entry.contentRect.width, height: entry.contentRect.height };
+      setViewportSize(nextViewportSize);
+      setPan((prev) =>
+        clampPan(prev, nextViewportSize, {
+          width: contentSize.width * zoomRef.current,
+          height: contentSize.height * zoomRef.current,
+        }),
+      );
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [contentSize]);
+
+  function viewportLocalPoint(clientX: number, clientY: number): Point | null {
+    const rect = bedRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  }
+
+  function zoomAt(anchorViewportLocal: Point, nextZoom: number) {
+    const newZoom = clampZoom(nextZoom);
+    const anchorContentPx = contentPointAt(anchorViewportLocal, pan, zoom);
+    const rawPan = panToAlign(anchorContentPx, anchorViewportLocal, newZoom);
+    setZoom(newZoom);
+    setPan(clampPan(rawPan, viewportSize, { width: contentSize.width * newZoom, height: contentSize.height * newZoom }));
+  }
+
+  function handleWheel(e: React.WheelEvent) {
+    e.preventDefault();
+    const anchor = viewportLocalPoint(e.clientX, e.clientY);
+    if (!anchor) return;
+    zoomAt(anchor, zoom * Math.exp(-e.deltaY * 0.0015));
+  }
+
+  function zoomByButton(factor: number) {
+    if (viewportSize.width === 0 || viewportSize.height === 0) return;
+    zoomAt({ x: viewportSize.width / 2, y: viewportSize.height / 2 }, zoom * factor);
+  }
+
+  function fitView() {
+    if (viewportSize.width === 0 || viewportSize.height === 0) return;
+    const newZoom = computeFitZoom(viewportSize, contentSize);
+    setZoom(newZoom);
+    setPan(clampPan({ x: 0, y: 0 }, viewportSize, { width: contentSize.width * newZoom, height: contentSize.height * newZoom }));
+  }
+
   function dismissToast(id: string) {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }
@@ -120,12 +224,9 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
   }, [selectedId, plants, removePlant, addPlants]);
 
   function toBedCoords(clientX: number, clientY: number): Point | null {
-    if (!bedRef.current) return null;
-    const rect = bedRef.current.getBoundingClientRect();
-    return {
-      x: clamp((clientX - rect.left) / PX_PER_INCH, 0, bed.widthIn),
-      y: clamp((clientY - rect.top) / PX_PER_INCH, 0, bed.heightIn),
-    };
+    const viewportLocal = viewportLocalPoint(clientX, clientY);
+    if (!viewportLocal) return null;
+    return clientToBedCoords(viewportLocal, pan, zoom, PX_PER_INCH, bed.widthIn, bed.heightIn);
   }
 
   function openMenuAt(clientX: number, clientY: number) {
@@ -140,32 +241,98 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
     openMenuAt(e.clientX, e.clientY);
   }
 
+  function startPinch() {
+    const ids = [...activePointersRef.current.keys()];
+    if (ids.length < 2) return;
+    const [idA, idB] = ids;
+    const a = activePointersRef.current.get(idA);
+    const b = activePointersRef.current.get(idB);
+    const midLocal = a && b ? viewportLocalPoint((a.x + b.x) / 2, (a.y + b.y) / 2) : null;
+    if (!a || !b || !midLocal) return;
+    pinchRef.current = {
+      idA,
+      idB,
+      startDist: Math.hypot(a.x - b.x, a.y - b.y),
+      startZoom: zoom,
+      anchorContentPx: contentPointAt(midLocal, pan, zoom),
+    };
+  }
+
+  // Empty-background gestures: a stationary hold opens the add-plant menu (long-press or
+  // right-click); dragging instead pans the viewport; a second finger touching down starts a
+  // pinch-zoom, taking over from whichever single-pointer gesture was in progress.
   function handleBedPointerDown(e: React.PointerEvent) {
-    if (e.target !== bedRef.current) return; // ignore bubbled events from plants
     if (e.button === 2) return;
-    const startX = e.clientX;
-    const startY = e.clientY;
+    // Some browsers can throw here for a second/third simultaneous touch pointer — capture is
+    // an enhancement (keeps receiving move/up if a finger slides off the element), not required
+    // for the gesture tracking below, so a failure here shouldn't abort it.
+    try {
+      (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    } catch {
+      // ignored — see above
+    }
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (activePointersRef.current.size >= 2) {
+      if (emptyGestureRef.current?.timer) clearTimeout(emptyGestureRef.current.timer);
+      emptyGestureRef.current = null;
+      setIsPanning(false);
+      startPinch();
+      return;
+    }
+
+    if (emptyGestureRef.current || pinchRef.current) return;
+    const startClientX = e.clientX;
+    const startClientY = e.clientY;
     const timer = setTimeout(() => {
-      openMenuAt(startX, startY);
-      emptyPressRef.current = null;
+      openMenuAt(startClientX, startClientY);
+      emptyGestureRef.current = null;
     }, LONG_PRESS_MS);
-    emptyPressRef.current = { timer, startX, startY };
+    emptyGestureRef.current = { pointerId: e.pointerId, startClientX, startClientY, mode: 'pending', startPan: pan, timer };
   }
 
   function handleBedPointerMove(e: React.PointerEvent) {
-    const st = emptyPressRef.current;
-    if (!st) return;
-    const dist = Math.hypot(e.clientX - st.startX, e.clientY - st.startY);
-    if (dist > MOVE_THRESHOLD_PX && st.timer) {
-      clearTimeout(st.timer);
-      emptyPressRef.current = null;
+    if (activePointersRef.current.has(e.pointerId)) {
+      activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     }
+
+    if (pinchRef.current) {
+      const { idA, idB, startDist, startZoom, anchorContentPx } = pinchRef.current;
+      const a = activePointersRef.current.get(idA);
+      const b = activePointersRef.current.get(idB);
+      const midLocal = a && b ? viewportLocalPoint((a.x + b.x) / 2, (a.y + b.y) / 2) : null;
+      if (!a || !b || !midLocal || startDist === 0) return;
+      const newZoom = clampZoom(startZoom * (Math.hypot(a.x - b.x, a.y - b.y) / startDist));
+      const rawPan = panToAlign(anchorContentPx, midLocal, newZoom);
+      setZoom(newZoom);
+      setPan(clampPan(rawPan, viewportSize, { width: contentSize.width * newZoom, height: contentSize.height * newZoom }));
+      return;
+    }
+
+    const st = emptyGestureRef.current;
+    if (!st || st.pointerId !== e.pointerId) return;
+    const dist = Math.hypot(e.clientX - st.startClientX, e.clientY - st.startClientY);
+    if (st.mode === 'pending') {
+      if (dist <= MOVE_THRESHOLD_PX) return;
+      if (st.timer) clearTimeout(st.timer);
+      st.mode = 'panning';
+      setIsPanning(true);
+    }
+    const rawPan = { x: st.startPan.x + (e.clientX - st.startClientX), y: st.startPan.y + (e.clientY - st.startClientY) };
+    setPan(clampPan(rawPan, viewportSize, scaledContentSize));
   }
 
-  function handleBedPointerUp() {
-    const st = emptyPressRef.current;
-    if (st?.timer) clearTimeout(st.timer);
-    emptyPressRef.current = null;
+  function handleBedPointerUp(e: React.PointerEvent) {
+    activePointersRef.current.delete(e.pointerId);
+    if (pinchRef.current && (e.pointerId === pinchRef.current.idA || e.pointerId === pinchRef.current.idB)) {
+      pinchRef.current = null;
+    }
+    const st = emptyGestureRef.current;
+    if (st && st.pointerId === e.pointerId) {
+      if (st.timer) clearTimeout(st.timer);
+      emptyGestureRef.current = null;
+      setIsPanning(false);
+    }
   }
 
   const gestureHandlers: GestureHandlers = {
@@ -283,110 +450,133 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
             onPointerDown={handleBedPointerDown}
             onPointerMove={handleBedPointerMove}
             onPointerUp={handleBedPointerUp}
+            onPointerCancel={handleBedPointerUp}
+            onWheel={handleWheel}
             style={{
               position: 'relative',
-              width: bed.widthIn * PX_PER_INCH,
-              maxWidth: '100%',
-              height: bed.heightIn * PX_PER_INCH,
-              border: '2.5px solid var(--color-text)',
+              width: '100%',
+              maxWidth: 720,
+              aspectRatio: '3 / 2',
+              minHeight: 260,
+              maxHeight: '70vh',
+              overflow: 'hidden',
+              border: '1.5px solid var(--color-divider)',
               borderRadius: 'var(--radius-lg)',
-              background: `repeating-linear-gradient(90deg, transparent 0 ${gridPx - 1}px, #e6dbc6 ${gridPx - 1}px ${gridPx}px), repeating-linear-gradient(0deg, #f6efe0 0 ${gridPx - 1}px, #efe6d2 ${gridPx - 1}px ${gridPx}px)`,
+              background: 'var(--color-surface)',
               touchAction: 'none',
               userSelect: 'none',
               boxShadow: 'var(--shadow-md)',
+              cursor: isPanning ? 'grabbing' : 'grab',
             }}
           >
-            {groupBoxes.map((box) => (
-              <GroupBoundingBox
-                key={box.groupId}
-                box={box}
-                pxPerInch={PX_PER_INCH}
-                warned={warnedGroupIds.has(box.groupId)}
-              />
-            ))}
-            {multiplyBox && <GroupBoundingBox box={multiplyBox} pxPerInch={PX_PER_INCH} active />}
+            <div
+              style={{
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                width: contentSize.width,
+                height: contentSize.height,
+                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                transformOrigin: '0 0',
+                border: '2.5px solid var(--color-text)',
+                borderRadius: 'var(--radius-lg)',
+                background: `repeating-linear-gradient(90deg, transparent 0 ${gridPx - 1}px, #e6dbc6 ${gridPx - 1}px ${gridPx}px), repeating-linear-gradient(0deg, #f6efe0 0 ${gridPx - 1}px, #efe6d2 ${gridPx - 1}px ${gridPx}px)`,
+              }}
+            >
+              {groupBoxes.map((box) => (
+                <GroupBoundingBox
+                  key={box.groupId}
+                  box={box}
+                  pxPerInch={PX_PER_INCH}
+                  warned={warnedGroupIds.has(box.groupId)}
+                />
+              ))}
+              {multiplyBox && <GroupBoundingBox box={multiplyBox} pxPerInch={PX_PER_INCH} active />}
 
-            {effectivePlants.map((p) => {
-              const isMultiplyOrigin = multiply?.id === p.id;
-              const isSolo = (groupSizes.get(p.groupId) ?? 1) === 1;
-              return (
-                <div key={p.id} style={{ opacity: isMultiplyOrigin ? 0.85 : 1 }}>
-                  <PlantToken
-                    plant={p}
-                    pxPerInch={PX_PER_INCH}
-                    diameter={PLANT_DIAMETER}
-                    warned={isSolo && warnedGroupIds.has(p.groupId)}
-                    selected={p.id === selectedId}
-                    handlers={gestureHandlers}
-                  />
-                </div>
-              );
-            })}
+              {effectivePlants.map((p) => {
+                const isMultiplyOrigin = multiply?.id === p.id;
+                const isSolo = (groupSizes.get(p.groupId) ?? 1) === 1;
+                return (
+                  <div key={p.id} style={{ opacity: isMultiplyOrigin ? 0.85 : 1 }}>
+                    <PlantToken
+                      plant={p}
+                      pxPerInch={PX_PER_INCH}
+                      diameter={PLANT_DIAMETER}
+                      warned={isSolo && warnedGroupIds.has(p.groupId)}
+                      selected={p.id === selectedId}
+                      handlers={gestureHandlers}
+                    />
+                  </div>
+                );
+              })}
 
-            {multiply?.ghosts.map((g, i) => {
-              const origin = plants.find((p) => p.id === multiply.id);
-              if (!origin) return null;
-              const color = CROP_COLORS[origin.cropId];
-              return (
+              {multiply?.ghosts.map((g, i) => {
+                const origin = plants.find((p) => p.id === multiply.id);
+                if (!origin) return null;
+                const color = CROP_COLORS[origin.cropId];
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      position: 'absolute',
+                      left: g.x * PX_PER_INCH,
+                      top: g.y * PX_PER_INCH,
+                      transform: 'translate(-50%, -50%)',
+                      pointerEvents: 'none',
+                      opacity: 0.55,
+                    }}
+                  >
+                    <div
+                      style={{
+                        border: `1.5px dashed ${color}`,
+                        borderRadius: '999px',
+                        width: PLANT_DIAMETER,
+                        height: PLANT_DIAMETER,
+                      }}
+                    />
+                  </div>
+                );
+              })}
+
+              {multiply && multiply.ghosts.length > 0 && (
                 <div
-                  key={i}
                   style={{
                     position: 'absolute',
-                    left: g.x * PX_PER_INCH,
-                    top: g.y * PX_PER_INCH,
-                    transform: 'translate(-50%, -50%)',
+                    left: 12,
+                    bottom: 12,
+                    background: 'var(--color-text)',
+                    color: '#fffdf8',
+                    borderRadius: '999px',
+                    padding: '5px 12px',
+                    font: '600 12px Figtree',
                     pointerEvents: 'none',
-                    opacity: 0.55,
                   }}
                 >
-                  <div
-                    style={{
-                      border: `1.5px dashed ${color}`,
-                      borderRadius: '999px',
-                      width: PLANT_DIAMETER,
-                      height: PLANT_DIAMETER,
-                    }}
-                  />
+                  +{multiply.ghosts.length}
                 </div>
-              );
-            })}
+              )}
 
-            {multiply && multiply.ghosts.length > 0 && (
-              <div
-                style={{
-                  position: 'absolute',
-                  left: 12,
-                  bottom: 12,
-                  background: 'var(--color-text)',
-                  color: '#fffdf8',
-                  borderRadius: '999px',
-                  padding: '5px 12px',
-                  font: '600 12px Figtree',
-                  pointerEvents: 'none',
-                }}
-              >
-                +{multiply.ghosts.length}
-              </div>
-            )}
+              {plants.length === 0 && !menuState && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    pointerEvents: 'none',
+                    padding: 24,
+                    textAlign: 'center',
+                  }}
+                >
+                  <p style={{ font: '400 17px Caveat, cursive', color: '#9a8c76', maxWidth: 320 }}>
+                    Empty so far — long-press or right-click the bed to plant something.
+                  </p>
+                </div>
+              )}
+            </div>
 
-            {plants.length === 0 && !menuState && (
-              <div
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  pointerEvents: 'none',
-                  padding: 24,
-                  textAlign: 'center',
-                }}
-              >
-                <p style={{ font: '400 17px Caveat, cursive', color: '#9a8c76', maxWidth: 320 }}>
-                  Empty so far — long-press or right-click the bed to plant something.
-                </p>
-              </div>
-            )}
+            <ZoomControl zoom={zoom} onZoomIn={() => zoomByButton(1.25)} onZoomOut={() => zoomByButton(1 / 1.25)} onFit={fitView} />
           </div>
 
           {menuState && (
@@ -476,6 +666,73 @@ function HelpTip({ text }: { text: string }) {
     >
       ?
     </span>
+  );
+}
+
+function ZoomControl({
+  zoom,
+  onZoomIn,
+  onZoomOut,
+  onFit,
+}: {
+  zoom: number;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onFit: () => void;
+}) {
+  return (
+    <div
+      onPointerDown={(e) => e.stopPropagation()}
+      onContextMenu={(e) => e.stopPropagation()}
+      style={{
+        position: 'absolute',
+        right: 10,
+        bottom: 10,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 2,
+        background: 'var(--color-surface-raised)',
+        border: '1.5px solid var(--color-divider)',
+        borderRadius: '999px',
+        padding: '3px 4px',
+        boxShadow: 'var(--shadow-sm)',
+        touchAction: 'none',
+      }}
+    >
+      <ZoomButton label="−" onClick={onZoomOut} />
+      <span style={{ font: '600 11px Figtree', color: 'var(--color-text-muted)', minWidth: 36, textAlign: 'center' }}>
+        {Math.round(zoom * 100)}%
+      </span>
+      <ZoomButton label="+" onClick={onZoomIn} />
+      <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--color-divider)', margin: '0 2px' }} />
+      <button
+        onClick={onFit}
+        className="btn btn-secondary"
+        style={{ border: 'none', padding: '5px 10px', font: '600 11px Figtree' }}
+      >
+        Fit
+      </button>
+    </div>
+  );
+}
+
+function ZoomButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={label === '+' ? 'Zoom in' : 'Zoom out'}
+      style={{
+        width: 24,
+        height: 24,
+        borderRadius: '999px',
+        border: 'none',
+        background: 'none',
+        font: '700 14px Figtree',
+        color: 'var(--color-text)',
+      }}
+    >
+      {label}
+    </button>
   );
 }
 
