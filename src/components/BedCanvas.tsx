@@ -19,6 +19,7 @@ import { PlantInfoCard } from './PlantInfoCard';
 import { PlantingCalendar } from './PlantingCalendar';
 import { GardenSwitcher } from './GardenSwitcher';
 import { CROP_COLORS } from './PlantMark';
+import { ToastStack, type ToastItem } from './ToastStack';
 
 const PX_PER_INCH = 7;
 const PLANT_DIAMETER = 26;
@@ -46,6 +47,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
   );
   const [quickActions, setQuickActions] = useState<{ id: string; clientX: number; clientY: number } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   // A drag moves the whole patch (every plant sharing groupId) rigidly, never a single
   // member on its own — `members` is a snapshot of the group's positions at drag start,
@@ -90,6 +92,32 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
   );
 
   const groupBoxes = useMemo(() => computeGroupBoxes(effectivePlants), [effectivePlants]);
+
+  function dismissToast(id: string) {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }
+
+  // Backspace/Delete removes the selected plant, with an undo toast — but only when
+  // focus isn't in a text field (e.g. the variety input), where the key should type normally.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Backspace' && e.key !== 'Delete') return;
+      if (!selectedId) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      const plant = plants.find((p) => p.id === selectedId);
+      if (!plant) return;
+      e.preventDefault();
+      removePlant(plant.id);
+      setSelectedId(null);
+      setToasts((prev) => [
+        ...prev,
+        { id: uid(), message: `Removed ${getCrop(plant.cropId).name}`, onUndo: () => addPlants([plant]) },
+      ]);
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedId, plants, removePlant, addPlants]);
 
   function toBedCoords(clientX: number, clientY: number): Point | null {
     if (!bedRef.current) return null;
@@ -313,6 +341,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
                     pxPerInch={PX_PER_INCH}
                     diameter={PLANT_DIAMETER}
                     warned={isSolo && warnedGroupIds.has(p.groupId)}
+                    selected={p.id === selectedId}
                     handlers={gestureHandlers}
                   />
                 </div>
@@ -444,6 +473,8 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
           )}
         </>
       )}
+
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }
