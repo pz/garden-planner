@@ -229,44 +229,19 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
 
   return (
     <div style={{ padding: '28px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <h1 style={{ fontSize: 22 }}>{bed.name}</h1>
-          <p style={{ font: '400 13px Figtree', color: 'var(--color-text-muted)', marginTop: 4 }}>
-            {bed.widthIn / 12}′ × {bed.heightIn / 12}′ bed · {profile.sunExposure.replace('-', ' ')}
-            {view === 'bed' ? ' · long-press or right-click anywhere to plant' : ''}
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+          <GardenSwitcher variant="title" onEditSetup={onEditSetup} />
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <ViewTab label="Bed layout" active={view === 'bed'} onClick={() => setView('bed')} />
             <ViewTab label="Planting calendar" active={view === 'calendar'} onClick={() => setView('calendar')} />
           </div>
-          <GardenSwitcher />
-          <button
-            onClick={onEditSetup}
-            style={{
-              border: 'none',
-              background: 'none',
-              padding: '4px 2px',
-              font: '500 12px Figtree',
-              color: 'var(--color-text-muted)',
-              textDecoration: 'underline',
-              textDecorationColor: 'transparent',
-              textUnderlineOffset: 3,
-              transition: 'text-decoration-color 0.12s ease, color 0.12s ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = 'var(--color-text)';
-              e.currentTarget.style.textDecorationColor = 'var(--color-divider)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = 'var(--color-text-muted)';
-              e.currentTarget.style.textDecorationColor = 'transparent';
-            }}
-          >
-            Edit setup
-          </button>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <p style={{ font: '400 13px Figtree', color: 'var(--color-text-muted)' }}>
+            {bed.widthIn / 12}′ × {bed.heightIn / 12}′ bed · {profile.sunExposure.replace('-', ' ')}
+          </p>
+          <HelpTip text="Long-press or right-click anywhere on the bed to plant." />
         </div>
       </div>
 
@@ -445,6 +420,31 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
         </>
       )}
     </div>
+  );
+}
+
+function HelpTip({ text }: { text: string }) {
+  return (
+    <span
+      title={text}
+      aria-label={text}
+      role="img"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+        width: 15,
+        height: 15,
+        borderRadius: '999px',
+        border: '1.5px solid var(--color-text-muted)',
+        color: 'var(--color-text-muted)',
+        font: '600 10px Figtree',
+        cursor: 'help',
+      }}
+    >
+      ?
+    </span>
   );
 }
 
