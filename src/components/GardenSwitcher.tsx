@@ -2,7 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { useGarden } from '../state/gardenStore';
 import { useGardens, readGardenName } from '../state/gardensStore';
 
-export function GardenSwitcher() {
+export function GardenSwitcher({
+  variant = 'compact',
+  onEditSetup,
+}: {
+  variant?: 'compact' | 'title';
+  onEditSetup?: () => void;
+}) {
   const { gardenIds, activeGardenId, createGarden, removeGarden, switchGarden } = useGardens();
   // The active garden's name comes live from its own reducer state, not a localStorage
   // re-read — that read can briefly lag one render behind a just-made rename (the write
@@ -25,32 +31,54 @@ export function GardenSwitcher() {
   }, [open]);
 
   const activeName = plan.bed.name;
+  const isTitle = variant === 'title';
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
       <button
         onClick={() => setOpen((o) => !o)}
-        style={{
-          border: 'none',
-          background: 'none',
-          padding: '4px 2px',
-          font: '500 12px Figtree',
-          color: 'var(--color-text-muted)',
-          textDecoration: 'underline',
-          textDecorationColor: 'transparent',
-          textUnderlineOffset: 3,
-          transition: 'text-decoration-color 0.12s ease, color 0.12s ease',
-        }}
+        style={
+          isTitle
+            ? {
+                border: 'none',
+                background: 'none',
+                padding: '2px 6px',
+                margin: '-2px -6px',
+                borderRadius: 'var(--radius-sm)',
+                font: '700 22px Figtree',
+                color: 'var(--color-text)',
+                transition: 'background 0.12s ease',
+              }
+            : {
+                border: 'none',
+                background: 'none',
+                padding: '4px 2px',
+                font: '500 12px Figtree',
+                color: 'var(--color-text-muted)',
+                textDecoration: 'underline',
+                textDecorationColor: 'transparent',
+                textUnderlineOffset: 3,
+                transition: 'text-decoration-color 0.12s ease, color 0.12s ease',
+              }
+        }
         onMouseEnter={(e) => {
-          e.currentTarget.style.color = 'var(--color-text)';
-          e.currentTarget.style.textDecorationColor = 'var(--color-divider)';
+          if (isTitle) {
+            e.currentTarget.style.background = 'color-mix(in srgb, var(--color-text) 6%, transparent)';
+          } else {
+            e.currentTarget.style.color = 'var(--color-text)';
+            e.currentTarget.style.textDecorationColor = 'var(--color-divider)';
+          }
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.color = 'var(--color-text-muted)';
-          e.currentTarget.style.textDecorationColor = 'transparent';
+          if (isTitle) {
+            e.currentTarget.style.background = 'none';
+          } else {
+            e.currentTarget.style.color = 'var(--color-text-muted)';
+            e.currentTarget.style.textDecorationColor = 'transparent';
+          }
         }}
       >
-        {gardenIds.length > 1 ? `${activeName} ▾` : 'My gardens'}
+        {isTitle ? `${activeName} ▾` : gardenIds.length > 1 ? `${activeName} ▾` : 'My gardens'}
       </button>
 
       {open && (
@@ -58,7 +86,7 @@ export function GardenSwitcher() {
           style={{
             position: 'absolute',
             top: '100%',
-            right: 0,
+            [isTitle ? 'left' : 'right']: 0,
             marginTop: 6,
             zIndex: 50,
             width: 260,
@@ -69,6 +97,33 @@ export function GardenSwitcher() {
             padding: 6,
           }}
         >
+          {onEditSetup && (
+            <>
+              <button
+                onClick={() => {
+                  onEditSetup();
+                  setOpen(false);
+                }}
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  textAlign: 'left',
+                  padding: '8px 10px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: 'none',
+                  background: 'transparent',
+                  font: '600 13px Figtree',
+                  color: 'var(--color-text)',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'color-mix(in srgb, var(--color-text) 6%, transparent)')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+              >
+                ⚙ Edit setup
+              </button>
+              <div style={{ borderTop: '1.5px solid var(--color-divider)', margin: '4px 0' }} />
+            </>
+          )}
+
           {gardenIds.map((id) => (
             <GardenRow
               key={id}
