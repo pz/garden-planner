@@ -22,12 +22,14 @@ export function PlantToken({
   pxPerInch,
   diameter,
   warned,
+  selected,
   handlers,
 }: {
   plant: PlantInstance;
   pxPerInch: number;
   diameter: number;
   warned: boolean;
+  selected: boolean;
   handlers: GestureHandlers;
 }) {
   const crop = getCrop(plant.cropId);
@@ -142,6 +144,22 @@ export function PlantToken({
           pointerEvents: 'none',
         }}
       />
+      {selected && (
+        <div
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: '50%',
+            width: diameter + 12,
+            height: diameter + 12,
+            transform: 'translate(-50%, -50%)',
+            borderRadius: '999px',
+            border: '2.5px solid var(--color-accent)',
+            boxShadow: '0 0 0 4px color-mix(in srgb, var(--color-accent) 22%, transparent)',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
       <PlantMark family={crop.family} color={color} diameter={diameter} />
       {warned && (
         <div
