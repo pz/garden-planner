@@ -134,7 +134,7 @@ export function PlantInfoCard({
             padding: '10px 12px',
           }}
         >
-          <p style={{ font: '400 13px/1.5 Caveat, cursive', color: '#6b6155' }}>{crop.tip}</p>
+          <p style={{ font: '400 13px/1.5 Figtree', color: '#6b6155' }}>{crop.tip}</p>
         </div>
       </div>
 
