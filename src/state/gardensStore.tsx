@@ -3,8 +3,9 @@ import { addGardenId, parseGardenIndex, removeGardenId, setActiveGardenId, type 
 import { LEGACY_PLAN_KEY, planStorageKey } from './gardenStore';
 import { resolveMigration } from './migration';
 import { createPlan, parsePlan } from './reducer';
+import { storageKey } from './storageNamespace';
 
-const INDEX_KEY = 'garden-planner-index/v1';
+const INDEX_KEY = storageKey('garden-planner-index/v1');
 
 function uid(): string {
   return crypto.randomUUID();
