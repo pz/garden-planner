@@ -1,12 +1,13 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, type ReactNode } from 'react';
 import type { GardenPlan, PlantInstance, Profile } from '../types';
 import { parsePlan, reducer } from './reducer';
+import { storageKey } from './storageNamespace';
 
 /** Pre-multi-garden storage key, kept only so gardensStore can migrate it into the new scheme. */
-export const LEGACY_PLAN_KEY = 'garden-planner-plan/v1';
+export const LEGACY_PLAN_KEY = storageKey('garden-planner-plan/v1');
 
 export function planStorageKey(gardenId: string): string {
-  return `garden-planner-plan:${gardenId}`;
+  return storageKey(`garden-planner-plan:${gardenId}`);
 }
 
 interface GardenContextValue {

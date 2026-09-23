@@ -1,0 +1,41 @@
+name: PR preview
+
+# Builds each pull request into gh-pages under pr-preview/pr-<number>/ and
+# comments the link on the PR. When the PR is merged or closed, the same
+# workflow removes that folder. It only ever writes inside pr-preview/, so
+# the live site at the root of gh-pages is never touched.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+permissions:
+  contents: write # push to gh-pages
+  pull-requests: write # post/update the preview link comment
+
+concurrency:
+  group: pr-preview-${{ github.event.number }}
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        if: github.event.action != 'closed'
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci && npm run build
+        if: github.event.action != 'closed'
+        env:
+          VITE_BASE: /garden-planner/pr-preview/pr-${{ github.event.number }}/
+          # Previews share the live site's origin, so keep their saved gardens separate.
+          VITE_STORAGE_NAMESPACE: pr-${{ github.event.number }}:
+      - uses: rossjrw/pr-preview-action@v1
+        with:
+          source-dir: dist
+          preview-branch: gh-pages
+          umbrella-dir: pr-preview
+          # action: auto (default) deploys on open/sync and removes on close
