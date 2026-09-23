@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { ZONES, getZone } from '../data/zones';
+import { getZone } from '../data/zones';
 import { loadZoneGeoJson, loadZoneIndex } from '../data/usdaZones';
 import { placeLabel, reverseGeocode, searchPlaces, shouldSearch, type PlaceResult } from '../utils/geocode';
 import { getBrowserPosition } from '../utils/geoZone';
@@ -21,8 +21,15 @@ const PLACED_ZOOM = 11;
 const SEARCH_DEBOUNCE_MS = 300;
 const REVERSE_DEBOUNCE_MS = 600;
 
+/**
+ * Esri's Light Gray Canvas: keyless, and split into a base layer and a labels layer so place names
+ * can sit above the zone overlay. (CARTO's equivalent now needs an API key.) Tiles stop at z16.
+ */
+const esriTiles = (layer: string) =>
+  `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/${layer}/MapServer/tile/{z}/{y}/{x}`;
+const MAX_ZOOM = 16;
 const TILE_ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a> · Zones: <a href="https://github.com/kgjenkins/ophz">OPHZ</a>';
+  '&copy; <a href="https://www.esri.com">Esri</a>, HERE, Garmin, OpenStreetMap · Zones: <a href="https://github.com/kgjenkins/ophz">OPHZ</a>';
 
 type GeoStatus = 'idle' | 'locating' | 'denied' | 'error';
 type SearchStatus = 'idle' | 'loading' | 'done' | 'error';
@@ -39,7 +46,7 @@ export function LocationPicker({
   onPick,
 }: {
   location: GardenLocation | undefined;
-  /** The zone currently selected on the setup screen, highlighted in the legend. */
+  /** The zone currently selected on the setup screen, shown on the map's location chip. */
   zoneId: string;
   onPick: (pick: LocationPick) => void;
 }) {
@@ -138,6 +145,7 @@ export function LocationPicker({
       doubleClickZoom: 'center',
       touchZoom: 'center',
       zoomSnap: 0.5,
+      maxZoom: MAX_ZOOM,
       worldCopyJump: true,
       attributionControl: true,
     });
@@ -152,16 +160,8 @@ export function LocationPicker({
     labels.style.zIndex = '450';
     labels.style.pointerEvents = 'none';
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
-      attribution: TILE_ATTRIBUTION,
-      subdomains: 'abcd',
-      maxZoom: 18,
-    }).addTo(map);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png', {
-      subdomains: 'abcd',
-      maxZoom: 18,
-      pane: 'labels',
-    }).addTo(map);
+    L.tileLayer(esriTiles('World_Light_Gray_Base'), { attribution: TILE_ATTRIBUTION, maxZoom: MAX_ZOOM }).addTo(map);
+    L.tileLayer(esriTiles('World_Light_Gray_Reference'), { maxZoom: MAX_ZOOM, pane: 'labels' }).addTo(map);
 
     const zonesRenderer = L.canvas({ pane: 'zones', padding: 1 });
     let cancelled = false;
@@ -310,8 +310,6 @@ export function LocationPicker({
           </div>
         )}
       </div>
-
-      <ZoneLegend activeZoneId={zoneId} />
     </div>
   );
 }
@@ -375,35 +373,6 @@ function CenterPin({ placed, lifted }: { placed: boolean; lifted: boolean }) {
         />
         <circle cx="15" cy="14" r="5" fill="#fffdf8" />
       </svg>
-    </div>
-  );
-}
-
-function ZoneLegend({ activeZoneId }: { activeZoneId: string }) {
-  return (
-    <div style={{ display: 'flex', gap: 3, marginTop: 8 }} aria-label="Hardiness zone colors">
-      {ZONES.map((z) => {
-        const active = z.id === activeZoneId;
-        return (
-          <div
-            key={z.id}
-            title={z.label}
-            style={{
-              flex: 1,
-              textAlign: 'center',
-              padding: '3px 0',
-              borderRadius: 6,
-              background: `color-mix(in srgb, ${z.mapColor} ${active ? 100 : 55}%, transparent)`,
-              font: `${active ? 700 : 500} 11px Figtree`,
-              color: 'var(--color-text)',
-              outline: active ? '2px solid var(--color-text)' : 'none',
-              outlineOffset: -2,
-            }}
-          >
-            {z.id}
-          </div>
-        );
-      })}
     </div>
   );
 }

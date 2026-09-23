@@ -1,16 +1,18 @@
 import { Suspense, lazy, useState } from 'react';
 import { useGarden } from '../state/gardenStore';
-import { ZONES, getZone, zoneFirstFrostDate, zoneLastFrostDate } from '../data/zones';
+import { getZone, zoneFirstFrostDate, zoneLastFrostDate } from '../data/zones';
 import { formatDate } from '../utils/dates';
 import type { ZoneSource } from '../utils/zoneMap';
 import { GardenSwitcher } from './GardenSwitcher';
+import { ZonePicker } from './ZonePicker';
 import type { LocationPick } from './LocationPicker';
 import type { GardenLocation, SunExposure } from '../types';
 
 // Leaflet + the zone polygons are only needed here, so keep them out of the main bundle.
 const LocationPicker = lazy(() => import('./LocationPicker').then((m) => ({ default: m.LocationPicker })));
 
-const ZONE_SOURCE_NOTE: Record<ZoneSource, string> = {
+const ZONE_SOURCE_NOTE: Record<ZoneSource | 'manual', string> = {
+  manual: 'Picked by hand. Moving the pin will look your zone up again.',
   'usda-map': 'From the USDA hardiness zone map at your pin.',
   'usda-map-nearby': 'From the nearest area on the USDA zone map — your pin is just off its edge, so double-check it.',
   latitude:
@@ -29,8 +31,8 @@ export function SetupScreen({ onDone }: { onDone: () => void }) {
   const [zoneId, setZoneId] = useState(plan.profile.zoneId);
   const [sunExposure, setSunExposure] = useState<SunExposure>(plan.profile.sunExposure);
   const [location, setLocation] = useState<GardenLocation | undefined>(plan.profile.location);
-  /** Where the current zone came from; `null` once the user overrides it with the dropdown. */
-  const [zoneSource, setZoneSource] = useState<ZoneSource | null>(null);
+  /** Where the current zone came from this session; `null` until the pin moves or a zone is picked. */
+  const [zoneSource, setZoneSource] = useState<ZoneSource | 'manual' | null>(null);
 
   const zone = getZone(zoneId);
   const year = new Date().getFullYear();
@@ -43,7 +45,7 @@ export function SetupScreen({ onDone }: { onDone: () => void }) {
 
   function handleZoneSelect(id: string) {
     setZoneId(id);
-    setZoneSource(null);
+    setZoneSource('manual');
   }
 
   function handleContinue() {
@@ -92,44 +94,48 @@ export function SetupScreen({ onDone }: { onDone: () => void }) {
       </div>
 
       <div style={{ marginBottom: 22 }}>
-        <label htmlFor="zone-select" style={{ display: 'block', font: '600 13px Figtree', marginBottom: 8 }}>
+        <span id="zone-picker-label" style={{ display: 'block', font: '600 13px Figtree', marginBottom: 8 }}>
           USDA hardiness zone
-        </label>
-        <select
-          id="zone-select"
-          value={zoneId}
-          onChange={(e) => handleZoneSelect(e.target.value)}
-          style={{
-            width: '100%',
-            padding: '12px 14px',
-            borderRadius: 'var(--radius-md)',
-            border: '1.5px solid var(--color-divider)',
-            font: '500 15px Figtree',
-            background: 'var(--color-surface-raised)',
-            color: 'var(--color-text)',
-          }}
-        >
-          {ZONES.map((z) => (
-            <option key={z.id} value={z.id}>
-              {z.label}
-            </option>
-          ))}
-        </select>
-        {zoneSource && (
+        </span>
+        <ZonePicker zoneId={zoneId} onSelect={handleZoneSelect} />
+        {(zoneSource || !location) && (
           <p
             data-testid="zone-source-note"
             style={{
               font: '400 12px Figtree',
-              color: zoneSource === 'usda-map' ? 'var(--color-accent-2-700)' : 'var(--color-accent-700)',
-              marginTop: 6,
+              color:
+                zoneSource === 'usda-map'
+                  ? 'var(--color-accent-2-700)'
+                  : zoneSource === 'usda-map-nearby' || zoneSource === 'latitude'
+                    ? 'var(--color-accent-700)'
+                    : 'var(--color-text-muted)',
+              marginTop: 8,
             }}
           >
-            {ZONE_SOURCE_NOTE[zoneSource]}
+            {zoneSource ? ZONE_SOURCE_NOTE[zoneSource] : 'Place your pin to look up your zone, or pick one yourself.'}
           </p>
         )}
       </div>
 
-      <div style={{ marginBottom: 28 }}>
+      <div
+        style={{
+          background: 'var(--color-surface-raised)',
+          border: '1.5px solid var(--color-divider)',
+          borderRadius: 'var(--radius-md)',
+          padding: '16px 18px',
+          marginBottom: 22,
+        }}
+      >
+        <p style={{ font: '600 13px Figtree', marginBottom: 8 }}>What that means for you</p>
+        <p style={{ font: '400 13px/1.5 Figtree', color: 'var(--color-text-muted)' }}>
+          Your average last spring frost is around <strong>{formatDate(zoneLastFrostDate(zone, year))}</strong>,
+          and your average first fall frost is around{' '}
+          <strong>{formatDate(zoneFirstFrostDate(zone, year))}</strong>. We&rsquo;ll use these to suggest planting
+          and harvest dates for whatever you grow.
+        </p>
+      </div>
+
+      <div style={{ marginBottom: 32 }}>
         <span style={{ display: 'block', font: '600 13px Figtree', marginBottom: 8 }}>Sun exposure</span>
         <div style={{ display: 'flex', gap: 10 }}>
           {SUN_OPTIONS.map((opt) => (
@@ -153,24 +159,6 @@ export function SetupScreen({ onDone }: { onDone: () => void }) {
             </button>
           ))}
         </div>
-      </div>
-
-      <div
-        style={{
-          background: 'var(--color-surface-raised)',
-          border: '1.5px solid var(--color-divider)',
-          borderRadius: 'var(--radius-md)',
-          padding: '16px 18px',
-          marginBottom: 32,
-        }}
-      >
-        <p style={{ font: '600 13px Figtree', marginBottom: 8 }}>What that means for you</p>
-        <p style={{ font: '400 13px/1.5 Figtree', color: 'var(--color-text-muted)' }}>
-          Your average last spring frost is around <strong>{formatDate(zoneLastFrostDate(zone, year))}</strong>,
-          and your average first fall frost is around{' '}
-          <strong>{formatDate(zoneFirstFrostDate(zone, year))}</strong>. We&rsquo;ll use these to suggest planting
-          and harvest dates for whatever you grow.
-        </p>
       </div>
 
       <button onClick={handleContinue} className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '13px 18px' }}>
