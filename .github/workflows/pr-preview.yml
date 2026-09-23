@@ -30,9 +30,9 @@ jobs:
       - run: npm ci && npm run build
         if: github.event.action != 'closed'
         env:
-          VITE_BASE: /garden-planner/pr-preview/pr-${{ github.event.number }}/
+          VITE_BASE: "/garden-planner/pr-preview/pr-${{ github.event.number }}/"
           # Previews share the live site's origin, so keep their saved gardens separate.
-          VITE_STORAGE_NAMESPACE: pr-${{ github.event.number }}:
+          VITE_STORAGE_NAMESPACE: "pr-${{ github.event.number }}:"
       - uses: rossjrw/pr-preview-action@v1
         with:
           source-dir: dist
