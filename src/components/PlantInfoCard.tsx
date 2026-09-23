@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import type { PlantInstance } from '../types';
 import { getCrop } from '../data/crops';
+import { getTip } from '../data/tips';
 import { getZone } from '../data/zones';
+import { useDismissedTip } from '../state/dismissedTipsStore';
 import { formatDate, scheduleFor } from '../utils/dates';
 import { CROP_COLORS, PlantMark } from './PlantMark';
 
@@ -30,6 +32,8 @@ export function PlantInfoCard({
   const zone = getZone(zoneId);
   const schedule = scheduleFor(crop, zone, new Date().getFullYear());
   const [variety, setVariety] = useState(plant.variety ?? '');
+  const tip = getTip(crop.id);
+  const tipState = useDismissedTip(crop.id);
 
   return (
     <div
@@ -127,15 +131,44 @@ export function PlantInfoCard({
           </div>
         </div>
 
-        <div
-          style={{
-            background: 'var(--color-surface)',
-            borderRadius: 'var(--radius-md)',
-            padding: '10px 12px',
-          }}
-        >
-          <p style={{ font: '400 13px/1.5 Figtree', color: '#6b6155' }}>{crop.tip}</p>
-        </div>
+        {tip && !tipState.dismissed && (
+          <div
+            style={{
+              background: 'var(--color-surface)',
+              borderRadius: 'var(--radius-md)',
+              padding: '10px 12px',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 8,
+            }}
+          >
+            <p style={{ flex: 1, font: '400 13px/1.5 Figtree', color: '#6b6155' }}>{tip}</p>
+            <button
+              onClick={tipState.dismiss}
+              aria-label="Dismiss tip"
+              title="Dismiss tip"
+              style={{ border: 'none', background: 'none', font: '700 12px Figtree', color: 'var(--color-text-muted)', padding: 2 }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
+        {tip && tipState.dismissed && (
+          <button
+            onClick={tipState.restore}
+            style={{
+              alignSelf: 'flex-start',
+              border: 'none',
+              background: 'none',
+              padding: 0,
+              font: '400 12px Figtree',
+              color: 'var(--color-text-muted)',
+              textDecoration: 'underline',
+            }}
+          >
+            Show growing tip
+          </button>
+        )}
       </div>
 
       <div style={{ padding: 16, borderTop: '1.5px solid var(--color-divider)', display: 'flex', gap: 8 }}>
