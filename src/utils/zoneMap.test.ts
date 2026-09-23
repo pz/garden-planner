@@ -5,6 +5,7 @@ import { zoneIdFromLatitude } from './geoZone';
 import {
   buildZoneIndex,
   clampZoneId,
+  isZoneOverriddenAtLocation,
   nearestZoneIdWithin,
   pointInRing,
   resolveZoneForLocation,
@@ -160,6 +161,18 @@ describe('resolveZoneForLocation', () => {
 
   it('falls back to the latitude estimate while the map data has not loaded', () => {
     expect(resolveZoneForLocation(null, 5, 5)).toEqual({ zoneId: zoneIdFromLatitude(5), source: 'latitude' });
+  });
+});
+
+describe('isZoneOverriddenAtLocation', () => {
+  it('is false when the saved zone is the one the pin resolves to', () => {
+    expect(isZoneOverriddenAtLocation(syntheticIndex, 5, 5, '4')).toBe(false);
+    // including a latitude-fallback zone outside the map
+    expect(isZoneOverriddenAtLocation(syntheticIndex, 51.5, -0.12, zoneIdFromLatitude(51.5))).toBe(false);
+  });
+
+  it('is true when the saved zone differs from the pin, i.e. was picked by hand', () => {
+    expect(isZoneOverriddenAtLocation(syntheticIndex, 5, 5, '6')).toBe(true);
   });
 });
 

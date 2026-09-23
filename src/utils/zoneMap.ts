@@ -165,3 +165,11 @@ export function resolveZoneForLocation(
   }
   return { zoneId: zoneIdFromLatitude(lat), source: 'latitude' };
 }
+
+/**
+ * Whether a saved zone disagrees with what its saved pin resolves to, meaning the user picked it
+ * by hand. Only the zone is stored, not where it came from, so setup re-derives this on reopen.
+ */
+export function isZoneOverriddenAtLocation(index: ZoneIndex, lat: number, lng: number, zoneId: string): boolean {
+  return resolveZoneForLocation(index, lat, lng).zoneId !== zoneId;
+}

@@ -89,7 +89,13 @@ export function SetupScreen({ onDone }: { onDone: () => void }) {
           We&rsquo;ll look up your hardiness zone as you go.
         </p>
         <Suspense fallback={<div style={{ height: 390 }} />}>
-          <LocationPicker location={location} zoneId={zoneId} onPick={handlePick} />
+          <LocationPicker
+            location={location}
+            zoneId={zoneId}
+            zoneFromPin={zoneSource !== 'manual'}
+            onPick={handlePick}
+            onSavedZoneOverridden={() => setZoneSource((current) => current ?? 'manual')}
+          />
         </Suspense>
       </div>
 

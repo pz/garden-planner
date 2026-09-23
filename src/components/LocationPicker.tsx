@@ -6,7 +6,7 @@ import { loadZoneGeoJson, loadZoneIndex } from '../data/usdaZones';
 import { placeLabel, reverseGeocode, searchPlaces, shouldSearch, type PlaceResult } from '../utils/geocode';
 import { getBrowserPosition } from '../utils/geoZone';
 import { formatLatLng, normalizeLng } from '../utils/location';
-import { resolveZoneForLocation, type ZoneIndex, type ZoneSource } from '../utils/zoneMap';
+import { isZoneOverriddenAtLocation, resolveZoneForLocation, type ZoneIndex, type ZoneSource } from '../utils/zoneMap';
 import type { GardenLocation } from '../types';
 
 export interface LocationPick {
@@ -43,16 +43,30 @@ type SearchStatus = 'idle' | 'loading' | 'done' | 'error';
 export function LocationPicker({
   location,
   zoneId,
+  zoneFromPin,
   onPick,
+  onSavedZoneOverridden,
 }: {
   location: GardenLocation | undefined;
   /** The zone currently selected on the setup screen, shown on the map's location chip. */
   zoneId: string;
+  /**
+   * False when the user picked the zone by hand, so it no longer comes from the pin. The pin goes
+   * gray (and the chip drops the zone) until the user moves it again.
+   */
+  zoneFromPin: boolean;
   onPick: (pick: LocationPick) => void;
+  /** Called once the zone map loads if the saved zone doesn't match the saved pin (hand-picked). */
+  onSavedZoneOverridden: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   /** Where the map opens; later `location` changes come from the map itself, so it's read once. */
   const initialLocationRef = useRef(location);
+  const initialZoneIdRef = useRef(zoneId);
+  const onSavedZoneOverriddenRef = useRef(onSavedZoneOverridden);
+  useEffect(() => {
+    onSavedZoneOverriddenRef.current = onSavedZoneOverridden;
+  }, [onSavedZoneOverridden]);
   const mapRef = useRef<L.Map | null>(null);
   const indexRef = useRef<ZoneIndex | null>(null);
   const onPickRef = useRef(onPick);
@@ -188,6 +202,14 @@ export function LocationPicker({
       .then((index) => {
         if (cancelled) return;
         indexRef.current = index;
+        const saved = initialLocationRef.current;
+        if (
+          saved &&
+          !interactedRef.current &&
+          isZoneOverriddenAtLocation(index, saved.lat, saved.lng, initialZoneIdRef.current)
+        ) {
+          onSavedZoneOverriddenRef.current();
+        }
         if (reportedWithoutIndexRef.current) emit(); // upgrade an estimate made before the index arrived
       })
       .catch(() => {});
@@ -287,7 +309,7 @@ export function LocationPicker({
       >
         <div ref={containerRef} data-testid="location-map" style={{ position: 'absolute', inset: 0 }} />
 
-        <CenterPin placed={placed} lifted={dragging} />
+        <CenterPin placed={placed} lifted={dragging} inactive={placed && !zoneFromPin} />
 
         {!placed && (
           <div style={chipStyle({ bottom: 26, left: '50%', transform: 'translateX(-50%)' })}>
@@ -299,11 +321,15 @@ export function LocationPicker({
             data-testid="location-chip"
             style={chipStyle({ left: 10, bottom: 26, maxWidth: 'calc(100% - 20px)', display: 'flex', alignItems: 'center', gap: 8 })}
           >
-            <span
-              aria-hidden
-              style={{ width: 12, height: 12, borderRadius: 3, background: zone.mapColor, flexShrink: 0, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.15)' }}
-            />
-            <strong style={{ flexShrink: 0 }}>{zone.label}</strong>
+            {zoneFromPin && (
+              <>
+                <span
+                  aria-hidden
+                  style={{ width: 12, height: 12, borderRadius: 3, background: zone.mapColor, flexShrink: 0, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.15)' }}
+                />
+                <strong style={{ flexShrink: 0 }}>{zone.label}</strong>
+              </>
+            )}
             <span style={{ color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {location.label ?? formatLatLng(location)}
             </span>
@@ -331,7 +357,8 @@ function chipStyle(position: React.CSSProperties): React.CSSProperties {
 }
 
 /** The drop pin, drawn over the map's exact center; its tip marks the garden. */
-function CenterPin({ placed, lifted }: { placed: boolean; lifted: boolean }) {
+/** `inactive`: the zone was picked by hand, so the pin is shown gray until it's moved again. */
+function CenterPin({ placed, lifted, inactive }: { placed: boolean; lifted: boolean; inactive: boolean }) {
   return (
     <div
       aria-hidden
@@ -352,6 +379,8 @@ function CenterPin({ placed, lifted }: { placed: boolean; lifted: boolean }) {
         }}
       />
       <svg
+        data-testid="center-pin"
+        data-inactive={inactive}
         width="30"
         height="40"
         viewBox="0 0 30 40"
@@ -367,9 +396,10 @@ function CenterPin({ placed, lifted }: { placed: boolean; lifted: boolean }) {
       >
         <path
           d="M15 39C15 39 28 23.5 28 14A13 13 0 0 0 2 14C2 23.5 15 39 15 39Z"
-          fill="var(--color-accent)"
-          stroke="var(--color-accent-700)"
+          fill={inactive ? 'color-mix(in srgb, var(--color-text) 35%, var(--color-surface-raised))' : 'var(--color-accent)'}
+          stroke={inactive ? 'color-mix(in srgb, var(--color-text) 55%, var(--color-surface-raised))' : 'var(--color-accent-700)'}
           strokeWidth="1.5"
+          style={{ transition: 'fill 0.15s ease, stroke 0.15s ease' }}
         />
         <circle cx="15" cy="14" r="5" fill="#fffdf8" />
       </svg>
