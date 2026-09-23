@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PlantInstance } from '../types';
-import { clampGroupDelta, computeGhosts, computeGroupBoxes, lockedAxis } from './geometry';
+import { clampGroupDelta, clampToBed, computeGhosts, computeGroupBoxes, isInsideBed, lockedAxis } from './geometry';
 
 function plant(id: string, cropId: string, x: number, y: number, groupId: string): PlantInstance {
   return { id, cropId, x, y, groupId };
@@ -98,6 +98,68 @@ describe('computeGhosts', () => {
     // first step lands at x=114, already past the 96-wide bed
     expect(ghosts).toEqual([]);
   });
+
+  it('drops a ghost that lands in a rounded corner, past the arc', () => {
+    // r=4: the grid point (96, 0) is the bed's square corner, outside the rounded one.
+    const ghosts = computeGhosts({ x: 88, y: 0 }, horizontal, { x: 200, y: 0 }, 8, bounds.w, bounds.h, 4);
+    expect(ghosts).toEqual([]);
+    // Without a corner radius the same ghost is kept.
+    expect(computeGhosts({ x: 88, y: 0 }, horizontal, { x: 200, y: 0 }, 8, bounds.w, bounds.h)).toEqual([
+      { x: 96, y: 0 },
+    ]);
+  });
+});
+
+describe('isInsideBed', () => {
+  const [w, h, r] = [96, 48, 4];
+
+  it('treats a square corner as outside a rounded bed, but inside a square one', () => {
+    expect(isInsideBed({ x: 0, y: 0 }, w, h, r)).toBe(false);
+    expect(isInsideBed({ x: w, y: h }, w, h, r)).toBe(false);
+    expect(isInsideBed({ x: 0, y: 0 }, w, h)).toBe(true);
+  });
+
+  it('accepts a point exactly on the corner arc, and rejects one just past it', () => {
+    const d = r / Math.SQRT2; // 45° along the top-left arc, centered at (r, r)
+    expect(isInsideBed({ x: r - d, y: r - d }, w, h, r)).toBe(true);
+    expect(isInsideBed({ x: r - d - 0.01, y: r - d - 0.01 }, w, h, r)).toBe(false);
+  });
+
+  it('accepts a point flush with a straight edge right where the arc begins', () => {
+    expect(isInsideBed({ x: r, y: 0 }, w, h, r)).toBe(true);
+    expect(isInsideBed({ x: 0, y: r }, w, h, r)).toBe(true);
+    expect(isInsideBed({ x: w, y: h - r }, w, h, r)).toBe(true);
+  });
+
+  it('rejects a point past a straight edge', () => {
+    expect(isInsideBed({ x: 48, y: -0.01 }, w, h, r)).toBe(false);
+    expect(isInsideBed({ x: w + 0.01, y: 24 }, w, h, r)).toBe(false);
+  });
+});
+
+describe('clampToBed', () => {
+  const [w, h, r] = [96, 48, 4];
+
+  it('leaves a point already inside the bed untouched', () => {
+    expect(clampToBed({ x: 10, y: 10 }, w, h, r)).toEqual({ x: 10, y: 10 });
+  });
+
+  it('clamps to a straight edge outside the corner zones', () => {
+    expect(clampToBed({ x: -5, y: 20 }, w, h, r)).toEqual({ x: 0, y: 20 });
+    expect(clampToBed({ x: 50, y: h + 9 }, w, h, r)).toEqual({ x: 50, y: h });
+  });
+
+  it('pulls a point past a rounded corner radially onto its arc', () => {
+    // Diagonally out from the top-right arc center (92, 4).
+    const p = clampToBed({ x: 100, y: -4 }, w, h, r);
+    expect(p.x).toBeCloseTo(92 + r / Math.SQRT2);
+    expect(p.y).toBeCloseTo(4 - r / Math.SQRT2);
+    expect(isInsideBed(p, w, h, r)).toBe(true);
+  });
+
+  it('leaves the square corner alone when there is no radius', () => {
+    expect(clampToBed({ x: 100, y: -4 }, w, h)).toEqual({ x: w, y: 0 });
+  });
 });
 
 describe('clampGroupDelta', () => {
@@ -120,5 +182,27 @@ describe('clampGroupDelta', () => {
     // pushing right would send 'b' past the 96-wide bed first; the whole delta clamps to that limit.
     const { x } = clampGroupDelta(members, 10, 0, bounds.w, bounds.h);
     expect(x).toBeCloseTo(2); // 94 + x <= 96
+  });
+
+  it('keeps a lone plant dragged into a rounded corner on the arc, not in the square corner', () => {
+    const members = [plant('a', 'tomato', 80, 10, 'g1')];
+    const d = clampGroupDelta(members, 50, -50, bounds.w, bounds.h, 4);
+    const moved = { x: 80 + d.x, y: 10 + d.y };
+    expect(isInsideBed(moved, bounds.w, bounds.h, 4)).toBe(true);
+    expect(moved.x).toBeCloseTo(92 + 4 / Math.SQRT2);
+    expect(moved.y).toBeCloseTo(4 - 4 / Math.SQRT2);
+  });
+
+  it('slides a rigid patch into a corner until its nearest member meets the arc', () => {
+    const members = [plant('a', 'carrot', 70, 10, 'g1'), plant('b', 'carrot', 80, 10, 'g1'), plant('c', 'carrot', 80, 20, 'g1')];
+    const d = clampGroupDelta(members, 40, -40, bounds.w, bounds.h, 4);
+    for (const m of members) expect(isInsideBed({ x: m.x + d.x, y: m.y + d.y }, bounds.w, bounds.h, 4)).toBe(true);
+    // 'b' is the corner-most member; it ends up touching the arc (within float slack).
+    expect(Math.hypot(80 + d.x - 92, 10 + d.y - 4)).toBeCloseTo(4, 4);
+  });
+
+  it('allows a move flush along a straight edge right up to where the arc begins', () => {
+    const members = [plant('a', 'tomato', 50, 0, 'g1')];
+    expect(clampGroupDelta(members, 42, 0, bounds.w, bounds.h, 4)).toEqual({ x: 42, y: 0 });
   });
 });

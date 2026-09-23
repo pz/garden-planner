@@ -6,6 +6,7 @@ import { conflictKey, findOverlapConflicts, fitsAt } from '../utils/spacing';
 import {
   boundingBox,
   clampGroupDelta,
+  clampToBed,
   computeGhosts,
   computeGroupBoxes,
   lockedAxis,
@@ -23,13 +24,16 @@ import { ToastStack, type ToastItem } from './ToastStack';
 
 const PX_PER_INCH = 7;
 const PLANT_DIAMETER = 26;
+const BED_BORDER_PX = 2.5;
+const BED_OUTER_RADIUS_PX = 28;
+/**
+ * Plants are positioned inside the bed's border, whose inner edge curves with the outer
+ * radius minus the border width — that inner curve is the corner plants must stay within.
+ */
+const BED_CORNER_RADIUS_IN = (BED_OUTER_RADIUS_PX - BED_BORDER_PX) / PX_PER_INCH;
 
 function uid(): string {
   return crypto.randomUUID();
-}
-
-function clamp(v: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, v));
 }
 
 export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
@@ -121,11 +125,14 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
 
   function toBedCoords(clientX: number, clientY: number): Point | null {
     if (!bedRef.current) return null;
-    const rect = bedRef.current.getBoundingClientRect();
-    return {
-      x: clamp((clientX - rect.left) / PX_PER_INCH, 0, bed.widthIn),
-      y: clamp((clientY - rect.top) / PX_PER_INCH, 0, bed.heightIn),
+    // Plant coordinates are relative to the bed's inner (padding) edge, inside its border.
+    const el = bedRef.current;
+    const rect = el.getBoundingClientRect();
+    const raw = {
+      x: (clientX - rect.left - el.clientLeft) / PX_PER_INCH,
+      y: (clientY - rect.top - el.clientTop) / PX_PER_INCH,
     };
+    return clampToBed(raw, bed.widthIn, bed.heightIn, BED_CORNER_RADIUS_IN);
   }
 
   function openMenuAt(clientX: number, clientY: number) {
@@ -187,7 +194,14 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
         if (!prev) return prev;
         const rawDx = coords.x - prev.anchorOriginal.x;
         const rawDy = coords.y - prev.anchorOriginal.y;
-        const { x: dx, y: dy } = clampGroupDelta(prev.members, rawDx, rawDy, bed.widthIn, bed.heightIn);
+        const { x: dx, y: dy } = clampGroupDelta(
+          prev.members,
+          rawDx,
+          rawDy,
+          bed.widthIn,
+          bed.heightIn,
+          BED_CORNER_RADIUS_IN,
+        );
         return { ...prev, dx, dy };
       });
     },
@@ -215,7 +229,15 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
           axis = lockedAxis(dx, dy);
         }
         if (!axis) return { ...prev, ghosts: [] };
-        const ghosts = computeGhosts(prev.origin, axis, coords, spacing, bed.widthIn, bed.heightIn);
+        const ghosts = computeGhosts(
+          prev.origin,
+          axis,
+          coords,
+          spacing,
+          bed.widthIn,
+          bed.heightIn,
+          BED_CORNER_RADIUS_IN,
+        );
         return { ...prev, axis, ghosts };
       });
     },
@@ -285,11 +307,16 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
             onPointerUp={handleBedPointerUp}
             style={{
               position: 'relative',
+              // The bed is drawn at a fixed scale and never shrinks with the window (plants
+              // are positioned in absolute inches); a narrow window scrolls to reach it instead.
+              // content-box so the plantable area is exactly widthIn × heightIn inside the border.
+              boxSizing: 'content-box',
+              flexShrink: 0,
+              alignSelf: 'flex-start',
               width: bed.widthIn * PX_PER_INCH,
-              maxWidth: '100%',
               height: bed.heightIn * PX_PER_INCH,
-              border: '2.5px solid var(--color-text)',
-              borderRadius: 'var(--radius-lg)',
+              border: `${BED_BORDER_PX}px solid var(--color-text)`,
+              borderRadius: BED_OUTER_RADIUS_PX,
               background: `repeating-linear-gradient(90deg, transparent 0 ${gridPx - 1}px, #e6dbc6 ${gridPx - 1}px ${gridPx}px), repeating-linear-gradient(0deg, #f6efe0 0 ${gridPx - 1}px, #efe6d2 ${gridPx - 1}px ${gridPx}px)`,
               touchAction: 'none',
               userSelect: 'none',
@@ -417,9 +444,13 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
               }}
               onDuplicate={() => {
                 const spacing = getCrop(quickActionsPlant.cropId).spacingIn;
-                const nx = clamp(quickActionsPlant.x + spacing * 0.8, 0, bed.widthIn);
-                const ny = clamp(quickActionsPlant.y, 0, bed.heightIn);
-                if (fitsAt(nx, ny, spacing, bed.widthIn, bed.heightIn, plants)) {
+                const { x: nx, y: ny } = clampToBed(
+                  { x: quickActionsPlant.x + spacing * 0.8, y: quickActionsPlant.y },
+                  bed.widthIn,
+                  bed.heightIn,
+                  BED_CORNER_RADIUS_IN,
+                );
+                if (fitsAt(nx, ny, spacing, bed.widthIn, bed.heightIn, plants, BED_CORNER_RADIUS_IN)) {
                   addPlants([{ id: uid(), cropId: quickActionsPlant.cropId, x: nx, y: ny, groupId: uid() }]);
                 }
                 setQuickActions(null);
