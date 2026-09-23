@@ -1,21 +1,23 @@
 name: Deploy to GitHub Pages
 
+# Publishes main to the root of the gh-pages branch, which GitHub Pages serves
+# ("Deploy from a branch: gh-pages / root"). PR previews live beside it under
+# pr-preview/ (see pr-preview.yml); this workflow never deletes that folder.
+
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write # push to gh-pages
 
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: pages-main
+  cancel-in-progress: true # only the newest main matters
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,16 +27,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - uses: actions/upload-pages-artifact@v3
+      # Serve files as-is (no Jekyll processing).
+      - run: touch dist/.nojekyll
+      - uses: JamesIves/github-pages-deploy-action@v4
         with:
-          path: dist
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          branch: gh-pages
+          folder: dist
+          # Replace the old site at the root, but leave open PR previews alone.
+          clean: true
+          clean-exclude: pr-preview/

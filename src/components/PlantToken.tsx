@@ -6,6 +6,9 @@ import { PlantMark, CROP_COLORS } from './PlantMark';
 export const LONG_PRESS_MS = 450;
 export const MOVE_THRESHOLD_PX = 6;
 
+/** 'copy' (a plus badge) for a patch drag, since it adds plants rather than moving one. */
+const GESTURE_CURSORS = { idle: 'grab', move: 'grabbing', armed: 'copy', multiply: 'copy' } as const;
+
 export interface GestureHandlers {
   onSelect: (id: string) => void;
   onQuickActions: (id: string, clientX: number, clientY: number) => void;
@@ -34,7 +37,9 @@ export function PlantToken({
 }) {
   const crop = getCrop(plant.cropId);
   const color = CROP_COLORS[plant.cropId] ?? 'var(--color-accent)';
-  const [dragging, setDragging] = useState(false);
+  // Drives the cursor: 'armed' once a long-press has elapsed (the next drag will multiply
+  // into a patch rather than move), so the user can see which gesture they're about to make.
+  const [gesture, setGesture] = useState<'idle' | 'armed' | 'move' | 'multiply'>('idle');
 
   const stateRef = useRef<{
     startX: number;
@@ -68,6 +73,7 @@ export function PlantToken({
     stateRef.current = st;
     st.longPressTimer = setTimeout(() => {
       st.isLongPress = true;
+      if (st.mode === 'none') setGesture('armed');
     }, LONG_PRESS_MS);
   }
 
@@ -88,7 +94,7 @@ export function PlantToken({
         st.mode = 'move';
         handlers.onMoveStart(plant.id);
       }
-      setDragging(true);
+      setGesture(st.mode);
     }
     if (st.mode === 'move') handlers.onMoveUpdate(plant.id, e.clientX, e.clientY);
     if (st.mode === 'multiply') handlers.onMultiplyUpdate(plant.id, e.clientX, e.clientY);
@@ -97,7 +103,7 @@ export function PlantToken({
   function handlePointerUp(e: React.PointerEvent) {
     const st = stateRef.current;
     clearTimer();
-    setDragging(false);
+    setGesture('idle');
     if (!st) return;
     if (st.mode === 'move') {
       handlers.onMoveEnd(plant.id, true);
@@ -126,7 +132,7 @@ export function PlantToken({
         left: plant.x * pxPerInch,
         top: plant.y * pxPerInch,
         transform: 'translate(-50%, -50%)',
-        cursor: dragging ? 'grabbing' : 'grab',
+        cursor: GESTURE_CURSORS[gesture],
         touchAction: 'none',
       }}
     >

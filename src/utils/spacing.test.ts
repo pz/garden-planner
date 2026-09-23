@@ -88,6 +88,12 @@ describe('fitsAt', () => {
     expect(fitsAt(bedW, 24, 24, bedW, bedH, [])).toBe(true);
   });
 
+  it('rejects a placement in a rounded corner past the arc, but accepts one on the straight edge beside it', () => {
+    expect(fitsAt(0, 0, 24, bedW, bedH, [], 4)).toBe(false);
+    expect(fitsAt(bedW, bedH, 24, bedW, bedH, [], 4)).toBe(false);
+    expect(fitsAt(4, 0, 24, bedW, bedH, [], 4)).toBe(true);
+  });
+
   it('rejects a new plant that would crowd an existing one', () => {
     const existing = [plant({ id: 'a', cropId: 'tomato', x: 48, y: 24 })];
     expect(fitsAt(48.1, 24, 24, bedW, bedH, existing)).toBe(false);
