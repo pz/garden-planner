@@ -71,3 +71,38 @@ USDA hardiness zone data (average last/first frost dates) is small enough to
 stay as a plain TypeScript array (`ZONES: ZoneInfo[]`) rather than JSON — it
 changes far less often than crops and isn't a candidate for non-developer
 editing the way crop data is.
+
+Each zone also carries a `mapColor`, used to paint it on the setup screen's map
+overlay and legend (cold → warm: purple → orange). `zones.test.ts` checks the ids
+are consecutive and the colors distinct.
+
+## `usdaZones.geo.json`
+
+USDA plant hardiness zone polygons for the contiguous US, used by the setup
+screen's map both to draw the zone overlay and to look up the zone under the
+pin (`utils/zoneMap.ts`). Outside this coverage the app falls back to the rough
+latitude estimate in `utils/geoZone.ts`.
+
+- **Source:** [Open Plant Hardiness Zones (OPHZ)](https://github.com/kgjenkins/ophz)
+  `topojson/ophz.topojson`, derived from the 2012 USDA map and released under the
+  [ODC Public Domain Dedication and License](https://opendatacommons.org/licenses/pddl/1-0/).
+- **Processing:** half-zones merged into whole zones (`8a`/`8b` → `8`), zone 11
+  folded into 10 (the app's warmest zone), then heavily simplified so the file is
+  ~290 KB (~80 KB gzipped). It's loaded lazily (`usdaZones.ts`), so it never
+  weighs on the main bundle.
+- **Simplification caveat:** thin coastal strips (barrier islands, the Keys,
+  Cape Cod) fall just outside the simplified polygons; `resolveZoneForLocation`
+  covers those by snapping to the nearest mapped zone within ~1°.
+
+To regenerate (with [mapshaper](https://github.com/mbloch/mapshaper)):
+
+```sh
+npx mapshaper ophz.topojson \
+  -each 'zone=String(Math.min(10, parseInt(ZONE)))' \
+  -dissolve2 zone -filter-islands min-area=40km2 -filter-slivers \
+  -simplify 1% keep-shapes -clean \
+  -o format=geojson precision=0.01 src/data/usdaZones.geo.json
+```
+
+`zoneMap.test.ts` spot-checks a handful of cities against it, so a regenerated
+file that shifts zones noticeably fails a test.

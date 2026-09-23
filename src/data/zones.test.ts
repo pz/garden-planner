@@ -25,3 +25,16 @@ describe('zoneLastFrostDate / zoneFirstFrostDate', () => {
     }
   });
 });
+
+describe('ZONES data integrity', () => {
+  it('has unique ids that are consecutive whole numbers, coldest first', () => {
+    const ids = ZONES.map((z) => Number(z.id));
+    expect(new Set(ids).size).toBe(ids.length);
+    ids.forEach((id, i) => expect(id).toBe(ids[0] + i));
+  });
+
+  it('gives every zone a distinct hex map color', () => {
+    for (const z of ZONES) expect(z.mapColor).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(new Set(ZONES.map((z) => z.mapColor.toLowerCase())).size).toBe(ZONES.length);
+  });
+});

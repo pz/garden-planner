@@ -27,8 +27,11 @@ Concretely:
   in the components that call `dispatch`.
 - **`src/utils/`** — pure computations: `spacing.ts` (overlap/fit rules), `dates.ts`
   (planting/harvest scheduling), `geometry.ts` (patch bounding boxes, multiply-drag
-  ghost placement), `geoZone.ts` (lat→zone mapping; the actual `navigator.geolocation`
-  call is kept separate from the pure mapping function).
+  ghost placement), `geoZone.ts` (lat→zone fallback mapping; the actual
+  `navigator.geolocation` call is kept separate from the pure mapping function),
+  `zoneMap.ts` (point-in-polygon lookup against the bundled USDA zone map),
+  `geocode.ts` (Photon search/reverse URL building and response parsing; the `fetch`
+  wrappers are separate), `location.ts` (lat/lng validation and normalization).
 - **`src/data/`** — static, codified reference data (crops, zones) plus small
   accessors.
 

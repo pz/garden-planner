@@ -1,4 +1,5 @@
 import type { GardenPlan, PlantInstance, Profile } from '../types';
+import { parseGardenLocation } from '../utils/location';
 import { conflictKey, findOverlapConflicts } from '../utils/spacing';
 
 /** Template for a fresh garden; always used via createPlan so every garden gets its own id. */
@@ -27,7 +28,12 @@ export function parsePlan(raw: string | null, id: string): GardenPlan {
     if (!raw) return createPlan(id);
     const parsed = JSON.parse(raw) as GardenPlan;
     if (parsed.version !== 2) return createPlan(id);
-    return { ...parsed, id };
+    if (typeof parsed.profile !== 'object' || parsed.profile === null) return { ...parsed, id };
+    // `location` is optional and newer than v2 itself, so validate it rather than trust it:
+    // a bad value just drops the pin instead of breaking the setup screen's map.
+    const { location, ...profile } = parsed.profile;
+    const cleanLocation = parseGardenLocation(location);
+    return { ...parsed, id, profile: cleanLocation ? { ...profile, location: cleanLocation } : profile };
   } catch {
     return createPlan(id);
   }
