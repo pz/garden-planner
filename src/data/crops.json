@@ -8,8 +8,7 @@
     "sowMethod": "transplant",
     "startIndoorsWeeksBeforeLastFrost": 6,
     "transplantWeeksAfterLastFrost": 1,
-    "daysToMaturity": 70,
-    "tip": "Give it a stake or cage before it needs one — roots resent disturbance later."
+    "daysToMaturity": 70
   },
   {
     "id": "kale",
@@ -20,8 +19,7 @@
     "sowMethod": "transplant",
     "startIndoorsWeeksBeforeLastFrost": 5,
     "transplantWeeksAfterLastFrost": -1,
-    "daysToMaturity": 60,
-    "tip": "Tolerates a light frost — flavor sweetens after a cold snap."
+    "daysToMaturity": 60
   },
   {
     "id": "carrot",
@@ -31,8 +29,7 @@
     "defaultPatch": true,
     "sowMethod": "direct-sow",
     "directSowWeeksRelativeToLastFrost": -2,
-    "daysToMaturity": 70,
-    "tip": "Keep the seed bed loose and stone-free so roots grow straight."
+    "daysToMaturity": 70
   },
   {
     "id": "onion",
@@ -43,8 +40,7 @@
     "sowMethod": "transplant",
     "startIndoorsWeeksBeforeLastFrost": 8,
     "transplantWeeksAfterLastFrost": -2,
-    "daysToMaturity": 100,
-    "tip": "Stop watering once tops start to fall over — that is the bulbs curing."
+    "daysToMaturity": 100
   },
   {
     "id": "beans",
@@ -54,8 +50,7 @@
     "defaultPatch": true,
     "sowMethod": "direct-sow",
     "directSowWeeksRelativeToLastFrost": 1,
-    "daysToMaturity": 55,
-    "tip": "Fixes its own nitrogen — good neighbor for heavy feeders like corn."
+    "daysToMaturity": 55
   },
   {
     "id": "lettuce",
@@ -65,8 +60,7 @@
     "defaultPatch": true,
     "sowMethod": "direct-sow",
     "directSowWeeksRelativeToLastFrost": -3,
-    "daysToMaturity": 45,
-    "tip": "Bolts in heat — plant early, or tuck it in a taller plant’s shade."
+    "daysToMaturity": 45
   },
   {
     "id": "squash",
@@ -76,8 +70,7 @@
     "defaultPatch": false,
     "sowMethod": "direct-sow",
     "directSowWeeksRelativeToLastFrost": 2,
-    "daysToMaturity": 55,
-    "tip": "Needs room to sprawl — give it the bed’s edge if space is tight."
+    "daysToMaturity": 55
   },
   {
     "id": "basil",
@@ -88,7 +81,6 @@
     "sowMethod": "transplant",
     "startIndoorsWeeksBeforeLastFrost": 6,
     "transplantWeeksAfterLastFrost": 2,
-    "daysToMaturity": 60,
-    "tip": "Pinch flower spikes to keep leaves coming all season."
+    "daysToMaturity": 60
   }
 ]

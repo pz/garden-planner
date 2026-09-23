@@ -13,7 +13,6 @@ const transplantCrop: CropDef = {
   startIndoorsWeeksBeforeLastFrost: 6,
   transplantWeeksAfterLastFrost: 1,
   daysToMaturity: 70,
-  tip: '',
 };
 
 const directSowCrop: CropDef = {
@@ -25,7 +24,6 @@ const directSowCrop: CropDef = {
   sowMethod: 'direct-sow',
   directSowWeeksRelativeToLastFrost: -2,
   daysToMaturity: 70,
-  tip: '',
 };
 
 describe('scheduleFor', () => {

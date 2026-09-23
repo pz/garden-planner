@@ -30,7 +30,6 @@ export interface CropDef {
   directSowWeeksRelativeToLastFrost?: number;
   /** Days from sowing/transplanting outside to first harvest. */
   daysToMaturity: number;
-  tip: string;
 }
 
 export interface Profile {
