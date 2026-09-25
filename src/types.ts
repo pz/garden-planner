@@ -49,9 +49,11 @@ export interface Profile {
   location?: GardenLocation;
 }
 
-/** A single planted instance, in inches from the bed's top-left corner. */
+/** A single planted instance, in inches from its bed's (unrotated) top-left corner. */
 export interface PlantInstance {
   id: string;
+  /** The bed this plant grows in; its x/y are local to that bed. */
+  bedId: string;
   cropId: string;
   x: number;
   y: number;
@@ -60,19 +62,32 @@ export interface PlantInstance {
   groupId: string;
 }
 
+export type BedShape = 'rect';
+
+/** One bed in the garden layout. Garden coordinates are inches, y pointing down. */
 export interface Bed {
   id: string;
   name: string;
+  shape: BedShape;
+  /** Center of the bed, in garden coordinates. */
+  cx: number;
+  cy: number;
   widthIn: number;
   heightIn: number;
+  /**
+   * Clockwise rotation about the center, in degrees. Stored now so turning beds later needs no
+   * data migration; nothing sets it to anything but 0 yet.
+   */
+  rotationDeg: number;
 }
 
 export interface GardenPlan {
-  version: 2;
+  version: 3;
   /** Identifies this garden among the user's saved gardens; also its localStorage key. */
   id: string;
+  name: string;
   profile: Profile;
-  bed: Bed;
+  beds: Bed[];
   plants: PlantInstance[];
   /** Canonical (sorted, "::"-joined) groupId pairs whose overlap warning the user dismissed. */
   dismissedConflictKeys: string[];

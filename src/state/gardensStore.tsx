@@ -37,7 +37,7 @@ function loadOrInitIndex(): GardenIndex {
 
 /** A garden's display name, read live from its stored plan (no separate cache to fall out of sync). */
 export function readGardenName(gardenId: string): string {
-  return parsePlan(localStorage.getItem(planStorageKey(gardenId)), gardenId).bed.name;
+  return parsePlan(localStorage.getItem(planStorageKey(gardenId)), gardenId).name;
 }
 
 interface GardensContextValue {

@@ -3,7 +3,7 @@ import type { PlantInstance } from '../types';
 import { conflictKey, findOverlapConflicts, fitsAt } from './spacing';
 
 function plant(overrides: Partial<PlantInstance> & Pick<PlantInstance, 'id' | 'cropId' | 'x' | 'y'>): PlantInstance {
-  return { groupId: overrides.id, ...overrides };
+  return { groupId: overrides.id, bedId: 'b1', ...overrides };
 }
 
 describe('conflictKey', () => {
@@ -31,6 +31,14 @@ describe('findOverlapConflicts', () => {
     const plants = [
       plant({ id: 'a', cropId: 'tomato', x: 0, y: 0, groupId: 'g1' }),
       plant({ id: 'b', cropId: 'basil', x: 18, y: 0, groupId: 'g2' }),
+    ];
+    expect(findOverlapConflicts(plants)).toEqual([]);
+  });
+
+  it('never flags plants in different beds, even at the same local coordinates', () => {
+    const plants = [
+      plant({ id: 'a', cropId: 'tomato', x: 5, y: 5, groupId: 'g1', bedId: 'b1' }),
+      plant({ id: 'b', cropId: 'tomato', x: 5, y: 5, groupId: 'g2', bedId: 'b2' }),
     ];
     expect(findOverlapConflicts(plants)).toEqual([]);
   });
