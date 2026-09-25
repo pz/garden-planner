@@ -26,8 +26,8 @@ const SUN_OPTIONS: { id: SunExposure; label: string; hint: string }[] = [
 ];
 
 export function SetupScreen({ onDone }: { onDone: () => void }) {
-  const { plan, setProfile, setBedName } = useGarden();
-  const [bedName, setBedNameInput] = useState(plan.bed.name);
+  const { plan, setProfile, setGardenName } = useGarden();
+  const [gardenName, setGardenNameInput] = useState(plan.name);
   const [zoneId, setZoneId] = useState(plan.profile.zoneId);
   const [sunExposure, setSunExposure] = useState<SunExposure>(plan.profile.sunExposure);
   const [location, setLocation] = useState<GardenLocation | undefined>(plan.profile.location);
@@ -50,7 +50,7 @@ export function SetupScreen({ onDone }: { onDone: () => void }) {
 
   function handleContinue() {
     setProfile(location ? { zoneId, sunExposure, onboarded: true, location } : { zoneId, sunExposure, onboarded: true });
-    setBedName(bedName.trim() || plan.bed.name);
+    setGardenName(gardenName.trim() || plan.name);
     onDone();
   }
 
@@ -65,11 +65,11 @@ export function SetupScreen({ onDone }: { onDone: () => void }) {
       <h1 style={{ fontSize: 30, marginBottom: 28 }}>A little about your garden</h1>
 
       <label style={{ display: 'block', marginBottom: 22 }}>
-        <span style={{ display: 'block', font: '600 13px Figtree', marginBottom: 8 }}>Bed name</span>
+        <span style={{ display: 'block', font: '600 13px Figtree', marginBottom: 8 }}>Garden name</span>
         <input
-          value={bedName}
-          placeholder="e.g. The back porch bed"
-          onChange={(e) => setBedNameInput(e.target.value)}
+          value={gardenName}
+          placeholder="e.g. Back garden"
+          onChange={(e) => setGardenNameInput(e.target.value)}
           style={{
             width: '100%',
             padding: '12px 14px',
@@ -168,7 +168,7 @@ export function SetupScreen({ onDone }: { onDone: () => void }) {
       </div>
 
       <button onClick={handleContinue} className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '13px 18px' }}>
-        Continue to your garden bed
+        Continue to your garden
       </button>
     </div>
   );

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_INDEX, type GardenIndex } from './gardenIndex';
 import { resolveMigration } from './migration';
-import { createPlan } from './reducer';
-import type { GardenPlan } from '../types';
+import { createPlan, parsePlan } from './reducer';
 
-const LEGACY_PLAN: GardenPlan = {
+// A pre-multi-garden save, which was also pre-multi-bed (v2).
+const LEGACY_PLAN = {
   version: 2,
   id: 'whatever-was-stored',
   profile: { zoneId: '7', sunExposure: 'part-shade', onboarded: true },
@@ -18,7 +18,9 @@ describe('resolveMigration', () => {
     const result = resolveMigration(DEFAULT_INDEX, JSON.stringify(LEGACY_PLAN), 'new-id');
 
     expect(result.index).toEqual({ version: 1, gardenIds: ['new-id'], activeGardenId: 'new-id' });
-    expect(result.newPlan).toEqual({ ...LEGACY_PLAN, id: 'new-id' });
+    expect(result.newPlan).toEqual(parsePlan(JSON.stringify(LEGACY_PLAN), 'new-id'));
+    expect(result.newPlan?.name).toBe('The Sunny Corner Bed');
+    expect(result.newPlan?.plants.map((p) => p.id)).toEqual(['p1']);
     expect(result.hadLegacyData).toBe(true);
   });
 

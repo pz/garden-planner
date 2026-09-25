@@ -30,7 +30,7 @@ export function GardenSwitcher({
     return () => document.removeEventListener('pointerdown', onDocPointerDown);
   }, [open]);
 
-  const activeName = plan.bed.name;
+  const activeName = plan.name;
   const isTitle = variant === 'title';
 
   return (

@@ -6,7 +6,7 @@ import { getCrop } from '../data/crops';
 import { getZone } from '../data/zones';
 
 function plant(overrides: Partial<PlantInstance>): PlantInstance {
-  return { id: 'p1', cropId: 'carrot', x: 0, y: 0, groupId: 'g1', ...overrides };
+  return { id: 'p1', bedId: 'b1', cropId: 'carrot', x: 0, y: 0, groupId: 'g1', ...overrides };
 }
 
 function entryScheduledOn(groupId: string, date: Date): CalendarEntry {
