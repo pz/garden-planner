@@ -32,10 +32,21 @@ export interface CropDef {
   daysToMaturity: number;
 }
 
+/** Where the garden is, as picked on the setup screen's map. */
+export interface GardenLocation {
+  lat: number;
+  /** Normalized to [-180, 180). */
+  lng: number;
+  /** Human-readable place name from search or reverse geocoding, if we have one. */
+  label?: string;
+}
+
 export interface Profile {
   zoneId: string;
   sunExposure: SunExposure;
   onboarded: boolean;
+  /** Absent for gardens set up before the map picker, or if the user never placed a pin. */
+  location?: GardenLocation;
 }
 
 /** A single planted instance, in inches from the bed's top-left corner. */

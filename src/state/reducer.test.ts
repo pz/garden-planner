@@ -43,6 +43,30 @@ describe('parsePlan', () => {
     // simulate reading it back under a different key, e.g. after a copy/rename bug
     expect(parsePlan(stored, 'a-different-id').id).toBe('a-different-id');
   });
+
+  it('keeps a valid stored garden location', () => {
+    const plan = basePlan();
+    plan.profile = { ...plan.profile, location: { lat: 45.52, lng: -122.68, label: 'Portland, Oregon' } };
+    expect(parsePlan(JSON.stringify(plan), TEST_ID).profile.location).toEqual({
+      lat: 45.52,
+      lng: -122.68,
+      label: 'Portland, Oregon',
+    });
+  });
+
+  it('drops a malformed stored location but keeps the rest of the profile', () => {
+    const plan = basePlan();
+    const stored = JSON.stringify({ ...plan, profile: { ...plan.profile, zoneId: '8', location: { lat: 'x', lng: 5 } } });
+    const parsed = parsePlan(stored, TEST_ID);
+    expect(parsed.profile).toEqual({ ...plan.profile, zoneId: '8' });
+    expect('location' in parsed.profile).toBe(false);
+  });
+
+  it('reads a pre-map plan (no location at all) unchanged', () => {
+    const plan = basePlan();
+    expect(parsePlan(JSON.stringify(plan), TEST_ID)).toEqual(plan);
+    expect('location' in parsePlan(JSON.stringify(plan), TEST_ID).profile).toBe(false);
+  });
 });
 
 describe('reducer', () => {
@@ -51,6 +75,15 @@ describe('reducer', () => {
     const next = reducer(state, { type: 'setProfile', profile: { zoneId: '9', sunExposure: 'shade', onboarded: true } });
     expect(next.profile).toEqual({ zoneId: '9', sunExposure: 'shade', onboarded: true });
     expect(next).not.toBe(state); // immutability: new object identity
+  });
+
+  it('setProfile stores the garden location and leaves bed and plants untouched', () => {
+    const state = basePlan([{ id: 'p1', cropId: 'tomato', x: 1, y: 2, groupId: 'g1' }]);
+    const profile = { zoneId: '8', sunExposure: 'full-sun' as const, onboarded: true, location: { lat: 45.5, lng: -122.7 } };
+    const next = reducer(state, { type: 'setProfile', profile });
+    expect(next.profile.location).toEqual({ lat: 45.5, lng: -122.7 });
+    expect(next.bed).toBe(state.bed);
+    expect(next.plants).toBe(state.plants);
   });
 
   it('setBedName replaces only the bed name, leaving its dimensions untouched', () => {

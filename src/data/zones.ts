@@ -5,19 +5,21 @@ export interface ZoneInfo {
   lastFrost: { month: number; day: number };
   /** Approximate average first fall frost date, month/day. */
   firstFrost: { month: number; day: number };
+  /** Fill color for this zone on the setup screen's map overlay (cold → warm: purple → orange). */
+  mapColor: string;
 }
 
 // Rough, widely-used averages per USDA zone. Good enough for planning guidance,
 // not a substitute for a local extension office.
 export const ZONES: ZoneInfo[] = [
-  { id: '3', label: 'Zone 3', lastFrost: { month: 5, day: 30 }, firstFrost: { month: 9, day: 1 } },
-  { id: '4', label: 'Zone 4', lastFrost: { month: 5, day: 15 }, firstFrost: { month: 9, day: 15 } },
-  { id: '5', label: 'Zone 5', lastFrost: { month: 4, day: 30 }, firstFrost: { month: 10, day: 1 } },
-  { id: '6', label: 'Zone 6', lastFrost: { month: 4, day: 15 }, firstFrost: { month: 10, day: 15 } },
-  { id: '7', label: 'Zone 7', lastFrost: { month: 3, day: 30 }, firstFrost: { month: 10, day: 30 } },
-  { id: '8', label: 'Zone 8', lastFrost: { month: 3, day: 15 }, firstFrost: { month: 11, day: 15 } },
-  { id: '9', label: 'Zone 9', lastFrost: { month: 2, day: 15 }, firstFrost: { month: 12, day: 1 } },
-  { id: '10', label: 'Zone 10', lastFrost: { month: 1, day: 30 }, firstFrost: { month: 12, day: 15 } },
+  { id: '3', label: 'Zone 3', lastFrost: { month: 5, day: 30 }, firstFrost: { month: 9, day: 1 }, mapColor: '#9b86d6' },
+  { id: '4', label: 'Zone 4', lastFrost: { month: 5, day: 15 }, firstFrost: { month: 9, day: 15 }, mapColor: '#6f95dc' },
+  { id: '5', label: 'Zone 5', lastFrost: { month: 4, day: 30 }, firstFrost: { month: 10, day: 1 }, mapColor: '#4fb0c6' },
+  { id: '6', label: 'Zone 6', lastFrost: { month: 4, day: 15 }, firstFrost: { month: 10, day: 15 }, mapColor: '#5db872' },
+  { id: '7', label: 'Zone 7', lastFrost: { month: 3, day: 30 }, firstFrost: { month: 10, day: 30 }, mapColor: '#a9cd4f' },
+  { id: '8', label: 'Zone 8', lastFrost: { month: 3, day: 15 }, firstFrost: { month: 11, day: 15 }, mapColor: '#ecc94b' },
+  { id: '9', label: 'Zone 9', lastFrost: { month: 2, day: 15 }, firstFrost: { month: 12, day: 1 }, mapColor: '#ee9a3f' },
+  { id: '10', label: 'Zone 10', lastFrost: { month: 1, day: 30 }, firstFrost: { month: 12, day: 15 }, mapColor: '#dd6a3a' },
 ];
 
 export function getZone(id: string): ZoneInfo {

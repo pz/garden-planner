@@ -85,3 +85,25 @@ button {
 .btn-secondary:hover {
   background: color-mix(in srgb, var(--color-text) 7%, transparent);
 }
+
+.zone-button {
+  transition: transform 0.1s ease, background 0.12s ease;
+}
+
+.zone-button:hover {
+  transform: translateY(-1px);
+}
+
+.zone-button:focus-visible {
+  outline: 2px solid var(--color-accent-700);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zone-button {
+    transition: none;
+  }
+  .zone-button:hover {
+    transform: none;
+  }
+}
