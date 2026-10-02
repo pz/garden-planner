@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, type ReactNode } from 'react';
-import type { GardenPlan, PlantInstance, Profile } from '../types';
+import type { Bed, GardenPlan, PlantInstance, Profile } from '../types';
+import type { BedGeometry } from '../utils/layout';
 import { parsePlan, reducer } from './reducer';
 import { storageKey } from './storageNamespace';
 
@@ -13,7 +14,13 @@ export function planStorageKey(gardenId: string): string {
 interface GardenContextValue {
   plan: GardenPlan;
   setProfile: (profile: Profile) => void;
-  setBedName: (name: string) => void;
+  setGardenName: (name: string) => void;
+  addBed: (bed: Bed) => void;
+  renameBed: (id: string, name: string) => void;
+  moveBed: (id: string, dx: number, dy: number) => void;
+  resizeBed: (id: string, geometry: BedGeometry) => void;
+  removeBed: (id: string) => void;
+  restoreLayout: (beds: Bed[], plants: PlantInstance[]) => void;
   addPlants: (plants: PlantInstance[]) => void;
   moveGroup: (groupId: string, dx: number, dy: number) => void;
   removePlant: (id: string) => void;
@@ -40,7 +47,13 @@ export function GardenProvider({ gardenId, children }: { gardenId: string; child
     () => ({
       plan,
       setProfile: (profile) => dispatch({ type: 'setProfile', profile }),
-      setBedName: (name) => dispatch({ type: 'setBedName', name }),
+      setGardenName: (name) => dispatch({ type: 'setGardenName', name }),
+      addBed: (bed) => dispatch({ type: 'addBed', bed }),
+      renameBed: (id, name) => dispatch({ type: 'renameBed', id, name }),
+      moveBed: (id, dx, dy) => dispatch({ type: 'moveBed', id, dx, dy }),
+      resizeBed: (id, geometry) => dispatch({ type: 'resizeBed', id, geometry }),
+      removeBed: (id) => dispatch({ type: 'removeBed', id }),
+      restoreLayout: (beds, plants) => dispatch({ type: 'restoreLayout', beds, plants }),
       addPlants: (plants) => dispatch({ type: 'addPlants', plants }),
       moveGroup: (groupId, dx, dy) => dispatch({ type: 'moveGroup', groupId, dx, dy }),
       removePlant: (id) => dispatch({ type: 'removePlant', id }),

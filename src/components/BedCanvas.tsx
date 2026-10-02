@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useGarden } from '../state/gardenStore';
-import type { PlantInstance } from '../types';
+import type { Bed, PlantInstance } from '../types';
 import { getCrop } from '../data/crops';
 import { conflictKey, findOverlapConflicts, fitsAt } from '../utils/spacing';
 import {
@@ -14,6 +14,7 @@ import {
   AXIS_LOCK_THRESHOLD_FACTOR,
   type Point,
 } from '../utils/geometry';
+import { BED_CORNER_RADIUS_IN, PLANTING_PX_PER_INCH, bedBounds, gardenBounds } from '../utils/layout';
 import { PlantToken, LONG_PRESS_MS, MOVE_THRESHOLD_PX, type GestureHandlers } from './PlantToken';
 import { PlantMenu } from './PlantMenu';
 import { PlantInfoCard } from './PlantInfoCard';
@@ -21,16 +22,16 @@ import { PlantingCalendar } from './PlantingCalendar';
 import { GardenSwitcher } from './GardenSwitcher';
 import { CROP_COLORS } from './PlantMark';
 import { ToastStack, type ToastItem } from './ToastStack';
+import { LayoutEditor } from './LayoutEditor';
+import { Icon } from './Icon';
 
-const PX_PER_INCH = 7;
+const PX_PER_INCH = PLANTING_PX_PER_INCH;
 const PLANT_DIAMETER = 26;
 const BED_BORDER_PX = 2.5;
-const BED_OUTER_RADIUS_PX = 28;
-/**
- * Plants are positioned inside the bed's border, whose inner edge curves with the outer
- * radius minus the border width — that inner curve is the corner plants must stay within.
- */
-const BED_CORNER_RADIUS_IN = (BED_OUTER_RADIUS_PX - BED_BORDER_PX) / PX_PER_INCH;
+/** The border's inner edge curves with the corner radius plants are kept inside. */
+const BED_OUTER_RADIUS_PX = BED_CORNER_RADIUS_IN * PX_PER_INCH + BED_BORDER_PX;
+/** Room above each bed for its name. */
+const BED_LABEL_PX = 26;
 
 function uid(): string {
   return crypto.randomUUID();
@@ -38,17 +39,25 @@ function uid(): string {
 
 export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
   const { plan, addPlants, moveGroup, removePlant, removeGroup, setVariety, dismissConflictsForGroup } = useGarden();
-  const { bed, plants, profile } = plan;
+  const { beds, plants, profile } = plan;
 
-  const bedRef = useRef<HTMLDivElement>(null);
-  const emptyPressRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; startX: number; startY: number } | null>(
-    null,
-  );
+  const bedRefs = useRef(new Map<string, HTMLDivElement>());
+  const emptyPressRef = useRef<{
+    bedId: string;
+    timer: ReturnType<typeof setTimeout> | null;
+    startX: number;
+    startY: number;
+  } | null>(null);
 
+  const [mode, setMode] = useState<'plant' | 'layout'>('plant');
   const [view, setView] = useState<'bed' | 'calendar'>('bed');
-  const [menuState, setMenuState] = useState<{ clientX: number; clientY: number; xIn: number; yIn: number } | null>(
-    null,
-  );
+  const [menuState, setMenuState] = useState<{
+    bedId: string;
+    clientX: number;
+    clientY: number;
+    xIn: number;
+    yIn: number;
+  } | null>(null);
   const [quickActions, setQuickActions] = useState<{ id: string; clientX: number; clientY: number } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -57,15 +66,20 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
   // member on its own — `members` is a snapshot of the group's positions at drag start,
   // and (dx, dy) is the same translation applied to every one of them.
   const [moveState, setMoveState] = useState<{
+    bedId: string;
     groupId: string;
     anchorOriginal: Point;
     members: PlantInstance[];
     dx: number;
     dy: number;
   } | null>(null);
-  const [multiply, setMultiply] = useState<{ id: string; origin: Point; axis: Point | null; ghosts: Point[] } | null>(
-    null,
-  );
+  const [multiply, setMultiply] = useState<{
+    bedId: string;
+    id: string;
+    origin: Point;
+    axis: Point | null;
+    ghosts: Point[];
+  } | null>(null);
 
   const conflicts = useMemo(() => findOverlapConflicts(plants), [plants]);
   const dismissedKeys = useMemo(() => new Set(plan.dismissedConflictKeys), [plan.dismissedConflictKeys]);
@@ -95,7 +109,14 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
     [plants, moveState],
   );
 
-  const groupBoxes = useMemo(() => computeGroupBoxes(effectivePlants), [effectivePlants]);
+  // A patch never spans beds, so each box belongs to the bed of its group's plants.
+  const groupBoxes = useMemo(() => {
+    const bedOfGroup = new Map(effectivePlants.map((p) => [p.groupId, p.bedId]));
+    return computeGroupBoxes(effectivePlants).map((box) => ({ ...box, bedId: bedOfGroup.get(box.groupId) }));
+  }, [effectivePlants]);
+
+  const bedById = useMemo(() => new Map(beds.map((b) => [b.id, b])), [beds]);
+  const plantsIn = (bedId: string) => plants.filter((p) => p.bedId === bedId);
 
   function dismissToast(id: string) {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -104,6 +125,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
   // Backspace/Delete removes the selected plant, with an undo toast — but only when
   // focus isn't in a text field (e.g. the variety input), where the key should type normally.
   useEffect(() => {
+    if (mode !== 'plant') return;
     function onKeyDown(e: KeyboardEvent) {
       if (e.key !== 'Backspace' && e.key !== 'Delete') return;
       if (!selectedId) return;
@@ -121,12 +143,21 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selectedId, plants, removePlant, addPlants]);
+  }, [mode, selectedId, plants, removePlant, addPlants]);
 
-  function toBedCoords(clientX: number, clientY: number): Point | null {
-    if (!bedRef.current) return null;
+  function toggleLayout() {
+    setMode((m) => (m === 'plant' ? 'layout' : 'plant'));
+    setView('bed');
+    setSelectedId(null);
+    setMenuState(null);
+    setQuickActions(null);
+  }
+
+  function toBedCoords(bedId: string, clientX: number, clientY: number): Point | null {
+    const el = bedRefs.current.get(bedId);
+    const bed = bedById.get(bedId);
+    if (!el || !bed) return null;
     // Plant coordinates are relative to the bed's inner (padding) edge, inside its border.
-    const el = bedRef.current;
     const rect = el.getBoundingClientRect();
     const raw = {
       x: (clientX - rect.left - el.clientLeft) / PX_PER_INCH,
@@ -135,28 +166,28 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
     return clampToBed(raw, bed.widthIn, bed.heightIn, BED_CORNER_RADIUS_IN);
   }
 
-  function openMenuAt(clientX: number, clientY: number) {
-    const coords = toBedCoords(clientX, clientY);
+  function openMenuAt(bedId: string, clientX: number, clientY: number) {
+    const coords = toBedCoords(bedId, clientX, clientY);
     if (!coords) return;
     setSelectedId(null);
-    setMenuState({ clientX, clientY, xIn: coords.x, yIn: coords.y });
+    setMenuState({ bedId, clientX, clientY, xIn: coords.x, yIn: coords.y });
   }
 
-  function handleBedContextMenu(e: React.MouseEvent) {
+  function handleBedContextMenu(e: React.MouseEvent, bedId: string) {
     e.preventDefault();
-    openMenuAt(e.clientX, e.clientY);
+    openMenuAt(bedId, e.clientX, e.clientY);
   }
 
-  function handleBedPointerDown(e: React.PointerEvent) {
-    if (e.target !== bedRef.current) return; // ignore bubbled events from plants
+  function handleBedPointerDown(e: React.PointerEvent, bedId: string) {
+    if (e.target !== bedRefs.current.get(bedId)) return; // ignore bubbled events from plants
     if (e.button === 2) return;
     const startX = e.clientX;
     const startY = e.clientY;
     const timer = setTimeout(() => {
-      openMenuAt(startX, startY);
+      openMenuAt(bedId, startX, startY);
       emptyPressRef.current = null;
     }, LONG_PRESS_MS);
-    emptyPressRef.current = { timer, startX, startY };
+    emptyPressRef.current = { bedId, timer, startX, startY };
   }
 
   function handleBedPointerMove(e: React.PointerEvent) {
@@ -185,11 +216,13 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
       const p = plants.find((pl) => pl.id === id);
       if (!p) return;
       const members = plants.filter((pl) => pl.groupId === p.groupId);
-      setMoveState({ groupId: p.groupId, anchorOriginal: { x: p.x, y: p.y }, members, dx: 0, dy: 0 });
+      setMoveState({ bedId: p.bedId, groupId: p.groupId, anchorOriginal: { x: p.x, y: p.y }, members, dx: 0, dy: 0 });
     },
     onMoveUpdate: (_id, clientX, clientY) => {
-      const coords = toBedCoords(clientX, clientY);
-      if (!coords) return;
+      if (!moveState) return;
+      const bed = bedById.get(moveState.bedId);
+      const coords = toBedCoords(moveState.bedId, clientX, clientY);
+      if (!coords || !bed) return;
       setMoveState((prev) => {
         if (!prev) return prev;
         const rawDx = coords.x - prev.anchorOriginal.x;
@@ -213,12 +246,13 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
     },
     onMultiplyStart: (id) => {
       const p = plants.find((pl) => pl.id === id);
-      if (p) setMultiply({ id, origin: { x: p.x, y: p.y }, axis: null, ghosts: [] });
+      if (p) setMultiply({ bedId: p.bedId, id, origin: { x: p.x, y: p.y }, axis: null, ghosts: [] });
     },
     onMultiplyUpdate: (id, clientX, clientY) => {
-      const coords = toBedCoords(clientX, clientY);
       const p = plants.find((pl) => pl.id === id);
-      if (!coords || !p) return;
+      const bed = p && bedById.get(p.bedId);
+      const coords = p && toBedCoords(p.bedId, clientX, clientY);
+      if (!coords || !p || !bed) return;
       const spacing = getCrop(p.cropId).spacingIn;
       setMultiply((prev) => {
         if (!prev || prev.id !== id) return prev;
@@ -248,6 +282,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
           addPlants(
             multiply.ghosts.map((g) => ({
               id: uid(),
+              bedId: origin.bedId,
               cropId: origin.cropId,
               x: g.x,
               y: g.y,
@@ -274,56 +309,69 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
   const selectedPlant = selectedId ? plants.find((p) => p.id === selectedId) ?? null : null;
   const groupCount = selectedPlant ? plants.filter((p) => p.groupId === selectedPlant.groupId).length : 0;
   const quickActionsPlant = quickActions ? plants.find((p) => p.id === quickActions.id) ?? null : null;
+  const menuBed = menuState ? bedById.get(menuState.bedId) : undefined;
 
   const gridPx = PX_PER_INCH * 12;
+  const bounds = gardenBounds(beds);
+  const isLayout = mode === 'layout';
 
-  return (
-    <div style={{ padding: '28px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-          <GardenSwitcher variant="title" onEditSetup={onEditSetup} />
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <ViewTab label="Bed layout" active={view === 'bed'} onClick={() => setView('bed')} />
-            <ViewTab label="Planting calendar" active={view === 'calendar'} onClick={() => setView('calendar')} />
-          </div>
+  function renderBed(bed: Bed) {
+    if (!bounds) return null;
+    // Beds aren't turned yet (rotationDeg is always 0), so the footprint is the bed itself.
+    const box = bedBounds(bed);
+    const bedMultiply = multiply?.bedId === bed.id ? multiply : null;
+    const bedPlants = effectivePlants.filter((p) => p.bedId === bed.id);
+    return (
+      <div
+        key={bed.id}
+        style={{
+          position: 'absolute',
+          left: (box.x0 - bounds.x0) * PX_PER_INCH,
+          top: (box.y0 - bounds.y0) * PX_PER_INCH + BED_LABEL_PX,
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '100%',
+            left: 4,
+            marginBottom: 6,
+            font: '600 13px Figtree',
+            color: 'var(--color-text-muted)',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {bed.name}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <p style={{ font: '400 13px Figtree', color: 'var(--color-text-muted)' }}>
-            {bed.widthIn / 12}′ × {bed.heightIn / 12}′ bed · {profile.sunExposure.replace('-', ' ')}
-          </p>
-          <HelpTip text="Long-press or right-click anywhere on the bed to plant." />
-        </div>
-      </div>
-
-      {view === 'calendar' && <PlantingCalendar plants={plants} zoneId={profile.zoneId} />}
-
-      {view === 'bed' && (
-        <>
-          <div
-            ref={bedRef}
-            onContextMenu={handleBedContextMenu}
-            onPointerDown={handleBedPointerDown}
-            onPointerMove={handleBedPointerMove}
-            onPointerUp={handleBedPointerUp}
-            style={{
-              position: 'relative',
-              // The bed is drawn at a fixed scale and never shrinks with the window (plants
-              // are positioned in absolute inches); a narrow window scrolls to reach it instead.
-              // content-box so the plantable area is exactly widthIn × heightIn inside the border.
-              boxSizing: 'content-box',
-              flexShrink: 0,
-              alignSelf: 'flex-start',
-              width: bed.widthIn * PX_PER_INCH,
-              height: bed.heightIn * PX_PER_INCH,
-              border: `${BED_BORDER_PX}px solid var(--color-text)`,
-              borderRadius: BED_OUTER_RADIUS_PX,
-              background: `repeating-linear-gradient(90deg, transparent 0 ${gridPx - 1}px, #e6dbc6 ${gridPx - 1}px ${gridPx}px), repeating-linear-gradient(0deg, #f6efe0 0 ${gridPx - 1}px, #efe6d2 ${gridPx - 1}px ${gridPx}px)`,
-              touchAction: 'none',
-              userSelect: 'none',
-              boxShadow: 'var(--shadow-md)',
-            }}
-          >
-            {groupBoxes.map((box) => (
+        <div
+          ref={(el) => {
+            if (el) bedRefs.current.set(bed.id, el);
+            else bedRefs.current.delete(bed.id);
+          }}
+          data-bed-id={bed.id}
+          onContextMenu={(e) => handleBedContextMenu(e, bed.id)}
+          onPointerDown={(e) => handleBedPointerDown(e, bed.id)}
+          onPointerMove={handleBedPointerMove}
+          onPointerUp={handleBedPointerUp}
+          style={{
+            position: 'relative',
+            // content-box so the plantable area is exactly widthIn × heightIn inside the border;
+            // the negative margin lines that area (not the border) up with the garden grid.
+            boxSizing: 'content-box',
+            margin: -BED_BORDER_PX,
+            width: bed.widthIn * PX_PER_INCH,
+            height: bed.heightIn * PX_PER_INCH,
+            border: `${BED_BORDER_PX}px solid var(--color-text)`,
+            borderRadius: BED_OUTER_RADIUS_PX,
+            background: `repeating-linear-gradient(90deg, transparent 0 ${gridPx - 1}px, #e6dbc6 ${gridPx - 1}px ${gridPx}px), repeating-linear-gradient(0deg, #f6efe0 0 ${gridPx - 1}px, #efe6d2 ${gridPx - 1}px ${gridPx}px)`,
+            touchAction: 'none',
+            userSelect: 'none',
+            boxShadow: 'var(--shadow-md)',
+          }}
+        >
+          {groupBoxes
+            .filter((box) => box.bedId === bed.id)
+            .map((box) => (
               <GroupBoundingBox
                 key={box.groupId}
                 box={box}
@@ -331,102 +379,194 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
                 warned={warnedGroupIds.has(box.groupId)}
               />
             ))}
-            {multiplyBox && <GroupBoundingBox box={multiplyBox} pxPerInch={PX_PER_INCH} active />}
+          {bedMultiply && multiplyBox && <GroupBoundingBox box={multiplyBox} pxPerInch={PX_PER_INCH} active />}
 
-            {effectivePlants.map((p) => {
-              const isMultiplyOrigin = multiply?.id === p.id;
-              const isSolo = (groupSizes.get(p.groupId) ?? 1) === 1;
-              return (
-                <div key={p.id} style={{ opacity: isMultiplyOrigin ? 0.85 : 1 }}>
-                  <PlantToken
-                    plant={p}
-                    pxPerInch={PX_PER_INCH}
-                    diameter={PLANT_DIAMETER}
-                    warned={isSolo && warnedGroupIds.has(p.groupId)}
-                    selected={p.id === selectedId}
-                    handlers={gestureHandlers}
-                  />
-                </div>
-              );
-            })}
+          {bedPlants.map((p) => {
+            const isMultiplyOrigin = multiply?.id === p.id;
+            const isSolo = (groupSizes.get(p.groupId) ?? 1) === 1;
+            return (
+              <div key={p.id} style={{ opacity: isMultiplyOrigin ? 0.85 : 1 }}>
+                <PlantToken
+                  plant={p}
+                  pxPerInch={PX_PER_INCH}
+                  diameter={PLANT_DIAMETER}
+                  warned={isSolo && warnedGroupIds.has(p.groupId)}
+                  selected={p.id === selectedId}
+                  handlers={gestureHandlers}
+                />
+              </div>
+            );
+          })}
 
-            {multiply?.ghosts.map((g, i) => {
-              const origin = plants.find((p) => p.id === multiply.id);
-              if (!origin) return null;
-              const color = CROP_COLORS[origin.cropId];
-              return (
+          {bedMultiply?.ghosts.map((g, i) => {
+            const origin = plants.find((p) => p.id === bedMultiply.id);
+            if (!origin) return null;
+            const color = CROP_COLORS[origin.cropId];
+            return (
+              <div
+                key={i}
+                style={{
+                  position: 'absolute',
+                  left: g.x * PX_PER_INCH,
+                  top: g.y * PX_PER_INCH,
+                  transform: 'translate(-50%, -50%)',
+                  pointerEvents: 'none',
+                  opacity: 0.55,
+                }}
+              >
                 <div
-                  key={i}
                   style={{
-                    position: 'absolute',
-                    left: g.x * PX_PER_INCH,
-                    top: g.y * PX_PER_INCH,
-                    transform: 'translate(-50%, -50%)',
-                    pointerEvents: 'none',
-                    opacity: 0.55,
+                    border: `1.5px dashed ${color}`,
+                    borderRadius: '999px',
+                    width: PLANT_DIAMETER,
+                    height: PLANT_DIAMETER,
+                  }}
+                />
+              </div>
+            );
+          })}
+
+          {bedMultiply && bedMultiply.ghosts.length > 0 && (
+            <div
+              style={{
+                position: 'absolute',
+                left: 12,
+                bottom: 12,
+                background: 'var(--color-text)',
+                color: '#fffdf8',
+                borderRadius: '999px',
+                padding: '5px 12px',
+                font: '600 12px Figtree',
+                pointerEvents: 'none',
+              }}
+            >
+              +{bedMultiply.ghosts.length}
+            </div>
+          )}
+
+          {plants.length === 0 && !menuState && (
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                pointerEvents: 'none',
+                padding: 16,
+                textAlign: 'center',
+                overflow: 'hidden',
+              }}
+            >
+              <p style={{ font: '400 17px Caveat, cursive', color: '#9a8c76', maxWidth: 320 }}>
+                Empty so far — long-press or right-click the bed to plant something.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: '28px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+          <GardenSwitcher variant="title" onEditSetup={onEditSetup} />
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            {isLayout ? (
+              <>
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    font: '500 13px Figtree',
+                    color: 'var(--color-accent-700)',
                   }}
                 >
-                  <div
-                    style={{
-                      border: `1.5px dashed ${color}`,
-                      borderRadius: '999px',
-                      width: PLANT_DIAMETER,
-                      height: PLANT_DIAMETER,
-                    }}
-                  />
-                </div>
-              );
-            })}
-
-            {multiply && multiply.ghosts.length > 0 && (
-              <div
-                style={{
-                  position: 'absolute',
-                  left: 12,
-                  bottom: 12,
-                  background: 'var(--color-text)',
-                  color: '#fffdf8',
-                  borderRadius: '999px',
-                  padding: '5px 12px',
-                  font: '600 12px Figtree',
-                  pointerEvents: 'none',
-                }}
-              >
-                +{multiply.ghosts.length}
-              </div>
-            )}
-
-            {plants.length === 0 && !menuState && (
-              <div
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  pointerEvents: 'none',
-                  padding: 24,
-                  textAlign: 'center',
-                }}
-              >
-                <p style={{ font: '400 17px Caveat, cursive', color: '#9a8c76', maxWidth: 320 }}>
-                  Empty so far — long-press or right-click the bed to plant something.
-                </p>
-              </div>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--color-accent)' }} />
+                  Editing layout
+                </span>
+                <button onClick={toggleLayout} className="btn btn-primary" style={{ padding: '8px 14px', font: '600 12.5px Figtree' }}>
+                  <Icon name="check" size={15} />
+                  Done
+                </button>
+              </>
+            ) : (
+              <>
+                <button onClick={toggleLayout} className="btn btn-secondary" style={{ padding: '8px 14px', font: '600 12.5px Figtree' }}>
+                  <Icon name="ruler" size={15} />
+                  Edit layout
+                </button>
+                <ViewTab label="Bed layout" active={view === 'bed'} onClick={() => setView('bed')} />
+                <ViewTab label="Planting calendar" active={view === 'calendar'} onClick={() => setView('calendar')} />
+              </>
             )}
           </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <p style={{ font: '400 13px Figtree', color: 'var(--color-text-muted)' }}>
+            {beds.length} {beds.length === 1 ? 'bed' : 'beds'} · {profile.sunExposure.replace('-', ' ')}
+          </p>
+          {!isLayout && <HelpTip text="Long-press or right-click anywhere on a bed to plant." />}
+        </div>
+      </div>
 
-          {menuState && (
+      {isLayout && <LayoutEditor />}
+
+      {!isLayout && view === 'calendar' && <PlantingCalendar plants={plants} zoneId={profile.zoneId} />}
+
+      {!isLayout && view === 'bed' && !bounds && (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            gap: 12,
+            padding: '28px 24px',
+            borderRadius: 'var(--radius-lg)',
+            border: '1.5px dashed var(--color-divider)',
+          }}
+        >
+          <p style={{ font: '400 17px Caveat, cursive', color: '#9a8c76' }}>No beds yet — add one to start planting.</p>
+          <button onClick={toggleLayout} className="btn btn-primary" style={{ padding: '8px 14px', font: '600 12.5px Figtree' }}>
+            <Icon name="ruler" size={15} />
+            Edit layout
+          </button>
+        </div>
+      )}
+
+      {!isLayout && view === 'bed' && bounds && (
+        <>
+          <div
+            // The garden is drawn at a fixed scale and never shrinks with the window (plants
+            // are positioned in absolute inches); a narrow window scrolls to reach it instead.
+            style={{
+              position: 'relative',
+              flexShrink: 0,
+              alignSelf: 'flex-start',
+              width: (bounds.x1 - bounds.x0) * PX_PER_INCH,
+              height: (bounds.y1 - bounds.y0) * PX_PER_INCH + BED_LABEL_PX,
+              margin: BED_BORDER_PX,
+            }}
+          >
+            {beds.map(renderBed)}
+          </div>
+
+          {menuState && menuBed && (
             <PlantMenu
               clientX={menuState.clientX}
               clientY={menuState.clientY}
               bedXIn={menuState.xIn}
               bedYIn={menuState.yIn}
-              bedWidthIn={bed.widthIn}
-              bedHeightIn={bed.heightIn}
-              existingPlants={plants}
+              bedWidthIn={menuBed.widthIn}
+              bedHeightIn={menuBed.heightIn}
+              existingPlants={plantsIn(menuBed.id)}
               onPick={(cropId) => {
-                addPlants([{ id: uid(), cropId, x: menuState.xIn, y: menuState.yIn, groupId: uid() }]);
+                addPlants([
+                  { id: uid(), bedId: menuBed.id, cropId, x: menuState.xIn, y: menuState.yIn, groupId: uid() },
+                ]);
                 setMenuState(null);
               }}
               onClose={() => setMenuState(null)}
@@ -443,15 +583,20 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
                 setQuickActions(null);
               }}
               onDuplicate={() => {
-                const spacing = getCrop(quickActionsPlant.cropId).spacingIn;
-                const { x: nx, y: ny } = clampToBed(
-                  { x: quickActionsPlant.x + spacing * 0.8, y: quickActionsPlant.y },
-                  bed.widthIn,
-                  bed.heightIn,
-                  BED_CORNER_RADIUS_IN,
-                );
-                if (fitsAt(nx, ny, spacing, bed.widthIn, bed.heightIn, plants, BED_CORNER_RADIUS_IN)) {
-                  addPlants([{ id: uid(), cropId: quickActionsPlant.cropId, x: nx, y: ny, groupId: uid() }]);
+                const bed = bedById.get(quickActionsPlant.bedId);
+                if (bed) {
+                  const spacing = getCrop(quickActionsPlant.cropId).spacingIn;
+                  const { x: nx, y: ny } = clampToBed(
+                    { x: quickActionsPlant.x + spacing * 0.8, y: quickActionsPlant.y },
+                    bed.widthIn,
+                    bed.heightIn,
+                    BED_CORNER_RADIUS_IN,
+                  );
+                  if (fitsAt(nx, ny, spacing, bed.widthIn, bed.heightIn, plantsIn(bed.id), BED_CORNER_RADIUS_IN)) {
+                    addPlants([
+                      { id: uid(), bedId: bed.id, cropId: quickActionsPlant.cropId, x: nx, y: ny, groupId: uid() },
+                    ]);
+                  }
                 }
                 setQuickActions(null);
               }}
