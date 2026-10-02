@@ -62,7 +62,12 @@ export interface PlantInstance {
   groupId: string;
 }
 
-export type BedShape = 'rect';
+export interface Point {
+  x: number;
+  y: number;
+}
+
+export type BedShape = 'rect' | 'ellipse' | 'polygon';
 
 /** One bed in the garden layout. Garden coordinates are inches, y pointing down. */
 export interface Bed {
@@ -79,6 +84,11 @@ export interface Bed {
    * data migration; nothing sets it to anything but 0 yet.
    */
   rotationDeg: number;
+  /**
+   * Polygon beds only (and always present on them): the corners, in order, in the bed's local
+   * frame. They span exactly 0…widthIn and 0…heightIn, so the box handles fit the shape.
+   */
+  points?: Point[];
 }
 
 export interface GardenPlan {

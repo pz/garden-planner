@@ -1,6 +1,6 @@
 import type { Bed, PlantInstance } from '../types';
 import { getCrop } from '../data/crops';
-import { isInsideBed, type Point } from './geometry';
+import { isInsideOutline, type Outline, type Point } from './geometry';
 
 /** Bed edges and sizes snap to this step, in inches. */
 export const LAYOUT_SNAP_IN = 6;
@@ -14,8 +14,24 @@ export const PLANTING_PX_PER_INCH = 7;
 export const MIN_ZOOM = 0.4;
 export const MAX_ZOOM = 16;
 
-/** Where and how big a bed is, without its identity or name. */
-export type BedGeometry = Pick<Bed, 'cx' | 'cy' | 'widthIn' | 'heightIn'>;
+/** Where and how big a bed is (and a polygon's corners), without its identity or name. */
+export type BedGeometry = Pick<Bed, 'cx' | 'cy' | 'widthIn' | 'heightIn' | 'points'>;
+
+/** The geometry fields of a bed, e.g. to hand a drafted resize to the reducer. */
+export function geometryOf(bed: Bed): BedGeometry {
+  const g: BedGeometry = { cx: bed.cx, cy: bed.cy, widthIn: bed.widthIn, heightIn: bed.heightIn };
+  if (bed.points) g.points = bed.points;
+  return g;
+}
+
+/** The region of a bed that plant centers must stay inside, in its local frame. */
+export function bedOutline(bed: Bed): Outline {
+  if (bed.shape === 'ellipse') return { shape: 'ellipse', widthIn: bed.widthIn, heightIn: bed.heightIn };
+  if (bed.shape === 'polygon' && bed.points) {
+    return { shape: 'polygon', widthIn: bed.widthIn, heightIn: bed.heightIn, points: bed.points };
+  }
+  return { shape: 'rect', widthIn: bed.widthIn, heightIn: bed.heightIn, cornerRadiusIn: BED_CORNER_RADIUS_IN };
+}
 
 export interface Bounds {
   x0: number;
@@ -111,8 +127,8 @@ export interface Handle {
 
 /**
  * The bed resized to `widthIn` × `heightIn` with the side opposite `handle` held in place —
- * dragging the right edge grows the bed rightward, never around its center. Sizes are taken
- * as given; see resizeFromPointer for snapping and the minimum.
+ * dragging the right edge grows the bed rightward, never around its center. A polygon's corners
+ * scale with it. Sizes are taken as given; see resizeFromPointer for snapping and the minimum.
  */
 export function resizeBedTo(bed: Bed, widthIn: number, heightIn: number, handle: Handle): Bed {
   // Along an axis the handle moves, the opposite side (local 0 or the old size) stays put and
@@ -124,7 +140,12 @@ export function resizeBedTo(bed: Bed, widthIn: number, heightIn: number, handle:
     x: axisCenter(handle.sx, bed.widthIn, widthIn),
     y: axisCenter(handle.sy, bed.heightIn, heightIn),
   });
-  return { ...bed, cx: center.x, cy: center.y, widthIn, heightIn };
+  const next: Bed = { ...bed, cx: center.x, cy: center.y, widthIn, heightIn };
+  // A polygon stretches with its box, so its corners keep their place relative to the edges.
+  if (bed.points) {
+    next.points = bed.points.map((q) => ({ x: (q.x * widthIn) / bed.widthIn, y: (q.y * heightIn) / bed.heightIn }));
+  }
+  return next;
 }
 
 /**
@@ -147,7 +168,7 @@ export function resizeFromPointer(bed: Bed, handle: Handle, pointer: Point): Bed
 
 /**
  * Re-expresses a bed's plants in `next`'s local frame so they keep their place in the garden
- * when the bed is resized (they don't stretch or slide with the edges). `outsideIds` are the
+ * when the bed is resized or reshaped (they don't stretch or slide with the edges). `outsideIds` are the
  * plants whose centers `next` no longer contains. Other beds' plants pass through untouched.
  */
 export function relocatePlants(
@@ -156,13 +177,128 @@ export function relocatePlants(
   plants: PlantInstance[],
 ): { plants: PlantInstance[]; outsideIds: string[] } {
   const outsideIds: string[] = [];
+  const outline = bedOutline(next);
   const moved = plants.map((p) => {
     if (p.bedId !== prev.id) return p;
     const local = gardenToBed(next, bedToGarden(prev, p));
-    if (!isInsideBed(local, next.widthIn, next.heightIn, BED_CORNER_RADIUS_IN)) outsideIds.push(p.id);
+    if (!isInsideOutline(local, outline)) outsideIds.push(p.id);
     return { ...p, x: local.x, y: local.y };
   });
   return { plants: moved, outsideIds };
+}
+
+/** Twice the signed area of a polygon: positive when its corners run clockwise on screen (y down). */
+export function signedArea2(pts: Point[]): number {
+  let a = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    const q = pts[(i + 1) % pts.length];
+    a += p.x * q.y - q.x * p.y;
+  }
+  return a;
+}
+
+/**
+ * Corners re-expressed so their bounding box starts at (0, 0), with the box's size and its
+ * center in the corners' original frame. Null if the box is under the minimum side on either
+ * axis or the corners enclose no area (all in a line).
+ */
+function normalizeCorners(pts: Point[]): { points: Point[]; widthIn: number; heightIn: number; center: Point } | null {
+  if (pts.length < 3) return null;
+  const xs = pts.map((p) => p.x);
+  const ys = pts.map((p) => p.y);
+  const x0 = Math.min(...xs);
+  const y0 = Math.min(...ys);
+  const widthIn = Math.max(...xs) - x0;
+  const heightIn = Math.max(...ys) - y0;
+  if (widthIn < MIN_BED_SIDE_IN || heightIn < MIN_BED_SIDE_IN || signedArea2(pts) === 0) return null;
+  return {
+    points: pts.map((p) => ({ x: p.x - x0, y: p.y - y0 })),
+    widthIn,
+    heightIn,
+    center: { x: x0 + widthIn / 2, y: y0 + heightIn / 2 },
+  };
+}
+
+/**
+ * The geometry of a new polygon bed from corners clicked in the garden (already snapped), or
+ * null if they don't make a usable bed: fewer than three corners, a box under the minimum
+ * side, or no enclosed area.
+ */
+export function polygonFromCorners(corners: Point[]): Required<Pick<BedGeometry, 'points'>> & BedGeometry | null {
+  const n = normalizeCorners(corners);
+  if (!n) return null;
+  return { cx: n.center.x, cy: n.center.y, widthIn: n.widthIn, heightIn: n.heightIn, points: n.points };
+}
+
+/**
+ * The polygon bed with corner `index` dragged to the garden point `pointer`, snapped to the
+ * grid measured from the bed's top-left. The box re-fits the corners, and the other corners
+ * stay where they are in the garden. The bed comes back unchanged if the move would collapse
+ * it (a box under the minimum side, or no area).
+ */
+export function moveCorner(bed: Bed, index: number, pointer: Point): Bed {
+  if (!bed.points || index < 0 || index >= bed.points.length) return bed;
+  const local = gardenToBed(bed, pointer);
+  const moved = bed.points.map((q, i) => (i === index ? { x: snapTo(local.x), y: snapTo(local.y) } : q));
+  const n = normalizeCorners(moved);
+  if (!n) return bed;
+  const center = bedToGarden(bed, n.center);
+  return { ...bed, cx: center.x, cy: center.y, widthIn: n.widthIn, heightIn: n.heightIn, points: n.points };
+}
+
+/** How close (in screen pixels) a click must land to a polygon's first corner to close it. */
+export const CLOSE_POLYGON_PX = 14;
+
+/**
+ * Whether a click at `cursor` (snapped) should close an in-progress polygon: it's back on the
+ * first corner — within a comfortable target on screen at this zoom, and never less than one
+ * snap step, so a snapped click on the corner always counts.
+ */
+export function closesPolygon(corners: Point[], cursor: Point, zoom: number): boolean {
+  const toleranceIn = Math.max(LAYOUT_SNAP_IN, CLOSE_POLYGON_PX / zoom);
+  return corners.length >= 3 && Math.hypot(cursor.x - corners[0].x, cursor.y - corners[0].y) <= toleranceIn;
+}
+
+export interface EdgeLabel {
+  /** Midpoint of the edge. */
+  mid: Point;
+  /** Unit vector pointing away from the shape's inside, for placing the label clear of it. */
+  outward: Point;
+  lengthIn: number;
+}
+
+/**
+ * Length label anchors for each edge of a closed polygon (`closed: false` for an open chain
+ * being drawn, which leaves out the closing edge). Zero-length edges are skipped.
+ */
+export function edgeLabels(corners: Point[], closed = true): EdgeLabel[] {
+  // Clockwise on screen (positive signed area) → the outside is to the left of each edge.
+  const sign = signedArea2(corners) >= 0 ? 1 : -1;
+  const labels: EdgeLabel[] = [];
+  const n = closed ? corners.length : corners.length - 1;
+  for (let i = 0; i < n; i++) {
+    const a = corners[i];
+    const b = corners[(i + 1) % corners.length];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    if (len === 0) continue;
+    labels.push({
+      mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+      outward: { x: (sign * dy) / len, y: (-sign * dx) / len },
+      lengthIn: len,
+    });
+  }
+  return labels;
+}
+
+/**
+ * How far out along an edge's `outward` normal to center a `halfW` × `halfH` label so it clears
+ * the edge by `gap`: further for a label sitting across its edge than for one alongside it.
+ */
+export function labelOffset(outward: Point, halfW: number, halfH: number, gap: number): number {
+  return gap + Math.abs(outward.x) * halfW + Math.abs(outward.y) * halfH;
 }
 
 /** "Tomato ×2, Basil ×1": how many of each crop, in order of first appearance. */

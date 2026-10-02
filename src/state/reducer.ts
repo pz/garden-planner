@@ -54,12 +54,31 @@ function migrateV2(v2: PlanV2, id: string): GardenPlan | null {
   };
 }
 
+const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+/**
+ * Whether a stored bed is complete enough to draw and plant in: known shape, finite position and
+ * rotation, positive size, and — for a polygon — at least three numeric corners.
+ */
+export function isValidBed(b: unknown): b is Bed {
+  if (typeof b !== 'object' || b === null) return false;
+  const bed = b as Partial<Bed>;
+  if (typeof bed.id !== 'string' || typeof bed.name !== 'string') return false;
+  if (bed.shape !== 'rect' && bed.shape !== 'ellipse' && bed.shape !== 'polygon') return false;
+  if (!isNum(bed.cx) || !isNum(bed.cy) || !isNum(bed.rotationDeg)) return false;
+  if (!isNum(bed.widthIn) || !isNum(bed.heightIn) || bed.widthIn <= 0 || bed.heightIn <= 0) return false;
+  if (bed.shape === 'polygon') {
+    return Array.isArray(bed.points) && bed.points.length >= 3 && bed.points.every((p) => isNum(p?.x) && isNum(p?.y));
+  }
+  return true;
+}
+
 /**
  * Parses a garden plan from raw storage content, falling back to a fresh plan for anything
  * unusable. `id` is always authoritative — it comes from the storage key the plan was read
  * from, and is forced onto the result even if the stored JSON disagrees (or lacks one, from
- * before gardens had ids). Single-bed (v2) plans are migrated to the multi-bed layout; plants
- * whose bed no longer exists are dropped.
+ * before gardens had ids). Single-bed (v2) plans are migrated to the multi-bed layout. Malformed
+ * beds (see isValidBed) are dropped, and so are plants whose bed no longer exists.
  */
 export function parsePlan(raw: string | null, id: string): GardenPlan {
   try {
@@ -70,6 +89,7 @@ export function parsePlan(raw: string | null, id: string): GardenPlan {
     else if (stored?.version === 3) parsed = stored as GardenPlan;
     else return createPlan(id);
     if (!parsed || !Array.isArray(parsed.beds)) return createPlan(id);
+    parsed = { ...parsed, beds: parsed.beds.filter(isValidBed) };
     const bedIds = new Set(parsed.beds.map((b) => b.id));
     const plants = Array.isArray(parsed.plants) ? parsed.plants.filter((p) => bedIds.has(p.bedId)) : [];
     parsed = { ...parsed, id, plants };
@@ -90,7 +110,7 @@ export type Action =
   | { type: 'addBed'; bed: Bed }
   | { type: 'renameBed'; id: string; name: string }
   | { type: 'moveBed'; id: string; dx: number; dy: number }
-  | { type: 'resizeBed'; id: string; geometry: BedGeometry }
+  | { type: 'reshapeBed'; id: string; geometry: BedGeometry }
   | { type: 'removeBed'; id: string }
   | { type: 'restoreLayout'; beds: Bed[]; plants: PlantInstance[] }
   | { type: 'addPlants'; plants: PlantInstance[] }
@@ -118,12 +138,14 @@ export function reducer(state: GardenPlan, action: Action): GardenPlan {
         ...state,
         beds: state.beds.map((b) => (b.id === action.id ? { ...b, cx: b.cx + action.dx, cy: b.cy + action.dy } : b)),
       };
-    case 'resizeBed': {
-      // Plants stay where they are in the garden as the edges move; any the bed no longer
-      // covers are removed. (The editor confirms that with the user before dispatching.)
+    case 'reshapeBed': {
+      // Plants stay where they are in the garden as the edges or corners move; any the bed no
+      // longer covers are removed. (The editor confirms that with the user before dispatching.)
       const prev = state.beds.find((b) => b.id === action.id);
       if (!prev) return state;
       const next: Bed = { ...prev, ...action.geometry };
+      // A polygon's corners are only meaningful for its old box; never keep stale ones.
+      if (prev.shape === 'polygon' && !action.geometry.points) return state;
       const { plants, outsideIds } = relocatePlants(prev, next, state.plants);
       const outside = new Set(outsideIds);
       return {

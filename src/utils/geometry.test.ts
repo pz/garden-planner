@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { PlantInstance } from '../types';
-import { clampGroupDelta, clampToBed, computeGhosts, computeGroupBoxes, isInsideBed, lockedAxis } from './geometry';
+import {
+  clampGroupDelta,
+  clampToBed,
+  clampToOutline,
+  computeGhosts,
+  computeGroupBoxes,
+  isInsideBed,
+  isInsideOutline,
+  lockedAxis,
+  rectOutline,
+  type Outline,
+} from './geometry';
 
 function plant(id: string, cropId: string, x: number, y: number, groupId: string): PlantInstance {
   return { id, bedId: 'b1', cropId, x, y, groupId };
@@ -58,7 +69,7 @@ describe('computeGhosts', () => {
   const vertical = { x: 0, y: 1 };
 
   it('places evenly-spaced ghosts along a horizontal axis', () => {
-    const ghosts = computeGhosts({ x: 10, y: 20 }, horizontal, { x: 82, y: 20 }, 24, bounds.w, bounds.h);
+    const ghosts = computeGhosts({ x: 10, y: 20 }, horizontal, { x: 82, y: 20 }, 24, rectOutline(bounds.w, bounds.h));
     // distance 72 / spacing 24 = exactly 3 steps
     expect(ghosts).toHaveLength(3);
     expect(ghosts[0]).toEqual({ x: 34, y: 20 });
@@ -67,14 +78,14 @@ describe('computeGhosts', () => {
   });
 
   it('handles a purely vertical axis', () => {
-    const ghosts = computeGhosts({ x: 10, y: 5 }, vertical, { x: 10, y: 40 }, 10, bounds.w, bounds.h);
+    const ghosts = computeGhosts({ x: 10, y: 5 }, vertical, { x: 10, y: 40 }, 10, rectOutline(bounds.w, bounds.h));
     expect(ghosts.every((g) => g.x === 10)).toBe(true);
     expect(ghosts.length).toBeGreaterThan(0);
   });
 
   it('sweeps a rectangular grid when the cursor has both an along-axis and perpendicular offset', () => {
     // origin (10,10), locked horizontal axis, spacing 12: 2 columns (24/12) x 1 extra row (12/12).
-    const grid = computeGhosts({ x: 10, y: 10 }, horizontal, { x: 34, y: 22 }, 12, bounds.w, bounds.h);
+    const grid = computeGhosts({ x: 10, y: 10 }, horizontal, { x: 34, y: 22 }, 12, rectOutline(bounds.w, bounds.h));
     expect(grid).toHaveLength(5); // a 3x2 grid minus the origin plant itself
     expect(grid).toEqual(
       expect.arrayContaining([
@@ -89,22 +100,22 @@ describe('computeGhosts', () => {
 
   it('keeps a ghost whose center lands exactly on the bed edge, even though its spacing ring overflows', () => {
     // origin at x=88, spacing 8: steps land at 96 (== boundW, kept) then 104 (past it, dropped).
-    const ghosts = computeGhosts({ x: 88, y: 20 }, horizontal, { x: 200, y: 20 }, 8, bounds.w, bounds.h);
+    const ghosts = computeGhosts({ x: 88, y: 20 }, horizontal, { x: 200, y: 20 }, 8, rectOutline(bounds.w, bounds.h));
     expect(ghosts).toEqual([{ x: 96, y: 20 }]);
   });
 
   it('omits a ghost once its center itself would leave the bed', () => {
-    const ghosts = computeGhosts({ x: 90, y: 20 }, horizontal, { x: 200, y: 20 }, 24, bounds.w, bounds.h);
+    const ghosts = computeGhosts({ x: 90, y: 20 }, horizontal, { x: 200, y: 20 }, 24, rectOutline(bounds.w, bounds.h));
     // first step lands at x=114, already past the 96-wide bed
     expect(ghosts).toEqual([]);
   });
 
   it('drops a ghost that lands in a rounded corner, past the arc', () => {
     // r=4: the grid point (96, 0) is the bed's square corner, outside the rounded one.
-    const ghosts = computeGhosts({ x: 88, y: 0 }, horizontal, { x: 200, y: 0 }, 8, bounds.w, bounds.h, 4);
+    const ghosts = computeGhosts({ x: 88, y: 0 }, horizontal, { x: 200, y: 0 }, 8, rectOutline(bounds.w, bounds.h, 4));
     expect(ghosts).toEqual([]);
     // Without a corner radius the same ghost is kept.
-    expect(computeGhosts({ x: 88, y: 0 }, horizontal, { x: 200, y: 0 }, 8, bounds.w, bounds.h)).toEqual([
+    expect(computeGhosts({ x: 88, y: 0 }, horizontal, { x: 200, y: 0 }, 8, rectOutline(bounds.w, bounds.h))).toEqual([
       { x: 96, y: 0 },
     ]);
   });
@@ -167,26 +178,26 @@ describe('clampGroupDelta', () => {
 
   it('leaves the delta untouched when the whole group stays in bounds', () => {
     const members = [plant('a', 'tomato', 20, 20, 'g1'), plant('b', 'tomato', 40, 20, 'g1')];
-    expect(clampGroupDelta(members, 5, 5, bounds.w, bounds.h)).toEqual({ x: 5, y: 5 });
+    expect(clampGroupDelta(members, 5, 5, rectOutline(bounds.w, bounds.h))).toEqual({ x: 5, y: 5 });
   });
 
   it('clamps so every member keeps its center inside the bed, even though its spacing ring may not', () => {
     const members = [plant('a', 'tomato', 2, 20, 'g1')]; // near the left edge, spacing ring already overflows
     // a large negative dx would push the center past x=0; clamp to exactly 0.
-    const { x } = clampGroupDelta(members, -10, 0, bounds.w, bounds.h);
+    const { x } = clampGroupDelta(members, -10, 0, rectOutline(bounds.w, bounds.h));
     expect(x).toBeCloseTo(-2);
   });
 
   it('keeps the translation rigid by applying the same clamp to every member', () => {
     const members = [plant('a', 'tomato', 90, 20, 'g1'), plant('b', 'tomato', 94, 20, 'g1')];
     // pushing right would send 'b' past the 96-wide bed first; the whole delta clamps to that limit.
-    const { x } = clampGroupDelta(members, 10, 0, bounds.w, bounds.h);
+    const { x } = clampGroupDelta(members, 10, 0, rectOutline(bounds.w, bounds.h));
     expect(x).toBeCloseTo(2); // 94 + x <= 96
   });
 
   it('keeps a lone plant dragged into a rounded corner on the arc, not in the square corner', () => {
     const members = [plant('a', 'tomato', 80, 10, 'g1')];
-    const d = clampGroupDelta(members, 50, -50, bounds.w, bounds.h, 4);
+    const d = clampGroupDelta(members, 50, -50, rectOutline(bounds.w, bounds.h, 4));
     const moved = { x: 80 + d.x, y: 10 + d.y };
     expect(isInsideBed(moved, bounds.w, bounds.h, 4)).toBe(true);
     expect(moved.x).toBeCloseTo(92 + 4 / Math.SQRT2);
@@ -195,7 +206,7 @@ describe('clampGroupDelta', () => {
 
   it('slides a rigid patch into a corner until its nearest member meets the arc', () => {
     const members = [plant('a', 'carrot', 70, 10, 'g1'), plant('b', 'carrot', 80, 10, 'g1'), plant('c', 'carrot', 80, 20, 'g1')];
-    const d = clampGroupDelta(members, 40, -40, bounds.w, bounds.h, 4);
+    const d = clampGroupDelta(members, 40, -40, rectOutline(bounds.w, bounds.h, 4));
     for (const m of members) expect(isInsideBed({ x: m.x + d.x, y: m.y + d.y }, bounds.w, bounds.h, 4)).toBe(true);
     // 'b' is the corner-most member; it ends up touching the arc (within float slack).
     expect(Math.hypot(80 + d.x - 92, 10 + d.y - 4)).toBeCloseTo(4, 4);
@@ -203,6 +214,112 @@ describe('clampGroupDelta', () => {
 
   it('allows a move flush along a straight edge right up to where the arc begins', () => {
     const members = [plant('a', 'tomato', 50, 0, 'g1')];
-    expect(clampGroupDelta(members, 42, 0, bounds.w, bounds.h, 4)).toEqual({ x: 42, y: 0 });
+    expect(clampGroupDelta(members, 42, 0, rectOutline(bounds.w, bounds.h, 4))).toEqual({ x: 42, y: 0 });
+  });
+});
+
+describe('isInsideOutline / clampToOutline: ellipse', () => {
+  // 96″ × 48″: semi-axes 48 and 24, centered at (48, 24).
+  const ellipse: Outline = { shape: 'ellipse', widthIn: 96, heightIn: 48 };
+
+  it('accepts the ends of both axes, exactly on the curve', () => {
+    expect(isInsideOutline({ x: 0, y: 24 }, ellipse)).toBe(true);
+    expect(isInsideOutline({ x: 96, y: 24 }, ellipse)).toBe(true);
+    expect(isInsideOutline({ x: 48, y: 0 }, ellipse)).toBe(true);
+  });
+
+  it('rejects a point just past the curve, and the bounding box corners', () => {
+    expect(isInsideOutline({ x: -0.01, y: 24 }, ellipse)).toBe(false);
+    expect(isInsideOutline({ x: 48, y: 48.01 }, ellipse)).toBe(false);
+    expect(isInsideOutline({ x: 0, y: 0 }, ellipse)).toBe(false);
+    expect(isInsideOutline({ x: 96, y: 48 }, ellipse)).toBe(false);
+  });
+
+  it('pulls an outside point onto the curve along the line to the center', () => {
+    const p = clampToOutline({ x: 120, y: 24 }, ellipse);
+    expect(p.x).toBeCloseTo(96);
+    expect(p.y).toBeCloseTo(24);
+    const corner = clampToOutline({ x: 96, y: 0 }, ellipse);
+    expect(isInsideOutline(corner, ellipse)).toBe(true);
+  });
+
+  it('leaves an inside point untouched', () => {
+    expect(clampToOutline({ x: 30, y: 20 }, ellipse)).toEqual({ x: 30, y: 20 });
+  });
+});
+
+describe('isInsideOutline / clampToOutline: polygon', () => {
+  // An L: 48″ square with its top-right 24″ quarter cut out.
+  const L: Outline = {
+    shape: 'polygon',
+    widthIn: 48,
+    heightIn: 48,
+    points: [
+      { x: 0, y: 0 },
+      { x: 24, y: 0 },
+      { x: 24, y: 24 },
+      { x: 48, y: 24 },
+      { x: 48, y: 48 },
+      { x: 0, y: 48 },
+    ],
+  };
+
+  it('accepts points on its edges and corners', () => {
+    expect(isInsideOutline({ x: 12, y: 0 }, L)).toBe(true);
+    expect(isInsideOutline({ x: 24, y: 12 }, L)).toBe(true); // the inner, notch edge
+    expect(isInsideOutline({ x: 24, y: 24 }, L)).toBe(true); // the reflex corner
+    expect(isInsideOutline({ x: 48, y: 48 }, L)).toBe(true);
+  });
+
+  it('rejects the cut-out notch, even though it is inside the bounding box', () => {
+    expect(isInsideOutline({ x: 36, y: 12 }, L)).toBe(false);
+    expect(isInsideOutline({ x: 24.01, y: 12 }, L)).toBe(false);
+  });
+
+  it('accepts the interior on both arms of the L', () => {
+    expect(isInsideOutline({ x: 12, y: 12 }, L)).toBe(true);
+    expect(isInsideOutline({ x: 40, y: 40 }, L)).toBe(true);
+  });
+
+  it('clamps a point in the notch to the nearest edge', () => {
+    expect(clampToOutline({ x: 30, y: 10 }, L)).toEqual({ x: 24, y: 10 });
+    expect(clampToOutline({ x: 40, y: 20 }, L)).toEqual({ x: 40, y: 24 });
+  });
+
+  it('clamps a point beyond a corner to that corner', () => {
+    expect(clampToOutline({ x: -5, y: -5 }, L)).toEqual({ x: 0, y: 0 });
+  });
+});
+
+describe('outline-aware placement', () => {
+  const ellipse: Outline = { shape: 'ellipse', widthIn: 96, heightIn: 48 };
+
+  it('computeGhosts drops a ghost that leaves an ellipse even inside its bounding box', () => {
+    // Along the top edge of the box, y = 4: only points near the middle are inside the ellipse.
+    const ghosts = computeGhosts({ x: 48, y: 4 }, { x: 1, y: 0 }, { x: 96, y: 4 }, 12, ellipse);
+    for (const g of ghosts) expect(isInsideOutline(g, ellipse)).toBe(true);
+    expect(ghosts.length).toBeLessThan(4); // a plain 96″ box would keep all four
+  });
+
+  it('clampGroupDelta keeps a patch dragged into a polygon notch out of it', () => {
+    const L: Outline = {
+      shape: 'polygon',
+      widthIn: 48,
+      heightIn: 48,
+      points: [
+        { x: 0, y: 0 },
+        { x: 24, y: 0 },
+        { x: 24, y: 24 },
+        { x: 48, y: 24 },
+        { x: 48, y: 48 },
+        { x: 0, y: 48 },
+      ],
+    };
+    const members = [plant('a', 'carrot', 10, 10, 'g1'), plant('b', 'carrot', 14, 10, 'g1')];
+    const d = clampGroupDelta(members, 30, 0, L);
+    for (const m of members) expect(isInsideOutline({ x: m.x + d.x, y: m.y + d.y }, L)).toBe(true);
+    // It stops at the notch's left wall or slides down onto its floor — never into the notch.
+    const b = { x: 14 + d.x, y: 10 + d.y };
+    expect(b.x <= 24 + 1e-6 || b.y >= 24 - 1e-6).toBe(true);
   });
 });

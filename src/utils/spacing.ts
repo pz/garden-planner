@@ -1,6 +1,6 @@
 import type { PlantInstance } from '../types';
 import { getCrop } from '../data/crops';
-import { isInsideBed } from './geometry';
+import { isInsideOutline, type Outline } from './geometry';
 
 export interface OverlapConflict {
   /** groupIds of the two conflicting entities (a patch or a solo plant), canonically a < b. */
@@ -51,19 +51,12 @@ export function findOverlapConflicts(plants: PlantInstance[]): OverlapConflict[]
  * Whether a new plant of the given spacing fits at (x, y) without crowding existing plants.
  * Only the plant's own center has to stay inside the bed — its spacing ring (the area it
  * needs to grow) may extend past the edge, e.g. into a path or the yard beyond the bed —
- * though not out past one of the bed's rounded corners (`cornerRadiusIn`). `existing` must be
+ * though its center must be inside the bed's `outline` (so not out past a rounded corner, an
+ * ellipse's curve or a polygon's side). `existing` must be
  * the plants of this same bed; their coordinates are only comparable within one bed.
  */
-export function fitsAt(
-  x: number,
-  y: number,
-  spacingIn: number,
-  bedWidthIn: number,
-  bedHeightIn: number,
-  existing: PlantInstance[],
-  cornerRadiusIn = 0,
-): boolean {
-  if (!isInsideBed({ x, y }, bedWidthIn, bedHeightIn, cornerRadiusIn)) return false;
+export function fitsAt(x: number, y: number, spacingIn: number, outline: Outline, existing: PlantInstance[]): boolean {
+  if (!isInsideOutline({ x, y }, outline)) return false;
   const r = spacingIn / 2;
   for (const p of existing) {
     const otherR = getCrop(p.cropId).spacingIn / 2;
