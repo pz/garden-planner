@@ -3,7 +3,7 @@ import type { PlantInstance } from '../types';
 import { clampGroupDelta, clampToBed, computeGhosts, computeGroupBoxes, isInsideBed, lockedAxis } from './geometry';
 
 function plant(id: string, cropId: string, x: number, y: number, groupId: string): PlantInstance {
-  return { id, cropId, x, y, groupId };
+  return { id, bedId: 'b1', cropId, x, y, groupId };
 }
 
 describe('computeGroupBoxes', () => {
