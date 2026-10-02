@@ -296,7 +296,7 @@ describe('reducer: bed layout', () => {
     expect(reducer(state, { type: 'moveBed', id: 'bed-1', dx: 0, dy: 0 })).toBe(state);
   });
 
-  describe('resizeBed', () => {
+  describe('reshapeBed', () => {
     const inside: PlantInstance = { id: 'in', bedId: 'bed-1', cropId: 'tomato', x: 30, y: 24, groupId: 'g1' };
     const onEdge: PlantInstance = { id: 'edge', bedId: 'bed-1', cropId: 'basil', x: 60, y: 24, groupId: 'g2' };
     const past: PlantInstance = { id: 'past', bedId: 'bed-1', cropId: 'basil', x: 61, y: 24, groupId: 'g3' };
@@ -306,7 +306,7 @@ describe('reducer: bed layout', () => {
 
     it('applies the new geometry and removes exactly the plants now outside', () => {
       const state = twoBeds([inside, onEdge, past, otherBed]);
-      const next = reducer(state, { type: 'resizeBed', id: 'bed-1', geometry });
+      const next = reducer(state, { type: 'reshapeBed', id: 'bed-1', geometry });
       expect(next.beds[0]).toEqual({ ...state.beds[0], ...geometry });
       expect(next.plants.map((p) => p.id)).toEqual(['in', 'edge', 'other']);
       expect(next.beds[1]).toBe(state.beds[1]);
@@ -315,13 +315,13 @@ describe('reducer: bed layout', () => {
     it('keeps surviving plants at the same garden position when the left edge moves', () => {
       const state = basePlan([inside]);
       // Left edge 0 → 24, right edge fixed at 96.
-      const next = reducer(state, { type: 'resizeBed', id: 'bed-1', geometry: { cx: 60, cy: 24, widthIn: 72, heightIn: 48 } });
+      const next = reducer(state, { type: 'reshapeBed', id: 'bed-1', geometry: { cx: 60, cy: 24, widthIn: 72, heightIn: 48 } });
       expect(next.plants[0]).toEqual({ ...inside, x: 6 });
     });
 
     it('ignores an unknown bed', () => {
       const state = basePlan([inside]);
-      expect(reducer(state, { type: 'resizeBed', id: 'nope', geometry })).toBe(state);
+      expect(reducer(state, { type: 'reshapeBed', id: 'nope', geometry })).toBe(state);
     });
   });
 
@@ -350,5 +350,73 @@ describe('reducer: bed layout', () => {
     expect(next.profile).toBe(state.profile);
     expect(next.name).toBe(state.name);
     expect(next.dismissedConflictKeys).toBe(state.dismissedConflictKeys);
+  });
+});
+
+describe('polygon and ellipse beds', () => {
+  const L: Bed = {
+    id: 'poly',
+    name: 'Corner',
+    shape: 'polygon',
+    cx: 24,
+    cy: 24,
+    widthIn: 48,
+    heightIn: 48,
+    rotationDeg: 0,
+    points: [
+      { x: 0, y: 0 },
+      { x: 24, y: 0 },
+      { x: 24, y: 24 },
+      { x: 48, y: 24 },
+      { x: 48, y: 48 },
+      { x: 0, y: 48 },
+    ],
+  };
+
+  it('reshapeBed applies new polygon corners and removes plants the new outline drops', () => {
+    const keep: PlantInstance = { id: 'k', bedId: 'poly', cropId: 'basil', x: 10, y: 40, groupId: 'g1' };
+    const lose: PlantInstance = { id: 'l', bedId: 'poly', cropId: 'basil', x: 40, y: 40, groupId: 'g2' };
+    const state = { ...basePlan([keep, lose]), beds: [L] };
+    // Pull the (48, 24)→(48, 48) arm in to x = 24: a 24″ × 48″ strip, still anchored at the top-left.
+    const points = [
+      { x: 0, y: 0 },
+      { x: 24, y: 0 },
+      { x: 24, y: 48 },
+      { x: 0, y: 48 },
+    ];
+    const next = reducer(state, { type: 'reshapeBed', id: 'poly', geometry: { cx: 12, cy: 24, widthIn: 24, heightIn: 48, points } });
+    expect(next.beds[0].points).toEqual(points);
+    expect(next.plants.map((p) => p.id)).toEqual(['k']);
+  });
+
+  it('reshapeBed refuses a polygon geometry without corners rather than keeping stale ones', () => {
+    const state = { ...basePlan(), beds: [L] };
+    expect(reducer(state, { type: 'reshapeBed', id: 'poly', geometry: { cx: 24, cy: 24, widthIn: 96, heightIn: 48 } })).toBe(state);
+  });
+
+  it('parsePlan keeps valid ellipse and polygon beds', () => {
+    const ellipse: Bed = { ...L, id: 'e', shape: 'ellipse', points: undefined };
+    delete ellipse.points;
+    const plan = { ...basePlan(), beds: [L, ellipse] };
+    expect(parsePlan(JSON.stringify(plan), TEST_ID).beds).toEqual([L, ellipse]);
+  });
+
+  it.each([
+    ['a polygon with two corners', { ...L, points: L.points!.slice(0, 2) }],
+    ['a polygon with no corners', { ...L, points: undefined }],
+    ['a polygon with a non-numeric corner', { ...L, points: [...L.points!.slice(0, 5), { x: 'a', y: 1 }] }],
+    ['an unknown shape', { ...L, shape: 'hexagon' }],
+    ['a zero width', { ...L, widthIn: 0 }],
+    ['a missing rotation', { ...L, rotationDeg: undefined }],
+  ])('parsePlan drops %s, along with its plants, and keeps the other beds', (_label, bad) => {
+    const good: Bed = DEFAULT_PLAN.beds[0];
+    const plants: PlantInstance[] = [
+      { id: 'a', bedId: 'poly', cropId: 'basil', x: 1, y: 1, groupId: 'g1' },
+      { id: 'b', bedId: good.id, cropId: 'basil', x: 1, y: 1, groupId: 'g2' },
+    ];
+    const plan = { ...basePlan(plants), beds: [bad, good] };
+    const parsed = parsePlan(JSON.stringify(plan), TEST_ID);
+    expect(parsed.beds).toEqual([good]);
+    expect(parsed.plants.map((p) => p.id)).toEqual(['b']);
   });
 });

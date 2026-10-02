@@ -8,16 +8,22 @@ import {
   LAYOUT_SNAP_IN,
   bedToGarden,
   boxBetween,
+  closesPolygon,
   drawnCornerRadius,
+  edgeLabels,
   fitView,
   formatLength,
   gardenBounds,
+  geometryOf,
   isDrag,
+  labelOffset,
+  moveCorner,
   nextBedName,
   normalizeSide,
   panBy,
   parseLength,
   plantSummary,
+  polygonFromCorners,
   rectFromCorners,
   relocatePlants,
   resizeBedTo,
@@ -27,7 +33,6 @@ import {
   wheelZoomFactor,
   zoomAt,
   zoomPercent,
-  type BedGeometry,
   type Handle,
   type Insets,
   type View,
@@ -56,16 +61,18 @@ const C = {
 const FIT_INSETS: Insets = { left: 80, right: 330, top: 40, bottom: 110 };
 const HELP_HIDDEN_KEY = storageKey('garden-planner-layout-help-hidden');
 
-type Tool = 'select' | 'rect';
+type Tool = 'select' | 'rect' | 'ellipse' | 'polygon';
+
 
 type Drag =
   | { kind: 'pan'; startX: number; startY: number; view0: View; moved: boolean; deselectOnClick: boolean }
   | { kind: 'move'; bedId: string; start: Point; dx: number; dy: number }
   | { kind: 'resize'; bedId: string; handle: Handle; draft: Bed }
+  | { kind: 'corner'; bedId: string; index: number; draft: Bed }
   | { kind: 'draw'; a: Point; b: Point };
 
 type Pending =
-  | { kind: 'resize'; bedId: string; draft: Bed; plantIds: string[] }
+  | { kind: 'resize'; bedId: string; draft: Bed; plantIds: string[]; byCorner: boolean }
   | { kind: 'delete'; bedId: string; plantIds: string[] };
 
 const EDGE_HANDLES: Handle[] = [
@@ -92,6 +99,8 @@ const MOD = IS_MAC ? '⌘' : 'Ctrl ';
 const SHORTCUTS: [string, string][] = [
   ['V', 'Select'],
   ['R', 'Rectangle'],
+  ['E', 'Ellipse'],
+  ['P', 'Polygon'],
   ['Space + drag', 'Pan'],
   [`${MOD}scroll`, 'Zoom'],
   ['0', 'Fit'],
@@ -114,7 +123,7 @@ function isTyping(target: EventTarget | null): boolean {
 }
 
 export function LayoutEditor() {
-  const { plan, addBed, renameBed, moveBed, resizeBed, removeBed, restoreLayout } = useGarden();
+  const { plan, addBed, renameBed, moveBed, reshapeBed, removeBed, restoreLayout } = useGarden();
   const { beds, plants } = plan;
 
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -129,6 +138,8 @@ export function LayoutEditor() {
   const [history, setHistory] = useState<LayoutSnapshot[]>([]);
   const [spaceHeld, setSpaceHeld] = useState(false);
   const [cursor, setCursor] = useState<Point | null>(null);
+  /** Corners placed so far while drawing a polygon, in garden coordinates. */
+  const [corners, setCorners] = useState<Point[]>([]);
   const [helpHidden, setHelpHidden] = useState(readHelpHidden);
 
   const selected = beds.find((b) => b.id === selectedId) ?? null;
@@ -205,14 +216,13 @@ export function LayoutEditor() {
   }, [pending, history, restoreLayout, selectedId]);
 
   /** Applies a new size/position, asking first if it would leave plants outside the bed. */
-  function applyGeometry(bed: Bed, draft: Bed) {
+  function applyGeometry(bed: Bed, draft: Bed, byCorner = false) {
     const { outsideIds } = relocatePlants(bed, draft, plants);
     if (outsideIds.length) {
-      setPending({ kind: 'resize', bedId: bed.id, draft, plantIds: outsideIds });
+      setPending({ kind: 'resize', bedId: bed.id, draft, plantIds: outsideIds, byCorner });
       return;
     }
-    const geometry: BedGeometry = { cx: draft.cx, cy: draft.cy, widthIn: draft.widthIn, heightIn: draft.heightIn };
-    commit(() => resizeBed(bed.id, geometry));
+    commit(() => reshapeBed(bed.id, geometryOf(draft)));
   }
 
   function setSizeFromPanel(bed: Bed, widthIn: number, heightIn: number) {
@@ -239,7 +249,7 @@ export function LayoutEditor() {
     if (!pending) return;
     if (pending.kind === 'resize') {
       const d = pending.draft;
-      commit(() => resizeBed(pending.bedId, { cx: d.cx, cy: d.cy, widthIn: d.widthIn, heightIn: d.heightIn }));
+      commit(() => reshapeBed(pending.bedId, geometryOf(d)));
     } else {
       commit(() => removeBed(pending.bedId));
       setSelectedId(null);
@@ -250,7 +260,20 @@ export function LayoutEditor() {
   function pickTool(t: Tool) {
     setTool(t);
     setCursor(null);
+    setCorners([]);
     if (t !== 'select') setSelectedId(null);
+  }
+
+  /** Turns the corners placed so far into a polygon bed, or drops them if they don't make one. */
+  function finishPolygon() {
+    const geometry = polygonFromCorners(corners);
+    setCorners([]);
+    if (!geometry) return;
+    const bed: Bed = { id: crypto.randomUUID(), name: nextBedName(beds), shape: 'polygon', rotationDeg: 0, ...geometry };
+    commit(() => addBed(bed));
+    setSelectedId(bed.id);
+    setTool('select');
+    setCursor(null);
   }
 
   // Keyboard shortcuts, ignored while typing in the side panel's fields.
@@ -277,13 +300,21 @@ export function LayoutEditor() {
     }
     if (mod) return;
     if (e.key === 'Escape') {
-      setSelectedId(null);
-      pickTool('select');
+      // First Esc abandons a half-drawn polygon; the next one leaves the drawing tool.
+      if (corners.length) setCorners([]);
+      else {
+        setSelectedId(null);
+        pickTool('select');
+      }
+    } else if (e.key === 'Enter' && tool === 'polygon') {
+      finishPolygon();
     } else if ((e.key === 'Delete' || e.key === 'Backspace') && selected) {
       e.preventDefault();
       requestDelete(selected);
     } else if (e.key === 'v' || e.key === 'V') pickTool('select');
     else if (e.key === 'r' || e.key === 'R') pickTool('rect');
+    else if (e.key === 'e' || e.key === 'E') pickTool('ellipse');
+    else if (e.key === 'p' || e.key === 'P') pickTool('polygon');
     else if (selected && e.key.startsWith('Arrow')) {
       e.preventDefault();
       const step = LAYOUT_SNAP_IN;
@@ -327,6 +358,16 @@ export function LayoutEditor() {
     if (!p) return;
     const snapped = { x: snapTo(p.x), y: snapTo(p.y) };
     setSelectedId(null);
+    if (tool === 'polygon') {
+      // Polygons are clicked out corner by corner rather than dragged.
+      if (closesPolygon(corners, snapped, view.zoom)) {
+        finishPolygon();
+        return;
+      }
+      const last = corners[corners.length - 1];
+      if (!last || last.x !== snapped.x || last.y !== snapped.y) setCorners([...corners, snapped]);
+      return;
+    }
     setDrag({ kind: 'draw', a: snapped, b: snapped });
   }
 
@@ -345,6 +386,13 @@ export function LayoutEditor() {
     e.stopPropagation();
     capture(e);
     setDrag({ kind: 'resize', bedId: bed.id, handle, draft: bed });
+  }
+
+  function onCornerDown(e: React.PointerEvent, bed: Bed, index: number) {
+    if (e.button !== 0 || pending) return;
+    e.stopPropagation();
+    capture(e);
+    setDrag({ kind: 'corner', bedId: bed.id, index, draft: bed });
   }
 
   function onPointerMove(e: React.PointerEvent) {
@@ -373,6 +421,9 @@ export function LayoutEditor() {
     } else if (drag.kind === 'resize') {
       const bed = beds.find((b) => b.id === drag.bedId);
       if (bed) setDrag({ ...drag, draft: resizeFromPointer(bed, drag.handle, p) });
+    } else if (drag.kind === 'corner') {
+      const bed = beds.find((b) => b.id === drag.bedId);
+      if (bed) setDrag({ ...drag, draft: moveCorner(bed, drag.index, p) });
     }
   }
 
@@ -386,7 +437,8 @@ export function LayoutEditor() {
       const geometry = rectFromCorners(d.a, d.b);
       setCursor(null);
       if (!geometry) return;
-      const bed: Bed = { id: crypto.randomUUID(), name: nextBedName(beds), shape: 'rect', rotationDeg: 0, ...geometry };
+      const shape = tool === 'ellipse' ? 'ellipse' : 'rect';
+      const bed: Bed = { id: crypto.randomUUID(), name: nextBedName(beds), shape, rotationDeg: 0, ...geometry };
       commit(() => addBed(bed));
       setSelectedId(bed.id);
       setTool('select');
@@ -395,6 +447,9 @@ export function LayoutEditor() {
     } else if (d.kind === 'resize') {
       const bed = beds.find((b) => b.id === d.bedId);
       if (bed && (d.draft.widthIn !== bed.widthIn || d.draft.heightIn !== bed.heightIn)) applyGeometry(bed, d.draft);
+    } else if (d.kind === 'corner') {
+      const bed = beds.find((b) => b.id === d.bedId);
+      if (bed && d.draft !== bed) applyGeometry(bed, d.draft, true);
     }
   }
 
@@ -403,14 +458,15 @@ export function LayoutEditor() {
   /** A bed as it should look right now, with any in-progress drag or pending resize applied. */
   function displayed(bed: Bed): Bed {
     if (drag?.kind === 'move' && drag.bedId === bed.id) return { ...bed, cx: bed.cx + drag.dx, cy: bed.cy + drag.dy };
-    if (drag?.kind === 'resize' && drag.bedId === bed.id) return drag.draft;
+    if ((drag?.kind === 'resize' || drag?.kind === 'corner') && drag.bedId === bed.id) return drag.draft;
     if (pending?.kind === 'resize' && pending.bedId === bed.id) return pending.draft;
     return bed;
   }
 
-  // While a bed is being resized its plants hold still in the garden, and the ones its new
-  // outline would lose are flagged.
-  const resizing = drag?.kind === 'resize' ? drag : pending?.kind === 'resize' ? pending : null;
+  // While a bed is being resized or reshaped its plants hold still in the garden, and the ones
+  // its new outline would lose are flagged.
+  const resizing =
+    drag?.kind === 'resize' || drag?.kind === 'corner' ? drag : pending?.kind === 'resize' ? pending : null;
   const resizingFrom = resizing ? beds.find((b) => b.id === resizing.bedId) : undefined;
   const flagged = new Set<string>(
     pending ? pending.plantIds : resizing && resizingFrom ? relocatePlants(resizingFrom, resizing.draft, plants).outsideIds : [],
@@ -451,8 +507,27 @@ export function LayoutEditor() {
     );
   }
 
+  /** Pills along edges, pushed out from the shape by enough to clear the line and the pill itself. */
+  function edgePills(key: string, pts: Point[], closed: boolean, strong: boolean): ReactNode[] {
+    return edgeLabels(pts, closed)
+      .filter((l) => l.lengthIn * zoom >= 22) // too short on screen to label legibly
+      .map((l, i) => {
+        const text = formatLength(l.lengthIn);
+        const halfW = (text.length * px(11) * 0.56 + px(10)) / 2;
+        const halfH = (px(11) * 1.6) / 2;
+        const off = labelOffset(l.outward, halfW, halfH, px(strong ? 10 : 6));
+        return pill(`${key}-${i}`, { x: l.mid.x + l.outward.x * off, y: l.mid.y + l.outward.y * off }, text, strong);
+      });
+  }
+
+  /** A bed's measurements: each side of a polygon, or the width and length of a rectangle or ellipse. */
+  function bedPills(key: string, b: Bed, strong: boolean): ReactNode[] {
+    if (b.points) return edgePills(key, b.points.map((q) => bedToGarden(b, q)), true, strong);
+    return dimensionPills(key, b, strong);
+  }
+
   /** Width below the bottom edge and length right of the right edge, clear of the outline. */
-  function dimensionPills(key: string, g: BedGeometry, strong: boolean): ReactNode[] {
+  function dimensionPills(key: string, g: Pick<Bed, 'cx' | 'cy' | 'widthIn' | 'heightIn'>, strong: boolean): ReactNode[] {
     const off = px(strong ? 14 : 10);
     const lengthText = formatLength(g.heightIn);
     const lengthHalfW = (lengthText.length * px(11) * 0.56 + px(10)) / 2;
@@ -471,11 +546,19 @@ export function LayoutEditor() {
   const hint =
     tool === 'rect'
       ? `Drag to draw a bed. Sides snap to ${formatLength(LAYOUT_SNAP_IN)}.`
-      : selected
-        ? 'Drag the bed to move it, or its edges and corners to resize it.'
+      : tool === 'ellipse'
+        ? `Drag to draw an ellipse. Its box snaps to ${formatLength(LAYOUT_SNAP_IN)}.`
+        : tool === 'polygon'
+          ? corners.length
+            ? 'Click to add corners · click the first corner or press Enter to close · Esc cancels'
+            : `Click to place the first corner. Corners snap to ${formatLength(LAYOUT_SNAP_IN)}.`
+          : selected?.shape === 'polygon'
+            ? 'Drag the bed to move it, its corners to reshape it, or its box edges to resize it.'
+            : selected
+              ? 'Drag the bed to move it, or its edges and corners to resize it.'
         : beds.length
-          ? 'Click a bed to edit it, or pick the rectangle tool to add one.'
-          : 'Pick the rectangle tool, then drag to draw your first bed.';
+          ? 'Click a bed to edit it, or pick a shape tool to add one.'
+          : 'Pick a shape tool, then draw your first bed.';
 
   function toggleHelp() {
     const next = !helpHidden;
@@ -491,6 +574,8 @@ export function LayoutEditor() {
   const pendingPlants = pending ? plants.filter((p) => pending.plantIds.includes(p.id)) : [];
   const nPending = pendingPlants.length;
   const plantWord = `${nPending} plant${nPending === 1 ? '' : 's'}`;
+  const fallOutside = nPending === 1 ? 'falls outside' : 'fall outside';
+  const them = nPending === 1 ? 'it' : 'them';
 
   return (
     <div
@@ -515,6 +600,9 @@ export function LayoutEditor() {
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
           onPointerLeave={() => setCursor(null)}
+          onDoubleClick={() => {
+            if (tool === 'polygon') finishPolygon();
+          }}
           style={{
             position: 'absolute',
             inset: 0,
@@ -546,13 +634,9 @@ export function LayoutEditor() {
             const isSel = bed.id === selectedId;
             return (
               <g key={bed.id} transform={`translate(${b.cx} ${b.cy}) rotate(${b.rotationDeg})`}>
-                <rect
+                <BedShape
+                  bed={b}
                   data-bed-id={bed.id}
-                  x={-b.widthIn / 2}
-                  y={-b.heightIn / 2}
-                  width={b.widthIn}
-                  height={b.heightIn}
-                  rx={drawnCornerRadius(b)}
                   onPointerDown={(e) => onBedDown(e, bed)}
                   onPointerEnter={() => setHoverId(bed.id)}
                   onPointerLeave={() => setHoverId((h) => (h === bed.id ? null : h))}
@@ -560,9 +644,26 @@ export function LayoutEditor() {
                     fill: C.bed,
                     stroke: isSel ? 'var(--color-accent)' : C.bedStroke,
                     strokeWidth: px(isSel ? 3.5 : 1.5),
+                    strokeLinejoin: 'round',
                     cursor: tool === 'select' && !pending && !spaceHeld ? 'move' : undefined,
                   }}
                 />
+                {/* An ellipse or polygon doesn't fill its box, so show the box it resizes by. */}
+                {b.shape !== 'rect' && (isSel || bed.id === hoverId) && (
+                  <rect
+                    x={-b.widthIn / 2}
+                    y={-b.heightIn / 2}
+                    width={b.widthIn}
+                    height={b.heightIn}
+                    style={{
+                      fill: 'none',
+                      stroke: isSel ? 'var(--color-accent)' : C.faint,
+                      strokeWidth: px(isSel ? 2 : 1),
+                      strokeDasharray: `${px(6)} ${px(4)}`,
+                      pointerEvents: 'none',
+                    }}
+                  />
+                )}
               </g>
             );
           })}
@@ -604,10 +705,10 @@ export function LayoutEditor() {
           {beds.flatMap((bed) => {
             const isSel = bed.id === selectedId;
             if (!isSel && bed.id !== hoverId) return [];
-            return dimensionPills(bed.id, displayed(bed), isSel);
+            return bedPills(bed.id, displayed(bed), isSel);
           })}
 
-          {selected && !drawBox && (() => {
+          {selected && !drawBox && !corners.length && (() => {
             const b = displayed(selected);
             const hw = b.widthIn / 2;
             const hh = b.heightIn / 2;
@@ -637,11 +738,48 @@ export function LayoutEditor() {
                     style={{ fill: 'transparent', cursor: resizeCursor(h) }}
                   />
                 ))}
+                {b.points?.map((q, i) => (
+                  <circle
+                    key={`v${i}`}
+                    data-corner={i}
+                    cx={q.x - hw}
+                    cy={q.y - hh}
+                    r={px(5.5)}
+                    onPointerDown={(e) => onCornerDown(e, selected, i)}
+                    style={{ fill: 'var(--color-accent)', stroke: C.ground, strokeWidth: px(2), cursor: 'move' }}
+                  />
+                ))}
               </g>
             );
           })()}
 
-          {drawBox && (
+          {drawBox && tool === 'ellipse' && (
+            <>
+              <rect
+                x={drawBox.x}
+                y={drawBox.y}
+                width={drawBox.width}
+                height={drawBox.height}
+                style={{ fill: 'none', stroke: 'var(--color-accent)', strokeOpacity: 0.5, strokeWidth: px(1), strokeDasharray: `${px(6)} ${px(4)}`, pointerEvents: 'none' }}
+              />
+              <ellipse
+                cx={drawBox.x + drawBox.width / 2}
+                cy={drawBox.y + drawBox.height / 2}
+                rx={drawBox.width / 2}
+                ry={drawBox.height / 2}
+                style={{
+                  fill: C.draft,
+                  fillOpacity: 0.7,
+                  stroke: 'var(--color-accent)',
+                  strokeOpacity: draft ? 1 : 0.5,
+                  strokeWidth: px(2),
+                  strokeDasharray: `${px(6)} ${px(4)}`,
+                  pointerEvents: 'none',
+                }}
+              />
+            </>
+          )}
+          {drawBox && tool !== 'ellipse' && (
             <rect
               x={drawBox.x}
               y={drawBox.y}
@@ -659,6 +797,28 @@ export function LayoutEditor() {
               }}
             />
           )}
+          {corners.length > 0 && (() => {
+            const chain = cursor && !pending ? [...corners, cursor] : corners;
+            const closing = !!cursor && closesPolygon(corners, cursor, zoom);
+            return (
+              <g style={{ pointerEvents: 'none' }}>
+                <polyline
+                  points={chain.map((q) => `${q.x},${q.y}`).join(' ')}
+                  style={{ fill: C.draft, fillOpacity: 0.6, stroke: 'var(--color-accent)', strokeWidth: px(2), strokeLinejoin: 'round' }}
+                />
+                {edgePills('poly', chain, false, true)}
+                {corners.map((q, i) => (
+                  <circle
+                    key={i}
+                    cx={q.x}
+                    cy={q.y}
+                    r={px(i === 0 ? 7 : 4.5)}
+                    style={{ fill: i === 0 && closing ? 'var(--color-accent)' : C.ground, stroke: 'var(--color-accent)', strokeWidth: px(2.5) }}
+                  />
+                ))}
+              </g>
+            );
+          })()}
           {drawBox && draft && dimensionPills('draft', draft, true)}
 
           {tool !== 'select' && cursor && !pending && (
@@ -684,6 +844,8 @@ export function LayoutEditor() {
       >
         <ToolButton icon="select" title="Select (V)" active={tool === 'select'} onClick={() => pickTool('select')} />
         <ToolButton icon="rect" title="Rectangle bed (R)" active={tool === 'rect'} onClick={() => pickTool('rect')} />
+        <ToolButton icon="ellipse" title="Ellipse bed (E)" active={tool === 'ellipse'} onClick={() => pickTool('ellipse')} />
+        <ToolButton icon="polygon" title="Polygon bed (P)" active={tool === 'polygon'} onClick={() => pickTool('polygon')} />
         <div style={{ height: 8 }} />
         <ToolButton icon="undo" title={`Undo (${MOD}Z)`} disabled={!history.length || !!pending} onClick={undo} />
       </div>
@@ -797,7 +959,7 @@ export function LayoutEditor() {
             <div style={{ padding: '16px 20px 14px', background: 'var(--color-bg)', font: '700 19px Figtree' }}>Beds</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 16 }}>
               {beds.length === 0 && (
-                <p style={{ font: '400 13px Figtree', color: C.muted }}>No beds yet. Draw one with the rectangle tool.</p>
+                <p style={{ font: '400 13px Figtree', color: C.muted }}>No beds yet. Draw one with a shape tool.</p>
               )}
               {beds.map((b) => (
                 <button
@@ -845,7 +1007,9 @@ export function LayoutEditor() {
           </div>
           <p style={{ font: '400 13.5px/1.5 Figtree', color: C.muted }}>
             {pending.kind === 'resize'
-              ? `At ${formatLength(pending.draft.widthIn)} × ${formatLength(pending.draft.heightIn)}, ${plantWord} (${plantSummary(pendingPlants)}) fall outside ${pendingBed.name}. Resizing removes them from the plan.`
+              ? pending.byCorner
+                ? `With that corner moved, ${plantWord} (${plantSummary(pendingPlants)}) ${fallOutside} ${pendingBed.name}. Reshaping removes ${them} from the plan.`
+                : `At ${formatLength(pending.draft.widthIn)} × ${formatLength(pending.draft.heightIn)}, ${plantWord} (${plantSummary(pendingPlants)}) ${fallOutside} ${pendingBed.name}. Resizing removes ${them} from the plan.`
               : `Its ${plantWord} (${plantSummary(pendingPlants)}) will be removed from the plan too.`}
           </p>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
@@ -853,13 +1017,24 @@ export function LayoutEditor() {
               Keep plants
             </button>
             <button className="btn btn-primary" onClick={confirmPending}>
-              {pending.kind === 'resize' ? 'Resize and remove' : 'Delete bed'}
+              {pending.kind === 'resize' ? (pending.byCorner ? 'Reshape and remove' : 'Resize and remove') : 'Delete bed'}
             </button>
           </div>
         </div>
       )}
     </div>
   );
+}
+
+/** A bed's outline, drawn centered on the origin (the caller translates and rotates it into place). */
+function BedShape({ bed, ...rest }: { bed: Bed } & React.SVGProps<SVGRectElement & SVGEllipseElement & SVGPolygonElement>) {
+  const hw = bed.widthIn / 2;
+  const hh = bed.heightIn / 2;
+  if (bed.shape === 'ellipse') return <ellipse cx={0} cy={0} rx={hw} ry={hh} {...rest} />;
+  if (bed.shape === 'polygon' && bed.points) {
+    return <polygon points={bed.points.map((q) => `${q.x - hw},${q.y - hh}`).join(' ')} {...rest} />;
+  }
+  return <rect x={-hw} y={-hh} width={bed.widthIn} height={bed.heightIn} rx={drawnCornerRadius(bed)} {...rest} />;
 }
 
 function ToolButton({
