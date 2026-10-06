@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useGarden } from '../state/gardenStore';
 import type { Bed, PlantInstance } from '../types';
 import { getCrop } from '../data/crops';
@@ -6,15 +6,16 @@ import { conflictKey, findOverlapConflicts, fitsAt } from '../utils/spacing';
 import {
   boundingBox,
   clampGroupDelta,
-  clampToBed,
+  clampToOutline,
   computeGhosts,
   computeGroupBoxes,
+  isInsideOutline,
   lockedAxis,
   GROUP_BOX_PAD_IN,
   AXIS_LOCK_THRESHOLD_FACTOR,
   type Point,
 } from '../utils/geometry';
-import { BED_CORNER_RADIUS_IN, PLANTING_PX_PER_INCH, bedBounds, gardenBounds } from '../utils/layout';
+import { BED_CORNER_RADIUS_IN, PLANTING_PX_PER_INCH, bedBounds, bedOutline, gardenBounds } from '../utils/layout';
 import { PlantToken, LONG_PRESS_MS, MOVE_THRESHOLD_PX, type GestureHandlers } from './PlantToken';
 import { PlantMenu } from './PlantMenu';
 import { PlantInfoCard } from './PlantInfoCard';
@@ -153,17 +154,29 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
     setQuickActions(null);
   }
 
-  function toBedCoords(bedId: string, clientX: number, clientY: number): Point | null {
+  /** The bed-local point under the pointer, unclamped (it may be outside the bed's shape). */
+  function toBedLocal(bedId: string, clientX: number, clientY: number): Point | null {
     const el = bedRefs.current.get(bedId);
-    const bed = bedById.get(bedId);
-    if (!el || !bed) return null;
+    if (!el) return null;
     // Plant coordinates are relative to the bed's inner (padding) edge, inside its border.
     const rect = el.getBoundingClientRect();
-    const raw = {
+    return {
       x: (clientX - rect.left - el.clientLeft) / PX_PER_INCH,
       y: (clientY - rect.top - el.clientTop) / PX_PER_INCH,
     };
-    return clampToBed(raw, bed.widthIn, bed.heightIn, BED_CORNER_RADIUS_IN);
+  }
+
+  function toBedCoords(bedId: string, clientX: number, clientY: number): Point | null {
+    const bed = bedById.get(bedId);
+    const raw = toBedLocal(bedId, clientX, clientY);
+    return bed && raw ? clampToOutline(raw, bedOutline(bed)) : null;
+  }
+
+  /** Whether a press lands on the bed itself, not the empty corners of its box (ellipse, polygon). */
+  function pressIsOnBed(bedId: string, clientX: number, clientY: number): boolean {
+    const bed = bedById.get(bedId);
+    const raw = toBedLocal(bedId, clientX, clientY);
+    return !!bed && !!raw && isInsideOutline(raw, bedOutline(bed));
   }
 
   function openMenuAt(bedId: string, clientX: number, clientY: number) {
@@ -174,6 +187,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
   }
 
   function handleBedContextMenu(e: React.MouseEvent, bedId: string) {
+    if (!pressIsOnBed(bedId, e.clientX, e.clientY)) return;
     e.preventDefault();
     openMenuAt(bedId, e.clientX, e.clientY);
   }
@@ -181,6 +195,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
   function handleBedPointerDown(e: React.PointerEvent, bedId: string) {
     if (e.target !== bedRefs.current.get(bedId)) return; // ignore bubbled events from plants
     if (e.button === 2) return;
+    if (!pressIsOnBed(bedId, e.clientX, e.clientY)) return;
     const startX = e.clientX;
     const startY = e.clientY;
     const timer = setTimeout(() => {
@@ -227,14 +242,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
         if (!prev) return prev;
         const rawDx = coords.x - prev.anchorOriginal.x;
         const rawDy = coords.y - prev.anchorOriginal.y;
-        const { x: dx, y: dy } = clampGroupDelta(
-          prev.members,
-          rawDx,
-          rawDy,
-          bed.widthIn,
-          bed.heightIn,
-          BED_CORNER_RADIUS_IN,
-        );
+        const { x: dx, y: dy } = clampGroupDelta(prev.members, rawDx, rawDy, bedOutline(bed));
         return { ...prev, dx, dy };
       });
     },
@@ -263,15 +271,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
           axis = lockedAxis(dx, dy);
         }
         if (!axis) return { ...prev, ghosts: [] };
-        const ghosts = computeGhosts(
-          prev.origin,
-          axis,
-          coords,
-          spacing,
-          bed.widthIn,
-          bed.heightIn,
-          BED_CORNER_RADIUS_IN,
-        );
+        const ghosts = computeGhosts(prev.origin, axis, coords, spacing, bedOutline(bed));
         return { ...prev, axis, ghosts };
       });
     },
@@ -312,6 +312,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
   const menuBed = menuState ? bedById.get(menuState.bedId) : undefined;
 
   const gridPx = PX_PER_INCH * 12;
+  const gridBackground = `repeating-linear-gradient(90deg, transparent 0 ${gridPx - 1}px, #e6dbc6 ${gridPx - 1}px ${gridPx}px), repeating-linear-gradient(0deg, #f6efe0 0 ${gridPx - 1}px, #efe6d2 ${gridPx - 1}px ${gridPx}px)`;
   const bounds = gardenBounds(beds);
   const isLayout = mode === 'layout';
 
@@ -358,17 +359,24 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
             // content-box so the plantable area is exactly widthIn × heightIn inside the border;
             // the negative margin lines that area (not the border) up with the garden grid.
             boxSizing: 'content-box',
-            margin: -BED_BORDER_PX,
             width: bed.widthIn * PX_PER_INCH,
             height: bed.heightIn * PX_PER_INCH,
-            border: `${BED_BORDER_PX}px solid var(--color-text)`,
-            borderRadius: BED_OUTER_RADIUS_PX,
-            background: `repeating-linear-gradient(90deg, transparent 0 ${gridPx - 1}px, #e6dbc6 ${gridPx - 1}px ${gridPx}px), repeating-linear-gradient(0deg, #f6efe0 0 ${gridPx - 1}px, #efe6d2 ${gridPx - 1}px ${gridPx}px)`,
             touchAction: 'none',
             userSelect: 'none',
-            boxShadow: 'var(--shadow-md)',
+            ...(bed.shape === 'polygon' && bed.points
+              ? // A border can't follow a polygon, so it's drawn as an SVG outline instead.
+                { margin: 0 }
+              : {
+                  margin: -BED_BORDER_PX,
+                  border: `${BED_BORDER_PX}px solid var(--color-text)`,
+                  // An ellipse's 50% radius gives an inner edge that is exactly its outline.
+                  borderRadius: bed.shape === 'ellipse' ? '50%' : BED_OUTER_RADIUS_PX,
+                  background: gridBackground,
+                  boxShadow: 'var(--shadow-md)',
+                }),
           }}
         >
+          {bed.shape === 'polygon' && bed.points && <PolygonBedShape points={bed.points} widthIn={bed.widthIn} heightIn={bed.heightIn} />}
           {groupBoxes
             .filter((box) => box.bedId === bed.id)
             .map((box) => (
@@ -444,25 +452,6 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
             </div>
           )}
 
-          {plants.length === 0 && !menuState && (
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                pointerEvents: 'none',
-                padding: 16,
-                textAlign: 'center',
-                overflow: 'hidden',
-              }}
-            >
-              <p style={{ font: '400 17px Caveat, cursive', color: '#9a8c76', maxWidth: 320 }}>
-                Empty so far — long-press or right-click the bed to plant something.
-              </p>
-            </div>
-          )}
         </div>
       </div>
     );
@@ -539,6 +528,13 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
 
       {!isLayout && view === 'bed' && bounds && (
         <>
+          {plants.length === 0 && (
+            // One hint for the whole garden, outside the beds: centered in a bed it would cross an
+            // ellipse's curve or a polygon's notch, and repeated in every bed it's just noise.
+            <p style={{ font: '400 17px Caveat, cursive', color: '#9a8c76', marginBottom: -4 }}>
+              Empty so far — long-press or right-click a bed to plant something.
+            </p>
+          )}
           <div
             // The garden is drawn at a fixed scale and never shrinks with the window (plants
             // are positioned in absolute inches); a narrow window scrolls to reach it instead.
@@ -560,8 +556,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
               clientY={menuState.clientY}
               bedXIn={menuState.xIn}
               bedYIn={menuState.yIn}
-              bedWidthIn={menuBed.widthIn}
-              bedHeightIn={menuBed.heightIn}
+              outline={bedOutline(menuBed)}
               existingPlants={plantsIn(menuBed.id)}
               onPick={(cropId) => {
                 addPlants([
@@ -586,13 +581,12 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
                 const bed = bedById.get(quickActionsPlant.bedId);
                 if (bed) {
                   const spacing = getCrop(quickActionsPlant.cropId).spacingIn;
-                  const { x: nx, y: ny } = clampToBed(
+                  const outline = bedOutline(bed);
+                  const { x: nx, y: ny } = clampToOutline(
                     { x: quickActionsPlant.x + spacing * 0.8, y: quickActionsPlant.y },
-                    bed.widthIn,
-                    bed.heightIn,
-                    BED_CORNER_RADIUS_IN,
+                    outline,
                   );
-                  if (fitsAt(nx, ny, spacing, bed.widthIn, bed.heightIn, plantsIn(bed.id), BED_CORNER_RADIUS_IN)) {
+                  if (fitsAt(nx, ny, spacing, outline, plantsIn(bed.id))) {
                     addPlants([
                       { id: uid(), bedId: bed.id, cropId: quickActionsPlant.cropId, x: nx, y: ny, groupId: uid() },
                     ]);
@@ -627,6 +621,44 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
 
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </div>
+  );
+}
+
+/** A polygon bed's fill, 1′ grid and border, drawn behind its plants (which sit in the same frame). */
+function PolygonBedShape({ points, widthIn, heightIn }: { points: Point[]; widthIn: number; heightIn: number }) {
+  const pad = BED_BORDER_PX;
+  const gridPx = PX_PER_INCH * 12;
+  const d = points.map((q) => `${q.x * PX_PER_INCH + pad},${q.y * PX_PER_INCH + pad}`).join(' ');
+  // useId can contain characters that aren't safe inside url(#…), so keep only the plain ones.
+  const id = `bed-grid-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
+  return (
+    <svg
+      width={widthIn * PX_PER_INCH + pad * 2}
+      height={heightIn * PX_PER_INCH + pad * 2}
+      aria-hidden="true"
+      style={{
+        position: 'absolute',
+        left: -pad,
+        top: -pad,
+        overflow: 'visible',
+        pointerEvents: 'none',
+        filter: 'drop-shadow(0 3px 5px color-mix(in srgb, #201e1d 16%, transparent))',
+      }}
+    >
+      <defs>
+        <pattern id={id} width={gridPx} height={gridPx} x={pad} y={pad} patternUnits="userSpaceOnUse">
+          <rect width={gridPx} height={gridPx} fill="#f6efe0" />
+          <path d={`M${gridPx - 0.5} 0V${gridPx}M0 ${gridPx - 0.5}H${gridPx}`} stroke="#e6dbc6" strokeWidth={1} />
+        </pattern>
+      </defs>
+      <polygon
+        points={d}
+        fill={`url(#${id})`}
+        stroke="var(--color-text)"
+        strokeWidth={BED_BORDER_PX}
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 

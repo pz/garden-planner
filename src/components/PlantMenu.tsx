@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { CROPS } from '../data/crops';
 import { fitsAt } from '../utils/spacing';
+import type { Outline } from '../utils/geometry';
 import type { PlantInstance } from '../types';
 import { CROP_COLORS, PlantMark } from './PlantMark';
 
@@ -9,8 +10,7 @@ export function PlantMenu({
   clientY,
   bedXIn,
   bedYIn,
-  bedWidthIn,
-  bedHeightIn,
+  outline,
   existingPlants,
   onPick,
   onClose,
@@ -19,8 +19,7 @@ export function PlantMenu({
   clientY: number;
   bedXIn: number;
   bedYIn: number;
-  bedWidthIn: number;
-  bedHeightIn: number;
+  outline: Outline;
   existingPlants: PlantInstance[];
   onPick: (cropId: string) => void;
   onClose: () => void;
@@ -61,7 +60,7 @@ export function PlantMenu({
       }}
     >
       {CROPS.map((crop) => {
-        const fits = fitsAt(bedXIn, bedYIn, crop.spacingIn, bedWidthIn, bedHeightIn, existingPlants);
+        const fits = fitsAt(bedXIn, bedYIn, crop.spacingIn, outline, existingPlants);
         return (
           <button
             key={crop.id}

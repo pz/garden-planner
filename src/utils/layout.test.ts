@@ -6,10 +6,18 @@ import {
   MIN_BED_SIDE_IN,
   MIN_ZOOM,
   bedBounds,
+  bedOutline,
+  closesPolygon,
+  edgeLabels,
+  geometryOf,
+  moveCorner,
+  polygonFromCorners,
+  signedArea2,
   bedToGarden,
   boxBetween,
   drawnCornerRadius,
   isDrag,
+  labelOffset,
   wheelZoomFactor,
   MAX_WHEEL_ZOOM_DELTA,
   fitView,
@@ -352,5 +360,154 @@ describe('wheelZoomFactor', () => {
     expect(wheelZoomFactor(100)).toBe(wheelZoomFactor(MAX_WHEEL_ZOOM_DELTA));
     expect(wheelZoomFactor(-100)).toBe(wheelZoomFactor(-MAX_WHEEL_ZOOM_DELTA));
     expect(wheelZoomFactor(MAX_WHEEL_ZOOM_DELTA - 1)).toBeGreaterThan(wheelZoomFactor(MAX_WHEEL_ZOOM_DELTA));
+  });
+});
+
+const L_POINTS = [
+  { x: 0, y: 0 },
+  { x: 24, y: 0 },
+  { x: 24, y: 24 },
+  { x: 48, y: 24 },
+  { x: 48, y: 48 },
+  { x: 0, y: 48 },
+];
+function polyBed(over: Partial<Bed> = {}): Bed {
+  return bed({ id: 'p', shape: 'polygon', cx: 24, cy: 24, widthIn: 48, heightIn: 48, points: L_POINTS, ...over });
+}
+
+describe('bedOutline', () => {
+  it('rounds a rectangle’s corners, and passes ellipse and polygon shapes through', () => {
+    expect(bedOutline(bed())).toEqual({ shape: 'rect', widthIn: 96, heightIn: 48, cornerRadiusIn: BED_CORNER_RADIUS_IN });
+    expect(bedOutline(bed({ shape: 'ellipse' }))).toEqual({ shape: 'ellipse', widthIn: 96, heightIn: 48 });
+    expect(bedOutline(polyBed())).toEqual({ shape: 'polygon', widthIn: 48, heightIn: 48, points: L_POINTS });
+  });
+});
+
+describe('geometryOf', () => {
+  it('includes corners only for a polygon', () => {
+    expect(geometryOf(bed())).toEqual({ cx: 48, cy: 24, widthIn: 96, heightIn: 48 });
+    expect(geometryOf(polyBed()).points).toBe(L_POINTS);
+  });
+});
+
+describe('resizeBedTo with a polygon', () => {
+  it('scales the corners with the box', () => {
+    const next = resizeBedTo(polyBed(), 96, 24, { sx: 1, sy: 1 });
+    expect(next.points).toEqual([
+      { x: 0, y: 0 },
+      { x: 48, y: 0 },
+      { x: 48, y: 12 },
+      { x: 96, y: 12 },
+      { x: 96, y: 24 },
+      { x: 0, y: 24 },
+    ]);
+    expect(bedBounds(next)).toEqual({ x0: 0, y0: 0, x1: 96, y1: 24 });
+  });
+});
+
+describe('relocatePlants with non-rectangular beds', () => {
+  it('flags a plant that a shrinking ellipse no longer covers, even inside its box', () => {
+    const e = bed({ shape: 'ellipse' });
+    const next = resizeBedTo(e, 96, 48, { sx: 1, sy: 1 }); // same size: the box corner is still outside
+    const { outsideIds } = relocatePlants(e, next, [plant('corner', 2, 2), plant('mid', 48, 24)]);
+    expect(outsideIds).toEqual(['corner']);
+  });
+
+  it('flags a plant left in a polygon’s new notch', () => {
+    const square = polyBed({ points: [{ x: 0, y: 0 }, { x: 48, y: 0 }, { x: 48, y: 48 }, { x: 0, y: 48 }] });
+    const { outsideIds } = relocatePlants(square, polyBed(), [plant('notch', 40, 10, 'p'), plant('arm', 10, 10, 'p')]);
+    expect(outsideIds).toEqual(['notch']);
+  });
+});
+
+describe('signedArea2', () => {
+  it('is positive for corners running clockwise on screen, negative counter-clockwise, 0 for a line', () => {
+    const cw = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }];
+    expect(signedArea2(cw)).toBe(100);
+    expect(signedArea2([...cw].reverse())).toBe(-100);
+    expect(signedArea2([{ x: 0, y: 0 }, { x: 5, y: 5 }, { x: 10, y: 10 }])).toBe(0);
+  });
+});
+
+describe('polygonFromCorners', () => {
+  it('centers the box on the corners and makes the corners box-relative', () => {
+    const g = polygonFromCorners([{ x: 12, y: 6 }, { x: 60, y: 6 }, { x: 12, y: 54 }]);
+    expect(g).toEqual({ cx: 36, cy: 30, widthIn: 48, heightIn: 48, points: [{ x: 0, y: 0 }, { x: 48, y: 0 }, { x: 0, y: 48 }] });
+  });
+
+  it('rejects two corners, corners all in a line, and a box under the minimum side', () => {
+    expect(polygonFromCorners([{ x: 0, y: 0 }, { x: 48, y: 48 }])).toBeNull();
+    expect(polygonFromCorners([{ x: 0, y: 0 }, { x: 24, y: 24 }, { x: 48, y: 48 }])).toBeNull();
+    expect(polygonFromCorners([{ x: 0, y: 0 }, { x: 48, y: 0 }, { x: 48, y: MIN_BED_SIDE_IN - 6 }])).toBeNull();
+  });
+
+  it('accepts a box exactly at the minimum side', () => {
+    expect(polygonFromCorners([{ x: 0, y: 0 }, { x: 48, y: 0 }, { x: 48, y: MIN_BED_SIDE_IN }])).not.toBeNull();
+  });
+});
+
+describe('moveCorner', () => {
+  it('moves one corner, snapped, and leaves the others fixed in the garden', () => {
+    const b = polyBed();
+    const next = moveCorner(b, 2, { x: 37, y: 13 }); // the reflex corner (24, 24) → (36, 12)
+    expect(next.points![2]).toEqual({ x: 36, y: 12 });
+    for (const i of [0, 1, 3, 4, 5]) expect(bedToGarden(next, next.points![i])).toEqual(bedToGarden(b, b.points![i]));
+  });
+
+  it('re-fits the box when a corner moves past it', () => {
+    const next = moveCorner(polyBed(), 0, { x: -12, y: -12 });
+    expect(bedBounds(next)).toEqual({ x0: -12, y0: -12, x1: 48, y1: 48 });
+    expect(next.points![0]).toEqual({ x: 0, y: 0 });
+    expect(bedToGarden(next, next.points![4])).toEqual({ x: 48, y: 48 });
+  });
+
+  it('refuses a move that would collapse the shape', () => {
+    const tri = polyBed({ widthIn: 48, heightIn: 48, points: [{ x: 0, y: 0 }, { x: 48, y: 0 }, { x: 0, y: 48 }] });
+    expect(moveCorner(tri, 2, { x: 24, y: 0 })).toBe(tri); // all three on one line
+    expect(moveCorner(tri, 5, { x: 0, y: 0 })).toBe(tri); // no such corner
+  });
+});
+
+describe('closesPolygon', () => {
+  const pts = [{ x: 0, y: 0 }, { x: 48, y: 0 }, { x: 48, y: 48 }];
+
+  it('closes within 14 screen pixels of the first corner, once there are three corners', () => {
+    // At 2 px/in the target is 7″: (3, 4) is 5″ away, (6, 4) about 7.2″.
+    expect(closesPolygon(pts, { x: 3, y: 4 }, 2)).toBe(true);
+    expect(closesPolygon(pts, { x: 6, y: 4 }, 2)).toBe(false);
+    expect(closesPolygon(pts.slice(0, 2), { x: 0, y: 0 }, 2)).toBe(false);
+  });
+
+  it('never needs a click closer than one snap step, however far zoomed in', () => {
+    expect(closesPolygon(pts, { x: 6, y: 0 }, 16)).toBe(true);
+    expect(closesPolygon(pts, { x: 6, y: 0.1 }, 16)).toBe(false);
+  });
+});
+
+describe('edgeLabels', () => {
+  it('measures each edge and points its normal away from the shape, either winding', () => {
+    const square = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+    for (const pts of [square, [...square].reverse()]) {
+      const labels = edgeLabels(pts);
+      expect(labels).toHaveLength(4);
+      for (const l of labels) {
+        expect(l.lengthIn).toBe(10);
+        // Stepping out along the normal moves away from the square's center.
+        const out = { x: l.mid.x + l.outward.x, y: l.mid.y + l.outward.y };
+        expect(Math.hypot(out.x - 5, out.y - 5)).toBeGreaterThan(Math.hypot(l.mid.x - 5, l.mid.y - 5));
+      }
+    }
+  });
+
+  it('leaves out the closing edge of an open chain, and skips zero-length edges', () => {
+    const chain = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 5 }];
+    expect(edgeLabels(chain, false).map((l) => l.lengthIn)).toEqual([10, 5]);
+  });
+});
+
+describe('labelOffset', () => {
+  it('clears a horizontal edge by half the label height, and a vertical one by half its width', () => {
+    expect(labelOffset({ x: 0, y: -1 }, 20, 5, 2)).toBe(7);
+    expect(labelOffset({ x: 1, y: 0 }, 20, 5, 2)).toBe(22);
   });
 });
