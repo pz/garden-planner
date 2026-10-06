@@ -27,6 +27,7 @@ export function PlantToken({
   warned,
   selected,
   handlers,
+  counterRotateDeg = 0,
 }: {
   plant: PlantInstance;
   pxPerInch: number;
@@ -34,6 +35,8 @@ export function PlantToken({
   warned: boolean;
   selected: boolean;
   handlers: GestureHandlers;
+  /** The bed's turn: the token is placed in the turned bed but drawn upright. */
+  counterRotateDeg?: number;
 }) {
   const crop = getCrop(plant.cropId);
   const color = CROP_COLORS[plant.cropId] ?? 'var(--color-accent)';
@@ -131,7 +134,7 @@ export function PlantToken({
         position: 'absolute',
         left: plant.x * pxPerInch,
         top: plant.y * pxPerInch,
-        transform: 'translate(-50%, -50%)',
+        transform: counterRotateDeg ? `translate(-50%, -50%) rotate(${-counterRotateDeg}deg)` : 'translate(-50%, -50%)',
         cursor: GESTURE_CURSORS[gesture],
         touchAction: 'none',
       }}

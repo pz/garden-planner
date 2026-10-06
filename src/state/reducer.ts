@@ -1,6 +1,6 @@
 import type { Bed, GardenPlan, PlantInstance, Profile } from '../types';
 import { parseGardenLocation } from '../utils/location';
-import { relocatePlants, type BedGeometry } from '../utils/layout';
+import { normalizeAngle, relocatePlants, type BedGeometry } from '../utils/layout';
 import { conflictKey, findOverlapConflicts } from '../utils/spacing';
 
 /** Template for a fresh garden; always used via createPlan so every garden gets its own id. */
@@ -111,6 +111,8 @@ export type Action =
   | { type: 'renameBed'; id: string; name: string }
   | { type: 'moveBed'; id: string; dx: number; dy: number }
   | { type: 'reshapeBed'; id: string; geometry: BedGeometry }
+  | { type: 'rotateBed'; id: string; rotationDeg: number }
+  | { type: 'pasteBed'; bed: Bed; plants: PlantInstance[] }
   | { type: 'removeBed'; id: string }
   | { type: 'restoreLayout'; beds: Bed[]; plants: PlantInstance[] }
   | { type: 'addPlants'; plants: PlantInstance[] }
@@ -154,6 +156,17 @@ export function reducer(state: GardenPlan, action: Action): GardenPlan {
         plants: outside.size ? plants.filter((p) => !outside.has(p.id)) : plants,
       };
     }
+    case 'rotateBed': {
+      // Turning about the center moves nothing out of the bed: plants are stored in its own
+      // frame, so they turn with it.
+      const rotationDeg = normalizeAngle(action.rotationDeg);
+      const prev = state.beds.find((b) => b.id === action.id);
+      if (!prev || prev.rotationDeg === rotationDeg) return state;
+      return { ...state, beds: state.beds.map((b) => (b.id === action.id ? { ...b, rotationDeg } : b)) };
+    }
+    case 'pasteBed':
+      // A bed and its plants arrive together, so one undo step takes both away again.
+      return { ...state, beds: [...state.beds, action.bed], plants: [...state.plants, ...action.plants] };
     case 'removeBed':
       if (!state.beds.some((b) => b.id === action.id)) return state;
       return {

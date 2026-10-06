@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useGarden } from '../state/gardenStore';
 import type { Bed, PlantInstance } from '../types';
 import { getCrop } from '../data/crops';
@@ -15,7 +15,15 @@ import {
   AXIS_LOCK_THRESHOLD_FACTOR,
   type Point,
 } from '../utils/geometry';
-import { BED_CORNER_RADIUS_IN, PLANTING_PX_PER_INCH, bedBounds, bedOutline, gardenBounds } from '../utils/layout';
+import {
+  BED_CORNER_RADIUS_IN,
+  PLANTING_PX_PER_INCH,
+  bedBounds,
+  bedOutline,
+  gardenBounds,
+  gardenToBed,
+  screenToGarden,
+} from '../utils/layout';
 import { PlantToken, LONG_PRESS_MS, MOVE_THRESHOLD_PX, type GestureHandlers } from './PlantToken';
 import { PlantMenu } from './PlantMenu';
 import { PlantInfoCard } from './PlantInfoCard';
@@ -43,6 +51,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
   const { beds, plants, profile } = plan;
 
   const bedRefs = useRef(new Map<string, HTMLDivElement>());
+  const gardenRef = useRef<HTMLDivElement>(null);
   const emptyPressRef = useRef<{
     bedId: string;
     timer: ReturnType<typeof setTimeout> | null;
@@ -117,6 +126,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
   }, [effectivePlants]);
 
   const bedById = useMemo(() => new Map(beds.map((b) => [b.id, b])), [beds]);
+  const bounds = gardenBounds(beds);
   const plantsIn = (bedId: string) => plants.filter((p) => p.bedId === bedId);
 
   function dismissToast(id: string) {
@@ -156,14 +166,15 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
 
   /** The bed-local point under the pointer, unclamped (it may be outside the bed's shape). */
   function toBedLocal(bedId: string, clientX: number, clientY: number): Point | null {
-    const el = bedRefs.current.get(bedId);
-    if (!el) return null;
-    // Plant coordinates are relative to the bed's inner (padding) edge, inside its border.
+    const el = gardenRef.current;
+    const bed = bedById.get(bedId);
+    if (!el || !bed || !bounds) return null;
+    // Screen → garden (the garden box starts at the container's top-left, below the label
+    // strip) → the bed's own, possibly turned, frame. A turned bed's on-screen box isn't its
+    // frame, so this can't be measured off the bed's element.
     const rect = el.getBoundingClientRect();
-    return {
-      x: (clientX - rect.left - el.clientLeft) / PX_PER_INCH,
-      y: (clientY - rect.top - el.clientTop) / PX_PER_INCH,
-    };
+    const view = { zoom: PX_PER_INCH, x: bounds.x0, y: bounds.y0 - BED_LABEL_PX / PX_PER_INCH };
+    return gardenToBed(bed, screenToGarden(view, clientX - rect.left, clientY - rect.top));
   }
 
   function toBedCoords(bedId: string, clientX: number, clientY: number): Point | null {
@@ -313,30 +324,25 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
 
   const gridPx = PX_PER_INCH * 12;
   const gridBackground = `repeating-linear-gradient(90deg, transparent 0 ${gridPx - 1}px, #e6dbc6 ${gridPx - 1}px ${gridPx}px), repeating-linear-gradient(0deg, #f6efe0 0 ${gridPx - 1}px, #efe6d2 ${gridPx - 1}px ${gridPx}px)`;
-  const bounds = gardenBounds(beds);
   const isLayout = mode === 'layout';
 
   function renderBed(bed: Bed) {
     if (!bounds) return null;
-    // Beds aren't turned yet (rotationDeg is always 0), so the footprint is the bed itself.
     const box = bedBounds(bed);
     const bedMultiply = multiply?.bedId === bed.id ? multiply : null;
     const bedPlants = effectivePlants.filter((p) => p.bedId === bed.id);
+    const isPolygon = bed.shape === 'polygon' && !!bed.points;
+    // Bordered beds center their border box; a polygon (no border) centers its plantable area.
+    const edge = isPolygon ? 0 : BED_BORDER_PX;
     return (
-      <div
-        key={bed.id}
-        style={{
-          position: 'absolute',
-          left: (box.x0 - bounds.x0) * PX_PER_INCH,
-          top: (box.y0 - bounds.y0) * PX_PER_INCH + BED_LABEL_PX,
-        }}
-      >
+      <Fragment key={bed.id}>
         <div
           style={{
             position: 'absolute',
-            bottom: '100%',
-            left: 4,
-            marginBottom: 6,
+            // Above the top-left of the bed's footprint, which for a turned bed is its bounding box.
+            left: (box.x0 - bounds.x0) * PX_PER_INCH + 4,
+            top: (box.y0 - bounds.y0) * PX_PER_INCH + BED_LABEL_PX - 6,
+            transform: 'translateY(-100%)',
             font: '600 13px Figtree',
             color: 'var(--color-text-muted)',
             whiteSpace: 'nowrap',
@@ -345,115 +351,125 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
           {bed.name}
         </div>
         <div
-          ref={(el) => {
-            if (el) bedRefs.current.set(bed.id, el);
-            else bedRefs.current.delete(bed.id);
-          }}
-          data-bed-id={bed.id}
-          onContextMenu={(e) => handleBedContextMenu(e, bed.id)}
-          onPointerDown={(e) => handleBedPointerDown(e, bed.id)}
-          onPointerMove={handleBedPointerMove}
-          onPointerUp={handleBedPointerUp}
+          // A zero-size anchor at the bed's center; the bed turns about it.
           style={{
-            position: 'relative',
-            // content-box so the plantable area is exactly widthIn × heightIn inside the border;
-            // the negative margin lines that area (not the border) up with the garden grid.
-            boxSizing: 'content-box',
-            width: bed.widthIn * PX_PER_INCH,
-            height: bed.heightIn * PX_PER_INCH,
-            touchAction: 'none',
-            userSelect: 'none',
-            ...(bed.shape === 'polygon' && bed.points
-              ? // A border can't follow a polygon, so it's drawn as an SVG outline instead.
-                { margin: 0 }
-              : {
-                  margin: -BED_BORDER_PX,
-                  border: `${BED_BORDER_PX}px solid var(--color-text)`,
-                  // An ellipse's 50% radius gives an inner edge that is exactly its outline.
-                  borderRadius: bed.shape === 'ellipse' ? '50%' : BED_OUTER_RADIUS_PX,
-                  background: gridBackground,
-                  boxShadow: 'var(--shadow-md)',
-                }),
+            position: 'absolute',
+            left: (bed.cx - bounds.x0) * PX_PER_INCH,
+            top: (bed.cy - bounds.y0) * PX_PER_INCH + BED_LABEL_PX,
           }}
         >
-          {bed.shape === 'polygon' && bed.points && <PolygonBedShape points={bed.points} widthIn={bed.widthIn} heightIn={bed.heightIn} />}
-          {groupBoxes
-            .filter((box) => box.bedId === bed.id)
-            .map((box) => (
-              <GroupBoundingBox
-                key={box.groupId}
-                box={box}
-                pxPerInch={PX_PER_INCH}
-                warned={warnedGroupIds.has(box.groupId)}
-              />
-            ))}
-          {bedMultiply && multiplyBox && <GroupBoundingBox box={multiplyBox} pxPerInch={PX_PER_INCH} active />}
-
-          {bedPlants.map((p) => {
-            const isMultiplyOrigin = multiply?.id === p.id;
-            const isSolo = (groupSizes.get(p.groupId) ?? 1) === 1;
-            return (
-              <div key={p.id} style={{ opacity: isMultiplyOrigin ? 0.85 : 1 }}>
-                <PlantToken
-                  plant={p}
+          <div
+            ref={(el) => {
+              if (el) bedRefs.current.set(bed.id, el);
+              else bedRefs.current.delete(bed.id);
+            }}
+            data-bed-id={bed.id}
+            onContextMenu={(e) => handleBedContextMenu(e, bed.id)}
+            onPointerDown={(e) => handleBedPointerDown(e, bed.id)}
+            onPointerMove={handleBedPointerMove}
+            onPointerUp={handleBedPointerUp}
+            style={{
+              position: 'absolute',
+              // content-box so the plantable area is exactly widthIn × heightIn inside the border.
+              boxSizing: 'content-box',
+              left: -(bed.widthIn * PX_PER_INCH) / 2 - edge,
+              top: -(bed.heightIn * PX_PER_INCH) / 2 - edge,
+              width: bed.widthIn * PX_PER_INCH,
+              height: bed.heightIn * PX_PER_INCH,
+              transform: bed.rotationDeg ? `rotate(${bed.rotationDeg}deg)` : undefined,
+              touchAction: 'none',
+              userSelect: 'none',
+              ...(isPolygon
+                ? {} // A border can't follow a polygon, so it's drawn as an SVG outline instead.
+                : {
+                    border: `${BED_BORDER_PX}px solid var(--color-text)`,
+                    // An ellipse's 50% radius gives an inner edge that is exactly its outline.
+                    borderRadius: bed.shape === 'ellipse' ? '50%' : BED_OUTER_RADIUS_PX,
+                    background: gridBackground,
+                    boxShadow: 'var(--shadow-md)',
+                  }),
+            }}
+          >
+            {bed.shape === 'polygon' && bed.points && <PolygonBedShape points={bed.points} widthIn={bed.widthIn} heightIn={bed.heightIn} />}
+            {groupBoxes
+              .filter((box) => box.bedId === bed.id)
+              .map((box) => (
+                <GroupBoundingBox
+                  key={box.groupId}
+                  box={box}
                   pxPerInch={PX_PER_INCH}
-                  diameter={PLANT_DIAMETER}
-                  warned={isSolo && warnedGroupIds.has(p.groupId)}
-                  selected={p.id === selectedId}
-                  handlers={gestureHandlers}
+                  warned={warnedGroupIds.has(box.groupId)}
                 />
-              </div>
-            );
-          })}
+              ))}
+            {bedMultiply && multiplyBox && <GroupBoundingBox box={multiplyBox} pxPerInch={PX_PER_INCH} active />}
 
-          {bedMultiply?.ghosts.map((g, i) => {
-            const origin = plants.find((p) => p.id === bedMultiply.id);
-            if (!origin) return null;
-            const color = CROP_COLORS[origin.cropId];
-            return (
+            {bedPlants.map((p) => {
+              const isMultiplyOrigin = multiply?.id === p.id;
+              const isSolo = (groupSizes.get(p.groupId) ?? 1) === 1;
+              return (
+                <div key={p.id} style={{ opacity: isMultiplyOrigin ? 0.85 : 1 }}>
+                  <PlantToken
+                    plant={p}
+                    pxPerInch={PX_PER_INCH}
+                    diameter={PLANT_DIAMETER}
+                    warned={isSolo && warnedGroupIds.has(p.groupId)}
+                    selected={p.id === selectedId}
+                    handlers={gestureHandlers}
+                    counterRotateDeg={bed.rotationDeg}
+                  />
+                </div>
+              );
+            })}
+
+            {bedMultiply?.ghosts.map((g, i) => {
+              const origin = plants.find((p) => p.id === bedMultiply.id);
+              if (!origin) return null;
+              const color = CROP_COLORS[origin.cropId];
+              return (
+                <div
+                  key={i}
+                  style={{
+                    position: 'absolute',
+                    left: g.x * PX_PER_INCH,
+                    top: g.y * PX_PER_INCH,
+                    transform: 'translate(-50%, -50%)',
+                    pointerEvents: 'none',
+                    opacity: 0.55,
+                  }}
+                >
+                  <div
+                    style={{
+                      border: `1.5px dashed ${color}`,
+                      borderRadius: '999px',
+                      width: PLANT_DIAMETER,
+                      height: PLANT_DIAMETER,
+                    }}
+                  />
+                </div>
+              );
+            })}
+
+            {bedMultiply && bedMultiply.ghosts.length > 0 && (
               <div
-                key={i}
                 style={{
                   position: 'absolute',
-                  left: g.x * PX_PER_INCH,
-                  top: g.y * PX_PER_INCH,
-                  transform: 'translate(-50%, -50%)',
+                  left: 12,
+                  bottom: 12,
+                  background: 'var(--color-text)',
+                  color: '#fffdf8',
+                  borderRadius: '999px',
+                  padding: '5px 12px',
+                  font: '600 12px Figtree',
                   pointerEvents: 'none',
-                  opacity: 0.55,
+                  transform: bed.rotationDeg ? `rotate(${-bed.rotationDeg}deg)` : undefined,
                 }}
               >
-                <div
-                  style={{
-                    border: `1.5px dashed ${color}`,
-                    borderRadius: '999px',
-                    width: PLANT_DIAMETER,
-                    height: PLANT_DIAMETER,
-                  }}
-                />
+                +{bedMultiply.ghosts.length}
               </div>
-            );
-          })}
-
-          {bedMultiply && bedMultiply.ghosts.length > 0 && (
-            <div
-              style={{
-                position: 'absolute',
-                left: 12,
-                bottom: 12,
-                background: 'var(--color-text)',
-                color: '#fffdf8',
-                borderRadius: '999px',
-                padding: '5px 12px',
-                font: '600 12px Figtree',
-                pointerEvents: 'none',
-              }}
-            >
-              +{bedMultiply.ghosts.length}
-            </div>
-          )}
-
+            )}
+          </div>
         </div>
-      </div>
+      </Fragment>
     );
   }
 
@@ -536,6 +552,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
             </p>
           )}
           <div
+            ref={gardenRef}
             // The garden is drawn at a fixed scale and never shrinks with the window (plants
             // are positioned in absolute inches); a narrow window scrolls to reach it instead.
             style={{
