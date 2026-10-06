@@ -35,7 +35,7 @@ import {
   type Bounds,
   type View,
 } from '../utils/layout';
-import { isContextPress, isReleasedMove } from '../utils/pointer';
+import { isContextPress, isReleasedMove, polygonClipPath } from '../utils/pointer';
 import { PlantToken, LONG_PRESS_MS, MOVE_THRESHOLD_PX, type GestureHandlers } from './PlantToken';
 import { PlantMenu } from './PlantMenu';
 import { PlantInfoCard } from './PlantInfoCard';
@@ -228,7 +228,8 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
   }
 
   function handleBedPointerDown(e: React.PointerEvent, bedId: string) {
-    if (e.target !== bedRefs.current.get(bedId)) return; // ignore bubbled events from plants
+    const t = e.target as HTMLElement;
+    if (t !== bedRefs.current.get(bedId) && !t.hasAttribute('data-bed-hit')) return; // ignore bubbled events from plants
     if (isContextPress(e)) return; // the contextmenu event opens the menu for these
     if (!pressIsOnBed(bedId, e.clientX, e.clientY)) return;
     const startX = e.clientX;
@@ -541,6 +542,9 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
               transform: bed.rotationDeg ? `rotate(${bed.rotationDeg}deg)` : undefined,
               touchAction: 'none',
               userSelect: 'none',
+              // An elliptical or polygonal bed's box covers ground (and other beds) that
+              // isn't the bed; only its shape (the hit layer below) and plants catch presses.
+              pointerEvents: bed.shape === 'rect' ? undefined : 'none',
               ...(isPolygon
                 ? {} // A border can't follow a polygon, so it's drawn as an SVG outline instead.
                 : {
@@ -552,6 +556,18 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
                   }),
             }}
           >
+            {bed.shape !== 'rect' && (
+              <div
+                data-bed-hit=""
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  pointerEvents: 'auto',
+                  borderRadius: bed.shape === 'ellipse' ? '50%' : undefined,
+                  clipPath: isPolygon && bed.points ? polygonClipPath(bed.points, PX_PER_INCH) : undefined,
+                }}
+              />
+            )}
             {bed.shape === 'polygon' && bed.points && <PolygonBedShape points={bed.points} widthIn={bed.widthIn} heightIn={bed.heightIn} />}
             {groupBoxes
               .filter((box) => box.bedId === bed.id)
