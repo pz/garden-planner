@@ -12,13 +12,16 @@ import {
   drawnCornerRadius,
   edgeLabels,
   fitView,
+  gardenToScreen,
   formatLength,
   gardenBounds,
   geometryOf,
   isDrag,
   labelOffset,
+  maxCornerRadius,
   moveCorner,
   nextBedName,
+  normalizeCornerRadius,
   normalizeSide,
   panBy,
   parseLength,
@@ -72,7 +75,7 @@ type Drag =
   | { kind: 'draw'; a: Point; b: Point };
 
 type Pending =
-  | { kind: 'resize'; bedId: string; draft: Bed; plantIds: string[]; byCorner: boolean }
+  | { kind: 'resize'; bedId: string; draft: Bed; plantIds: string[]; change: 'size' | 'corner' | 'radius' }
   | { kind: 'delete'; bedId: string; plantIds: string[] };
 
 const EDGE_HANDLES: Handle[] = [
@@ -87,6 +90,8 @@ const CORNER_HANDLES: Handle[] = [
   { sx: 1, sy: 1 },
   { sx: -1, sy: 1 },
 ];
+
+const RESIZE_CONFIRM_LABEL = { size: 'Resize and remove', corner: 'Reshape and remove', radius: 'Round and remove' } as const;
 
 function resizeCursor(h: Handle): string {
   if (h.sx === 0) return 'ns-resize';
@@ -141,6 +146,8 @@ export function LayoutEditor() {
   /** Corners placed so far while drawing a polygon, in garden coordinates. */
   const [corners, setCorners] = useState<Point[]>([]);
   const [helpHidden, setHelpHidden] = useState(readHelpHidden);
+  /** The bed whose name is being edited in place on the canvas. */
+  const [editingNameId, setEditingNameId] = useState<string | null>(null);
 
   const selected = beds.find((b) => b.id === selectedId) ?? null;
 
@@ -216,10 +223,10 @@ export function LayoutEditor() {
   }, [pending, history, restoreLayout, selectedId]);
 
   /** Applies a new size/position, asking first if it would leave plants outside the bed. */
-  function applyGeometry(bed: Bed, draft: Bed, byCorner = false) {
+  function applyGeometry(bed: Bed, draft: Bed, change: 'size' | 'corner' | 'radius' = 'size') {
     const { outsideIds } = relocatePlants(bed, draft, plants);
     if (outsideIds.length) {
-      setPending({ kind: 'resize', bedId: bed.id, draft, plantIds: outsideIds, byCorner });
+      setPending({ kind: 'resize', bedId: bed.id, draft, plantIds: outsideIds, change });
       return;
     }
     commit(() => reshapeBed(bed.id, geometryOf(draft)));
@@ -232,6 +239,13 @@ export function LayoutEditor() {
     if (w === bed.widthIn && h === bed.heightIn) return;
     // The panel grows and shrinks a bed from its top-left corner.
     applyGeometry(bed, resizeBedTo(bed, w, h, { sx: 1, sy: 1 }));
+  }
+
+  function setRadiusFromPanel(bed: Bed, inches: number) {
+    if (pending) return;
+    const r = normalizeCornerRadius(inches, bed);
+    if (r === drawnCornerRadius(bed)) return;
+    applyGeometry(bed, { ...bed, cornerRadiusIn: r }, 'radius');
   }
 
   function requestDelete(bed: Bed) {
@@ -381,6 +395,21 @@ export function LayoutEditor() {
     setDrag({ kind: 'move', bedId: bed.id, start: p, dx: 0, dy: 0 });
   }
 
+  /** Names are editable by clicking them, with the select tool. */
+  const nameEditable = tool === 'select' && !pending && !spaceHeld;
+
+  function onNameClick(e: React.MouseEvent, bed: Bed) {
+    if (!nameEditable || e.button !== 0) return;
+    setSelectedId(bed.id);
+    setEditingNameId(bed.id);
+  }
+
+  function finishNameEdit(bed: Bed, name: string | null) {
+    setEditingNameId(null);
+    const trimmed = name?.trim();
+    if (trimmed && trimmed !== bed.name) renameBed(bed.id, trimmed);
+  }
+
   function onHandleDown(e: React.PointerEvent, bed: Bed, handle: Handle) {
     if (e.button !== 0 || pending) return;
     e.stopPropagation();
@@ -449,7 +478,7 @@ export function LayoutEditor() {
       if (bed && (d.draft.widthIn !== bed.widthIn || d.draft.heightIn !== bed.heightIn)) applyGeometry(bed, d.draft);
     } else if (d.kind === 'corner') {
       const bed = beds.find((b) => b.id === d.bedId);
-      if (bed && d.draft !== bed) applyGeometry(bed, d.draft, true);
+      if (bed && d.draft !== bed) applyGeometry(bed, d.draft, 'corner');
     }
   }
 
@@ -669,13 +698,23 @@ export function LayoutEditor() {
           })}
 
           {beds.map((bed) => {
+            if (bed.id === editingNameId) return null;
             const b = displayed(bed);
             return (
               <text
                 key={`name-${bed.id}`}
                 x={b.cx - b.widthIn / 2}
                 y={b.cy - b.heightIn / 2 - px(7)}
-                style={{ font: `600 ${px(12)}px Figtree`, fill: C.muted, pointerEvents: 'none' }}
+                data-bed-name={bed.id}
+                // Stop the press here so it doesn't pan the canvas or deselect the bed.
+                onPointerDown={(e) => nameEditable && e.button === 0 && e.stopPropagation()}
+                onClick={(e) => onNameClick(e, bed)}
+                style={{
+                  font: `600 ${px(12)}px Figtree`,
+                  fill: C.muted,
+                  pointerEvents: nameEditable ? 'all' : 'none',
+                  cursor: nameEditable ? 'text' : undefined,
+                }}
               >
                 {bed.name}
               </text>
@@ -753,6 +792,24 @@ export function LayoutEditor() {
             );
           })()}
 
+          {drag?.kind === 'draw' && (
+            <g style={{ pointerEvents: 'none' }}>
+              {/* Until the drag has both a width and a height there's no box yet: show the line itself. */}
+              {drawBox && (drawBox.width === 0 || drawBox.height === 0) && (
+                <>
+                  <line
+                    x1={drag.a.x}
+                    y1={drag.a.y}
+                    x2={drag.b.x}
+                    y2={drag.b.y}
+                    style={{ stroke: 'var(--color-accent)', strokeWidth: px(2), strokeDasharray: `${px(6)} ${px(4)}` }}
+                  />
+                  {edgePills('draw', [drag.a, drag.b], false, true)}
+                </>
+              )}
+              <circle cx={drag.a.x} cy={drag.a.y} r={px(4.5)} style={{ fill: 'var(--color-accent)' }} />
+            </g>
+          )}
           {drawBox && tool === 'ellipse' && (
             <>
               <rect
@@ -826,6 +883,15 @@ export function LayoutEditor() {
           )}
         </svg>
       )}
+
+      {view &&
+        (() => {
+          const bed = beds.find((b) => b.id === editingNameId);
+          if (!bed) return null;
+          const b = displayed(bed);
+          const at = gardenToScreen(view, { x: b.cx - b.widthIn / 2, y: b.cy - b.heightIn / 2 });
+          return <BedNameInput key={bed.id} name={bed.name} left={at.x - 6} bottom={at.y - 2} onDone={(name) => finishNameEdit(bed, name)} />;
+        })()}
 
       {/* Tool rail */}
       <div
@@ -952,6 +1018,7 @@ export function LayoutEditor() {
             onBack={() => setSelectedId(null)}
             onRename={(name) => renameBed(selected.id, name)}
             onSize={(w, h) => setSizeFromPanel(selected, w, h)}
+            onRadius={(r) => setRadiusFromPanel(selected, r)}
             onDelete={() => requestDelete(selected)}
           />
         ) : (
@@ -1007,9 +1074,11 @@ export function LayoutEditor() {
           </div>
           <p style={{ font: '400 13.5px/1.5 Figtree', color: C.muted }}>
             {pending.kind === 'resize'
-              ? pending.byCorner
+              ? pending.change === 'corner'
                 ? `With that corner moved, ${plantWord} (${plantSummary(pendingPlants)}) ${fallOutside} ${pendingBed.name}. Reshaping removes ${them} from the plan.`
-                : `At ${formatLength(pending.draft.widthIn)} × ${formatLength(pending.draft.heightIn)}, ${plantWord} (${plantSummary(pendingPlants)}) ${fallOutside} ${pendingBed.name}. Resizing removes ${them} from the plan.`
+                : pending.change === 'radius'
+                  ? `With corners rounded to ${formatLength(drawnCornerRadius(pending.draft))}, ${plantWord} (${plantSummary(pendingPlants)}) ${fallOutside} ${pendingBed.name}. Rounding them removes ${them} from the plan.`
+                  : `At ${formatLength(pending.draft.widthIn)} × ${formatLength(pending.draft.heightIn)}, ${plantWord} (${plantSummary(pendingPlants)}) ${fallOutside} ${pendingBed.name}. Resizing removes ${them} from the plan.`
               : `Its ${plantWord} (${plantSummary(pendingPlants)}) will be removed from the plan too.`}
           </p>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
@@ -1017,7 +1086,7 @@ export function LayoutEditor() {
               Keep plants
             </button>
             <button className="btn btn-primary" onClick={confirmPending}>
-              {pending.kind === 'resize' ? (pending.byCorner ? 'Reshape and remove' : 'Resize and remove') : 'Delete bed'}
+              {pending.kind === 'resize' ? RESIZE_CONFIRM_LABEL[pending.change] : 'Delete bed'}
             </button>
           </div>
         </div>
@@ -1035,6 +1104,60 @@ function BedShape({ bed, ...rest }: { bed: Bed } & React.SVGProps<SVGRectElement
     return <polygon points={bed.points.map((q) => `${q.x - hw},${q.y - hh}`).join(' ')} {...rest} />;
   }
   return <rect x={-hw} y={-hh} width={bed.widthIn} height={bed.heightIn} rx={drawnCornerRadius(bed)} {...rest} />;
+}
+
+/** The in-place editor for a bed's name, sitting just above the name's spot on the canvas. */
+function BedNameInput({
+  name,
+  left,
+  bottom,
+  onDone,
+}: {
+  name: string;
+  left: number;
+  bottom: number;
+  /** The typed name, or null if editing was cancelled. */
+  onDone: (name: string | null) => void;
+}) {
+  const [text, setText] = useState(name);
+  const ref = useRef<HTMLInputElement>(null);
+  const cancelled = useRef(false);
+  useEffect(() => {
+    ref.current?.focus();
+    ref.current?.select();
+  }, []);
+  return (
+    <input
+      ref={ref}
+      aria-label="Bed name"
+      data-testid="bed-name-input"
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={() => onDone(cancelled.current ? null : text)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+        if (e.key === 'Escape') {
+          cancelled.current = true;
+          e.currentTarget.blur();
+        }
+      }}
+      style={{
+        position: 'absolute',
+        left,
+        // Anchored by its bottom edge so it sits where the name's text does at any zoom.
+        bottom: `calc(100% - ${bottom}px)`,
+        width: 180,
+        height: 26,
+        padding: '0 6px',
+        font: '600 12px Figtree',
+        color: 'var(--color-text)',
+        background: 'var(--color-surface)',
+        border: '1.5px solid var(--color-accent)',
+        borderRadius: 8,
+        outline: 'none',
+      }}
+    />
+  );
 }
 
 function ToolButton({
@@ -1083,6 +1206,7 @@ function BedPanel({
   onBack,
   onRename,
   onSize,
+  onRadius,
   onDelete,
 }: {
   bed: Bed;
@@ -1090,6 +1214,7 @@ function BedPanel({
   onBack: () => void;
   onRename: (name: string) => void;
   onSize: (widthIn: number, heightIn: number) => void;
+  onRadius: (inches: number) => void;
   onDelete: () => void;
 }) {
   const nameRef = useRef<HTMLInputElement>(null);
@@ -1184,6 +1309,17 @@ function BedPanel({
             onStep={(d) => onSize(bed.widthIn, bed.heightIn + d)}
             onCommit={(v) => onSize(bed.widthIn, v)}
           />
+          {bed.shape === 'rect' && (
+            <LengthRow
+              label="Corners"
+              value={drawnCornerRadius(bed)}
+              step={1}
+              max={maxCornerRadius(bed)}
+              bareUnit="in"
+              onStep={(d) => onRadius(drawnCornerRadius(bed) + d)}
+              onCommit={onRadius}
+            />
+          )}
         </div>
         <p style={{ font: '400 13px Figtree', color: C.muted }}>
           {plantCount
@@ -1208,11 +1344,20 @@ function LengthRow({
   value,
   onStep,
   onCommit,
+  step = LAYOUT_SNAP_IN,
+  max,
+  bareUnit,
 }: {
   label: string;
   value: number;
   onStep: (delta: number) => void;
   onCommit: (inches: number) => void;
+  /** How far the − and + buttons move the value, in inches. */
+  step?: number;
+  /** A row that can go as low as zero (a radius) rather than needing a positive length. */
+  max?: number;
+  /** What a bare number typed in the field means; feet unless said otherwise. */
+  bareUnit?: 'in';
 }) {
   /** What's typed while the field has focus; null when it just shows the bed's size. */
   const [text, setText] = useState<string | null>(null);
@@ -1222,7 +1367,7 @@ function LengthRow({
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <span style={{ flex: 1, font: '400 14px Figtree' }}>{label}</span>
-      <button className="btn btn-secondary" title={`Shrink ${label.toLowerCase()}`} aria-label={`Shrink ${label.toLowerCase()}`} onClick={() => onStep(-LAYOUT_SNAP_IN)} style={stepBtn}>
+      <button className="btn btn-secondary" title={`Shrink ${label.toLowerCase()}`} aria-label={`Shrink ${label.toLowerCase()}`} disabled={value <= 0 && max !== undefined} onClick={() => onStep(-step)} style={stepBtn}>
         <Icon name="minus" size={15} />
       </button>
       <input
@@ -1236,7 +1381,7 @@ function LengthRow({
         }}
         onChange={(e) => setText(e.target.value)}
         onBlur={() => {
-          const parsed = text === null || cancelled.current ? null : parseLength(text);
+          const parsed = text === null || cancelled.current ? null : parseLength(text, { bareUnit, allowZero: max !== undefined });
           setText(null);
           if (parsed !== null) onCommit(parsed);
         }}
@@ -1260,7 +1405,7 @@ function LengthRow({
           borderRadius: 10,
         }}
       />
-      <button className="btn btn-secondary" title={`Grow ${label.toLowerCase()}`} aria-label={`Grow ${label.toLowerCase()}`} onClick={() => onStep(LAYOUT_SNAP_IN)} style={stepBtn}>
+      <button className="btn btn-secondary" title={`Grow ${label.toLowerCase()}`} aria-label={`Grow ${label.toLowerCase()}`} disabled={max !== undefined && value >= max} onClick={() => onStep(step)} style={stepBtn}>
         <Icon name="plus" size={15} />
       </button>
     </div>

@@ -297,6 +297,17 @@ describe('reducer: bed layout', () => {
   });
 
   describe('reshapeBed', () => {
+    it('sets a rectangle\'s corner radius and removes plants the rounder corner drops', () => {
+      const base = createPlan('g');
+      const corner = { id: 'p1', bedId: 'bed-1', cropId: 'tomato', x: 2, y: 2, groupId: 'g1' };
+      const centre = { id: 'p2', bedId: 'bed-1', cropId: 'tomato', x: 48, y: 24, groupId: 'g2' };
+      const state = { ...base, plants: [corner, centre] };
+      const geometry = { cx: 48, cy: 24, widthIn: 96, heightIn: 48, cornerRadiusIn: 12 };
+      const next = reducer(state, { type: 'reshapeBed', id: 'bed-1', geometry });
+      expect(next.beds[0].cornerRadiusIn).toBe(12);
+      expect(next.plants.map((p) => p.id)).toEqual(['p2']);
+    });
+
     const inside: PlantInstance = { id: 'in', bedId: 'bed-1', cropId: 'tomato', x: 30, y: 24, groupId: 'g1' };
     const onEdge: PlantInstance = { id: 'edge', bedId: 'bed-1', cropId: 'basil', x: 60, y: 24, groupId: 'g2' };
     const past: PlantInstance = { id: 'past', bedId: 'bed-1', cropId: 'basil', x: 61, y: 24, groupId: 'g3' };

@@ -16,6 +16,9 @@ import {
   bedToGarden,
   boxBetween,
   drawnCornerRadius,
+  gardenToScreen,
+  normalizeCornerRadius,
+  outerRadiusPx,
   isDrag,
   labelOffset,
   wheelZoomFactor,
@@ -254,6 +257,17 @@ describe('parseLength', () => {
   it.each(['', 'abc', '4′ 6″ 2', '-4', '0', "0' 0\"", '4m'])('rejects %j', (text) => {
     expect(parseLength(text)).toBeNull();
   });
+
+  it('can read a bare number as inches', () => {
+    expect(parseLength('3', { bareUnit: 'in' })).toBe(3);
+    expect(parseLength('1′', { bareUnit: 'in' })).toBe(12);
+  });
+
+  it('accepts zero only when asked to', () => {
+    expect(parseLength('0', { bareUnit: 'in', allowZero: true })).toBe(0);
+    expect(parseLength("0' 0\"", { allowZero: true })).toBe(0);
+    expect(parseLength('-1', { bareUnit: 'in', allowZero: true })).toBeNull();
+  });
 });
 
 describe('view math', () => {
@@ -331,12 +345,52 @@ describe('boxBetween', () => {
 });
 
 describe('drawnCornerRadius', () => {
-  it('uses the standard radius for a normal bed', () => {
+  it('uses the standard radius for a bed with none of its own', () => {
     expect(drawnCornerRadius({ widthIn: 96, heightIn: 48 })).toBe(BED_CORNER_RADIUS_IN);
   });
 
-  it('shrinks to a quarter of the short side for a sliver', () => {
-    expect(drawnCornerRadius({ widthIn: 96, heightIn: 8 })).toBe(2);
+  it('uses the bed\'s own radius, including none at all', () => {
+    expect(drawnCornerRadius({ widthIn: 96, heightIn: 48, cornerRadiusIn: 10 })).toBe(10);
+    expect(drawnCornerRadius({ widthIn: 96, heightIn: 48, cornerRadiusIn: 0 })).toBe(0);
+  });
+
+  it('never curves more than half the short side', () => {
+    expect(drawnCornerRadius({ widthIn: 96, heightIn: 6 })).toBe(3);
+    expect(drawnCornerRadius({ widthIn: 96, heightIn: 48, cornerRadiusIn: 24 })).toBe(24);
+    expect(drawnCornerRadius({ widthIn: 96, heightIn: 48, cornerRadiusIn: 25 })).toBe(24);
+  });
+});
+
+describe('normalizeCornerRadius', () => {
+  const bed = { widthIn: 96, heightIn: 48 };
+  it('rounds to whole inches', () => {
+    expect(normalizeCornerRadius(5.4, bed)).toBe(5);
+    expect(normalizeCornerRadius(5.5, bed)).toBe(6);
+  });
+  it('holds between square and half the short side', () => {
+    expect(normalizeCornerRadius(-3, bed)).toBe(0);
+    expect(normalizeCornerRadius(24, bed)).toBe(24);
+    expect(normalizeCornerRadius(25, bed)).toBe(24);
+    expect(normalizeCornerRadius(7, { widthIn: 13, heightIn: 13 })).toBe(6);
+  });
+});
+
+describe('outerRadiusPx', () => {
+  it('adds the border to the inner radius so the two curves are concentric', () => {
+    expect(outerRadiusPx(4, 7, 2.5)).toBe(30.5);
+  });
+  it('keeps a square bed square', () => {
+    expect(outerRadiusPx(0, 7, 2.5)).toBe(0);
+  });
+});
+
+describe('gardenToScreen', () => {
+  it('inverts screenToGarden', () => {
+    const view = { zoom: 2.5, x: 30, y: -12 };
+    const p = screenToGarden(view, 140, 66);
+    const back = gardenToScreen(view, p);
+    expect(back.x).toBeCloseTo(140);
+    expect(back.y).toBeCloseTo(66);
   });
 });
 
@@ -387,6 +441,10 @@ describe('geometryOf', () => {
   it('includes corners only for a polygon', () => {
     expect(geometryOf(bed())).toEqual({ cx: 48, cy: 24, widthIn: 96, heightIn: 48 });
     expect(geometryOf(polyBed()).points).toBe(L_POINTS);
+  });
+
+  it('carries a bed\'s own corner radius, even a square one', () => {
+    expect(geometryOf({ ...bed(), cornerRadiusIn: 0 }).cornerRadiusIn).toBe(0);
   });
 });
 

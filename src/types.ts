@@ -89,6 +89,8 @@ export interface Bed {
    * frame. They span exactly 0…widthIn and 0…heightIn, so the box handles fit the shape.
    */
   points?: Point[];
+  /** Rectangular beds only: how rounded the corners are, in inches. Absent means the default. */
+  cornerRadiusIn?: number;
 }
 
 export interface GardenPlan {
