@@ -36,9 +36,12 @@ import {
   resizeBedTo,
   resizeCursor,
   resizeFromPointer,
+  magneticAngle,
   rotationFromPointer,
+  snapShift,
+  stepAngle,
+  type SnapOptions,
   screenToGarden,
-  snapAngle,
   snapTo,
   wheelZoomFactor,
   zoomAt,
@@ -116,6 +119,8 @@ const SHORTCUTS: [string, string][] = [
   [`${MOD}scroll`, 'Zoom'],
   ['0', 'Fit'],
   ['Arrows', `Nudge ${formatLength(LAYOUT_SNAP_IN)}`],
+  ['Shift + arrows', 'Nudge 1″'],
+  ['Alt + drag', 'No snapping'],
   [`${MOD}C`, 'Copy'],
   [`${MOD}X`, 'Cut'],
   [`${MOD}V`, 'Paste'],
@@ -215,6 +220,11 @@ export function LayoutEditor() {
     return () => el.removeEventListener('wheel', onWheel);
   }, [hasCanvas]);
 
+  /** Snapping for an edit at the current zoom; holding Alt turns the marks off. */
+  function snapOf(e: { altKey: boolean }): SnapOptions {
+    return { zoom: view?.zoom ?? 1, free: e.altKey };
+  }
+
   function gardenPoint(clientX: number, clientY: number): Point | null {
     const el = svgRef.current;
     if (!el || !view) return null;
@@ -307,7 +317,8 @@ export function LayoutEditor() {
 
   function setRotation(bed: Bed, deg: number) {
     if (pending) return;
-    const rotationDeg = snapAngle(deg);
+    // Typed and stepped angles are taken to the degree; only the drag handle has marks to stick to.
+    const rotationDeg = magneticAngle(deg, true);
     if (rotationDeg !== bed.rotationDeg) commit(() => rotateBed(bed.id, rotationDeg));
   }
 
@@ -388,7 +399,7 @@ export function LayoutEditor() {
     else if (e.key === 'p' || e.key === 'P') pickTool('polygon');
     else if (selected && e.key.startsWith('Arrow')) {
       e.preventDefault();
-      const step = LAYOUT_SNAP_IN;
+      const step = e.shiftKey ? 1 : LAYOUT_SNAP_IN;
       const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
       const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
       commit(() => moveBed(selected.id, dx, dy));
@@ -510,16 +521,25 @@ export function LayoutEditor() {
       setDrag({ ...drag, b: { x: snapTo(p.x), y: snapTo(p.y) } });
       setCursor({ x: snapTo(p.x), y: snapTo(p.y) });
     } else if (drag.kind === 'move') {
-      setDrag({ ...drag, dx: snapTo(p.x - drag.start.x), dy: snapTo(p.y - drag.start.y) });
+      const bed = beds.find((b) => b.id === drag.bedId);
+      if (!bed) return;
+      // Moves go by the inch, and a side of the bed sticks to a foot mark when it comes close.
+      const box = bedBounds(bed);
+      const snap = snapOf(e);
+      setDrag({
+        ...drag,
+        dx: snapShift([box.x0, box.x1], p.x - drag.start.x, snap),
+        dy: snapShift([box.y0, box.y1], p.y - drag.start.y, snap),
+      });
     } else if (drag.kind === 'resize') {
       const bed = beds.find((b) => b.id === drag.bedId);
-      if (bed) setDrag({ ...drag, draft: resizeFromPointer(bed, drag.handle, p) });
+      if (bed) setDrag({ ...drag, draft: resizeFromPointer(bed, drag.handle, p, snapOf(e)) });
     } else if (drag.kind === 'corner') {
       const bed = beds.find((b) => b.id === drag.bedId);
-      if (bed) setDrag({ ...drag, draft: moveCorner(bed, drag.index, p) });
+      if (bed) setDrag({ ...drag, draft: moveCorner(bed, drag.index, p, snapOf(e)) });
     } else if (drag.kind === 'rotate') {
       const bed = beds.find((b) => b.id === drag.bedId);
-      if (bed) setDrag({ ...drag, rotationDeg: rotationFromPointer(bed, p) });
+      if (bed) setDrag({ ...drag, rotationDeg: rotationFromPointer(bed, p, e.altKey) });
     }
   }
 
@@ -594,7 +614,11 @@ export function LayoutEditor() {
     );
   }
 
-  function pill(key: string, at: Point, text: string, strong: boolean): ReactNode {
+  /** While an edge or corner is being dragged, the pills light up when a length sits on a foot mark. */
+  const sizing = drag?.kind === 'resize' || drag?.kind === 'corner';
+  const onFootMark = (inches: number) => Math.abs(inches / 12 - Math.round(inches / 12)) < 1e-6;
+
+  function pill(key: string, at: Point, text: string, strong: boolean, snapped = false): ReactNode {
     const fs = px(11);
     const tw = text.length * fs * 0.56 + px(10);
     const th = fs * 1.6;
@@ -606,12 +630,12 @@ export function LayoutEditor() {
           width={tw}
           height={th}
           rx={th / 2}
-          style={{ fill: strong ? C.pillStrong : C.pill, fillOpacity: 0.94 }}
+          style={{ fill: snapped ? 'var(--color-accent)' : strong ? C.pillStrong : C.pill, fillOpacity: 0.94 }}
         />
         <text
           dy="0.35em"
           textAnchor="middle"
-          style={{ font: `500 ${fs}px Figtree`, fill: strong ? C.pillStrongText : C.pillText }}
+          style={{ font: `500 ${fs}px Figtree`, fill: snapped ? '#fff' : strong ? C.pillStrongText : C.pillText }}
         >
           {text}
         </text>
@@ -628,7 +652,7 @@ export function LayoutEditor() {
         const halfW = (text.length * px(11) * 0.56 + px(10)) / 2;
         const halfH = (px(11) * 1.6) / 2;
         const off = labelOffset(l.outward, halfW, halfH, px(strong ? 10 : 6));
-        return pill(`${key}-${i}`, { x: l.mid.x + l.outward.x * off, y: l.mid.y + l.outward.y * off }, text, strong);
+        return pill(`${key}-${i}`, { x: l.mid.x + l.outward.x * off, y: l.mid.y + l.outward.y * off }, text, strong, sizing && onFootMark(l.lengthIn));
       });
   }
 
@@ -648,7 +672,7 @@ export function LayoutEditor() {
       const halfW = (text.length * px(11) * 0.56 + px(10)) / 2;
       const halfH = (px(11) * 1.6) / 2;
       const off = labelOffset(l.outward, halfW, halfH, px(strong ? 10 : 6));
-      return pill(`${key}-${i}`, { x: l.mid.x + l.outward.x * off, y: l.mid.y + l.outward.y * off }, text, strong);
+      return pill(`${key}-${i}`, { x: l.mid.x + l.outward.x * off, y: l.mid.y + l.outward.y * off }, text, strong, sizing && onFootMark(l.lengthIn));
     });
   }
 
@@ -669,9 +693,9 @@ export function LayoutEditor() {
             ? 'Click to add corners · click the first corner or press Enter to close · Esc cancels'
             : `Click to place the first corner. Corners snap to ${formatLength(LAYOUT_SNAP_IN)}.`
           : selected?.shape === 'polygon'
-            ? 'Drag the bed to move it, its corners to reshape it, its box edges to resize it, or the handle above to turn it.'
+            ? 'Drag the bed to move it, its corners to reshape it, its box edges to resize it, or the handle above to turn it. Hold Alt to turn snapping off.'
             : selected
-              ? 'Drag the bed to move it, its edges and corners to resize it, or the handle above to turn it.'
+              ? 'Drag the bed to move it, its edges and corners to resize it, or the handle above to turn it. Hold Alt to turn snapping off.'
         : beds.length
           ? 'Click a bed to edit it, or pick a shape tool to add one.'
           : 'Pick a shape tool, then draw your first bed.';
@@ -897,7 +921,7 @@ export function LayoutEditor() {
               <circle cx={drag.a.x} cy={drag.a.y} r={px(4.5)} style={{ fill: 'var(--color-accent)' }} />
             </g>
           )}
-          {drag?.kind === 'rotate' && selected && pill('angle', { x: selected.cx, y: selected.cy }, `${drag.rotationDeg}°`, true)}
+          {drag?.kind === 'rotate' && selected && pill('angle', { x: selected.cx, y: selected.cy }, `${drag.rotationDeg}°`, true, drag.rotationDeg % 45 === 0)}
 
           {drawBox && tool === 'ellipse' && (
             <>
@@ -1425,8 +1449,8 @@ function BedPanel({
             display={`${bed.rotationDeg}°`}
             parse={parseAngle}
             onCommit={onRotate}
-            down={{ icon: 'ccw', title: `Rotate left ${ROTATION_STEP_DEG}°`, onClick: () => onRotate(bed.rotationDeg - ROTATION_STEP_DEG) }}
-            up={{ icon: 'cw', title: `Rotate right ${ROTATION_STEP_DEG}°`, onClick: () => onRotate(bed.rotationDeg + ROTATION_STEP_DEG) }}
+            down={{ icon: 'ccw', title: `Rotate left ${ROTATION_STEP_DEG}°`, onClick: () => onRotate(stepAngle(bed.rotationDeg, -1)) }}
+            up={{ icon: 'cw', title: `Rotate right ${ROTATION_STEP_DEG}°`, onClick: () => onRotate(stepAngle(bed.rotationDeg, 1)) }}
           />
         </div>
         <p style={{ font: '400 13px Figtree', color: C.muted }}>

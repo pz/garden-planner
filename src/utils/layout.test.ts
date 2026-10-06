@@ -15,6 +15,11 @@ import {
   resizeCursor,
   rotationFromPointer,
   snapAngle,
+  magneticAngle,
+  stepAngle,
+  detentNear,
+  snapLength,
+  snapShift,
   closesPolygon,
   edgeLabels,
   geometryOf,
@@ -173,8 +178,22 @@ describe('resizeBedTo', () => {
 });
 
 describe('resizeFromPointer', () => {
-  it('snaps the dragged side to the grid', () => {
-    expect(resizeFromPointer(bed(), { sx: 1, sy: 0 }, { x: 110, y: 999 }).widthIn).toBe(108);
+  it('moves the dragged side by the inch between foot marks', () => {
+    expect(resizeFromPointer(bed(), { sx: 1, sy: 0 }, { x: 110.4, y: 999 }).widthIn).toBe(110);
+    expect(resizeFromPointer(bed(), { sx: 1, sy: 0 }, { x: 111.6, y: 999 }).widthIn).toBe(112);
+  });
+
+  it('sticks to a foot mark when the pointer is close, but not when it is not', () => {
+    // At 7 px/in a foot mark pulls from 8px ≈ 1.14″ away.
+    expect(resizeFromPointer(bed(), { sx: 1, sy: 0 }, { x: 108.9, y: 0 }).widthIn).toBe(108);
+    expect(resizeFromPointer(bed(), { sx: 1, sy: 0 }, { x: 109.3, y: 0 }).widthIn).toBe(109);
+  });
+
+  it('pulls from the same screen distance at any zoom, and not at all when free', () => {
+    const far = { x: 112, y: 0 }; // 4″ past the 108 mark
+    expect(resizeFromPointer(bed(), { sx: 1, sy: 0 }, far, { zoom: 1 }).widthIn).toBe(108); // 8px = 8″ here
+    expect(resizeFromPointer(bed(), { sx: 1, sy: 0 }, far, { zoom: 16 }).widthIn).toBe(112);
+    expect(resizeFromPointer(bed(), { sx: 1, sy: 0 }, { x: 108.9, y: 0 }, { zoom: 7, free: true }).widthIn).toBe(109);
   });
 
   it('ignores the pointer along an axis the handle doesn’t move', () => {
@@ -330,9 +349,10 @@ describe('view math', () => {
 });
 
 describe('normalizeSide', () => {
-  it('snaps to the grid', () => {
-    expect(normalizeSide(50)).toBe(48);
-    expect(normalizeSide(51)).toBe(54);
+  it('rounds to whole inches', () => {
+    expect(normalizeSide(50)).toBe(50);
+    expect(normalizeSide(50.4)).toBe(50);
+    expect(normalizeSide(50.6)).toBe(51);
   });
 
   it('keeps exactly the minimum, and raises anything below it', () => {
@@ -622,9 +642,100 @@ describe('rotationFromPointer', () => {
     expect(rotationFromPointer(center, { x: -10, y: 0 })).toBe(270);
   });
 
-  it('snaps to 45° steps', () => {
-    expect(rotationFromPointer(center, { x: 10, y: -9 })).toBe(45);
-    expect(rotationFromPointer(center, { x: 3, y: -10 })).toBe(0);
+  it('turns by the degree between marks', () => {
+    // 20° from straight up: clear of the 15° mark's pull, so it is just 20°.
+    const deg = 20;
+    const r = (deg * Math.PI) / 180;
+    expect(rotationFromPointer(center, { x: 10 * Math.sin(r), y: -10 * Math.cos(r) })).toBe(20);
+  });
+
+  it('sticks near 45° and 15° marks', () => {
+    expect(rotationFromPointer(center, { x: 10, y: -9 })).toBe(45); // ≈ 48°
+    expect(rotationFromPointer(center, { x: 3, y: -10 })).toBe(15); // ≈ 16.7°
+  });
+
+  it('can be turned freely', () => {
+    expect(rotationFromPointer(center, { x: 10, y: -9 }, true)).toBe(48);
+  });
+});
+
+describe('magneticAngle', () => {
+  it.each([
+    [44, 45],
+    [39, 45], // exactly 6° away still sticks
+    [38, 38],
+    [16, 15],
+    [17.4, 17],
+    [-3, 0],
+    [-9, 351],
+    [372, 12],
+    [361, 0],
+    [359.6, 0],
+  ])('%d° lands on %d°', (deg, expected) => {
+    expect(magneticAngle(deg)).toBe(expected);
+  });
+
+  it('keeps a fraction of a degree out of the result and ignores marks when free', () => {
+    expect(magneticAngle(44, true)).toBe(44);
+    expect(magneticAngle(44.4, true)).toBe(44);
+  });
+});
+
+describe('stepAngle', () => {
+  it.each([
+    [0, 1, 45],
+    [0, -1, 315],
+    [7, 1, 45],
+    [7, -1, 0],
+    [45, -1, 0],
+    [44, 1, 45],
+    [315, 1, 0],
+  ] as const)('from %d° going %d lands on %d°', (deg, dir, expected) => {
+    expect(stepAngle(deg, dir)).toBe(expected);
+  });
+});
+
+describe('detentNear', () => {
+  const d = [{ step: 12, tolerance: 1 }];
+  it('is inclusive at the tolerance and null just past it', () => {
+    expect(detentNear(25, d)).toBe(24);
+    expect(detentNear(25.01, d)).toBeNull();
+  });
+  it('caps a tolerance wider than half a step so every value does not snap to two marks', () => {
+    expect(detentNear(5, [{ step: 12, tolerance: 100 }])).toBe(0);
+    expect(detentNear(7, [{ step: 12, tolerance: 100 }])).toBe(12);
+  });
+  it('prefers earlier detents', () => {
+    expect(detentNear(12.5, [{ step: 12, tolerance: 1 }, { step: 6, tolerance: 1 }])).toBe(12);
+  });
+});
+
+describe('snapLength', () => {
+  it('goes by the inch between marks and sticks to foot and half-foot marks', () => {
+    expect(snapLength(50.3)).toBe(50);
+    expect(snapLength(47.2)).toBe(48);
+    expect(snapLength(54.5)).toBe(54);
+  });
+  it('does not return -0', () => {
+    expect(Object.is(snapLength(-0.2), 0)).toBe(true);
+  });
+});
+
+describe('snapShift', () => {
+  it('moves by the inch when no edge is near a mark', () => {
+    expect(snapShift([103.5, 163.5], 20.4)).toBe(20);
+  });
+  it('shifts so an edge lands on a foot mark when it is close', () => {
+    // Edge at 100 moved by 7.5 would be at 107.5; the 108 mark is within reach.
+    expect(snapShift([100], 7.5)).toBe(8);
+  });
+  it('lets either edge catch a mark and the nearest nudge wins', () => {
+    // Left edge 0 → 11.8 is 0.2 off the 12 mark; right edge 48.3 → 60.1 is 0.1 off 60: the right edge wins.
+    expect(snapShift([0, 48.3], 11.8)).toBeCloseTo(11.7);
+  });
+  it('ignores marks when free', () => {
+    expect(snapShift([100], 7.5, { zoom: 7, free: true })).toBe(8);
+    expect(snapShift([100], 7.4, { zoom: 7, free: true })).toBe(7);
   });
 });
 

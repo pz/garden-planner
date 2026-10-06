@@ -49,6 +49,88 @@ export function snapTo(v: number, step = LAYOUT_SNAP_IN): number {
   return Math.round(v / step) * step + 0;
 }
 
+/**
+ * A place values stick to: multiples of `step`, within `tolerance` of one (in the value's own
+ * units, as seen from the current zoom). Earlier detents in a list win over later ones.
+ */
+export interface Detent {
+  step: number;
+  tolerance: number;
+}
+
+/** The nearest multiple of a detent's step that `v` is within the detent's tolerance of, else null. */
+export function detentNear(v: number, detents: Detent[]): number | null {
+  for (const { step, tolerance } of detents) {
+    const nearest = Math.round(v / step) * step;
+    // Never reach past half a step: wider than that just means every value snaps.
+    if (Math.abs(v - nearest) <= Math.min(tolerance, step / 2)) return nearest + 0;
+  }
+  return null;
+}
+
+/** Whether edits stick to detents, and how far (in screen px) a length detent pulls at this zoom. */
+export interface SnapOptions {
+  /** Screen pixels per inch, so a detent pulls the same distance on screen at any zoom. */
+  zoom: number;
+  /** Alt held: no detents, just whole inches and degrees. */
+  free?: boolean;
+}
+
+/** Lengths stick to whole feet (a stronger pull) and half feet; between them they move by the inch. */
+const LENGTH_DETENT_PX = [
+  { step: 12, px: 8 },
+  { step: 6, px: 5 },
+];
+
+/** The detents for lengths at `zoom`. */
+export function lengthDetents(zoom: number): Detent[] {
+  return LENGTH_DETENT_PX.map(({ step, px }) => ({ step, tolerance: px / zoom }));
+}
+
+/** The editor's default snapping, at the planting view's scale (for callers with no zoom of their own). */
+export const DEFAULT_SNAP: SnapOptions = { zoom: PLANTING_PX_PER_INCH };
+
+/**
+ * A length or position as an edit drops it: whole inches, except that it sticks to the nearest
+ * foot or half-foot mark when the pointer is close enough to feel it.
+ */
+export function snapLength(v: number, { zoom, free = false }: SnapOptions = DEFAULT_SNAP): number {
+  const detent = free ? null : detentNear(v, lengthDetents(zoom));
+  return (detent ?? Math.round(v)) + 0;
+}
+
+/**
+ * How far to shift a bed, which was dragged by `delta` inches, so that one of its `edges`
+ * (coordinates before the move) lands on a foot or half-foot mark if any is close; otherwise it
+ * moves by the whole inch. Of several edges in reach, the one needing the smallest nudge wins.
+ */
+export function snapShift(edges: number[], delta: number, { zoom, free = false }: SnapOptions = DEFAULT_SNAP): number {
+  if (!free) {
+    const detents = lengthDetents(zoom);
+    let best: number | null = null;
+    for (const e of edges) {
+      const target = detentNear(e + delta, detents);
+      if (target === null) continue;
+      const shift = target - e;
+      if (best === null || Math.abs(shift - delta) < Math.abs(best - delta)) best = shift;
+    }
+    if (best !== null) return best + 0;
+  }
+  return Math.round(delta) + 0;
+}
+
+/** Angles stick near every 45° (strongly) and every 15° (lightly); between them they turn by the degree. */
+export const ANGLE_DETENTS: Detent[] = [
+  { step: 45, tolerance: 6 },
+  { step: 15, tolerance: 2 },
+];
+
+/** An angle as an edit drops it: whole degrees, sticking to a detent when close; normalized to 0…360. */
+export function magneticAngle(deg: number, free = false): number {
+  const detent = free ? null : detentNear(deg, ANGLE_DETENTS);
+  return normalizeAngle(detent ?? Math.round(deg));
+}
+
 function rotate(p: Point, deg: number): Point {
   if (deg === 0) return p;
   const r = (deg * Math.PI) / 180;
@@ -145,9 +227,9 @@ export function rectFromCorners(a: Point, b: Point): BedGeometry | null {
   return { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, widthIn: x1 - x0, heightIn: y1 - y0 };
 }
 
-/** A typed or stepped side length as a bed can take it: on the snap grid and at least the minimum. */
+/** A typed or stepped side length as a bed can take it: whole inches, and at least the minimum. */
 export function normalizeSide(inches: number): number {
-  return Math.max(MIN_BED_SIDE_IN, snapTo(inches));
+  return Math.max(MIN_BED_SIDE_IN, Math.round(inches));
 }
 
 /**
@@ -185,19 +267,20 @@ export function resizeBedTo(bed: Bed, widthIn: number, heightIn: number, handle:
 
 /**
  * The bed resized by dragging `handle` to the garden point `pointer`: each side the handle
- * moves lands on the snap grid (relative to the fixed opposite side) and never shrinks below
- * MIN_BED_SIDE_IN, even if the pointer crosses over to the other side.
+ * moves is measured from the fixed opposite side, goes by the inch and sticks to foot marks
+ * (see snapLength), and never shrinks below MIN_BED_SIDE_IN, even if the pointer crosses over
+ * to the other side.
  */
-export function resizeFromPointer(bed: Bed, handle: Handle, pointer: Point): Bed {
+export function resizeFromPointer(bed: Bed, handle: Handle, pointer: Point, snap: SnapOptions = DEFAULT_SNAP): Bed {
   const local = gardenToBed(bed, pointer);
   const width =
     handle.sx === 0
       ? bed.widthIn
-      : Math.max(MIN_BED_SIDE_IN, snapTo(handle.sx === 1 ? local.x : bed.widthIn - local.x));
+      : Math.max(MIN_BED_SIDE_IN, snapLength(handle.sx === 1 ? local.x : bed.widthIn - local.x, snap));
   const height =
     handle.sy === 0
       ? bed.heightIn
-      : Math.max(MIN_BED_SIDE_IN, snapTo(handle.sy === 1 ? local.y : bed.heightIn - local.y));
+      : Math.max(MIN_BED_SIDE_IN, snapLength(handle.sy === 1 ? local.y : bed.heightIn - local.y, snap));
   return resizeBedTo(bed, width, height, handle);
 }
 
@@ -267,15 +350,15 @@ export function polygonFromCorners(corners: Point[]): Required<Pick<BedGeometry,
 }
 
 /**
- * The polygon bed with corner `index` dragged to the garden point `pointer`, snapped to the
- * grid measured from the bed's top-left. The box re-fits the corners, and the other corners
+ * The polygon bed with corner `index` dragged to the garden point `pointer`, snapped (see
+ * snapLength) measured from the bed's top-left. The box re-fits the corners, and the other corners
  * stay where they are in the garden. The bed comes back unchanged if the move would collapse
  * it (a box under the minimum side, or no area).
  */
-export function moveCorner(bed: Bed, index: number, pointer: Point): Bed {
+export function moveCorner(bed: Bed, index: number, pointer: Point, snap: SnapOptions = DEFAULT_SNAP): Bed {
   if (!bed.points || index < 0 || index >= bed.points.length) return bed;
   const local = gardenToBed(bed, pointer);
-  const moved = bed.points.map((q, i) => (i === index ? { x: snapTo(local.x), y: snapTo(local.y) } : q));
+  const moved = bed.points.map((q, i) => (i === index ? { x: snapLength(local.x, snap), y: snapLength(local.y, snap) } : q));
   const n = normalizeCorners(moved);
   if (!n) return bed;
   const center = bedToGarden(bed, n.center);
@@ -336,7 +419,7 @@ export function labelOffset(outward: Point, halfW: number, halfH: number, gap: n
   return gap + Math.abs(outward.x) * halfW + Math.abs(outward.y) * halfH;
 }
 
-/** Beds turn in steps of this many degrees, by handle, buttons or typed angle. */
+/** The turn buttons step to multiples of this many degrees. */
 export const ROTATION_STEP_DEG = 45;
 
 /** An angle in degrees brought into 0…360 (never -0 or 360). */
@@ -351,11 +434,23 @@ export function snapAngle(deg: number, step = ROTATION_STEP_DEG): number {
 
 /**
  * The bed's rotation when its rotate handle (which sits above the top edge when unturned) is
- * dragged to the garden point `pointer`, snapped to the rotation step.
+ * dragged to the garden point `pointer`: by the degree, sticking near the 15° and 45° marks
+ * (see magneticAngle).
  */
-export function rotationFromPointer(bed: Pick<Bed, 'cx' | 'cy'>, pointer: Point): number {
+export function rotationFromPointer(bed: Pick<Bed, 'cx' | 'cy'>, pointer: Point, free = false): number {
   const deg = (Math.atan2(pointer.y - bed.cy, pointer.x - bed.cx) * 180) / Math.PI + 90;
-  return snapAngle(deg);
+  return magneticAngle(deg, free);
+}
+
+/**
+ * The angle one press of a turn button reaches: the next multiple of `step` in `direction`
+ * (+1 clockwise, −1 anticlockwise), even from an angle between two, normalized.
+ */
+export function stepAngle(deg: number, direction: 1 | -1, step = ROTATION_STEP_DEG): number {
+  const marks = deg / step;
+  // A hair of tolerance so an angle that is on a mark (up to float noise) moves a whole step.
+  const next = direction === 1 ? Math.floor(marks + 1e-9) + 1 : Math.ceil(marks - 1e-9) - 1;
+  return normalizeAngle(next * step);
 }
 
 /** Reads a typed angle like "90", "90°" or "-45 deg". Null for anything else. */
