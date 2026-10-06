@@ -176,6 +176,8 @@ New `crops.json` fields, hand-curated and never LLM-generated, with data-integri
 2. **`northDeg`** is garden-level.
 3. **Revision token.** A content hash for now (nothing stored); a server counter later. Both are opaque to clients.
 
+4. **History is deferred to step 2.** Only the reduced plan is stored and exported, as today; commands are applied and discarded. A revision log (rev, actor, timestamp, commands, snapshot or inverse) beside the plan, giving audit and undo for agent edits, is decided with the server design. It stays out of export files by default. The existing layout-editor undo (in-memory snapshots) is unchanged. The command format already carries `ref`, `idempotencyKey` and `dryRun`, so it can be logged later without a redesign.
+
 ## 9. Step 2 (not yet designed): infra and auth
 
 - A small stateless service importing the same `applyCommands`, with plans stored as the same JSON; `rev` becomes a column for optimistic concurrency.
