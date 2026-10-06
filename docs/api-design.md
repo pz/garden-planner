@@ -33,6 +33,8 @@ The API follows these rules:
   - `plan.northDeg?: number`, the compass direction of garden-up (default 0). It is garden-level because beds are placed in garden coordinates. Shade needs it.
   - `plan.dismissedWarnings?: string[]`, the full warning ids of dismissed shade and companion warnings.
   - `dismissedConflictKeys` keeps its meaning and format (sorted `a::b` groupId pairs, spacing only).
+- **Bed-local coordinates, deliberately.** Plants are stored relative to their bed, not in absolute garden coordinates, so `moveBed` and `rotateBed` change only the bed and never touch plants. The API converts to garden coordinates (`bedToGarden`) only for derived things such as cross-bed shade. Nesting plants under beds and locking beds that have plants were considered and rejected: nesting is a format change with no new information, and locking would break resizing in the layout editor.
+- **Commands that remove plants say so.** `reshapeBed` re-expresses plants so they keep their place in the garden, and drops those the new shape no longer contains. `removeBed` drops the bed's plants. Both report `removed: [{id, groupId, reason}]` (reason `outside_bed` or `bed_removed`) in their result, and support `dryRun` so the confirm dialog (and any later caller) can see the consequences first.
 - **Not in the file.** The revision token is derived from the content (a hash), so nothing new is stored or exported. Crop data lives in `crops.json`, and files reference crops by id as today.
 
 ## 3. Resources
