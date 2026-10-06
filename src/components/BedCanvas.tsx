@@ -16,12 +16,13 @@ import {
   type Point,
 } from '../utils/geometry';
 import {
-  BED_CORNER_RADIUS_IN,
   PLANTING_PX_PER_INCH,
   bedBounds,
   bedOutline,
+  drawnCornerRadius,
   gardenBounds,
   gardenToBed,
+  outerRadiusPx,
   screenToGarden,
 } from '../utils/layout';
 import { PlantToken, LONG_PRESS_MS, MOVE_THRESHOLD_PX, type GestureHandlers } from './PlantToken';
@@ -37,8 +38,6 @@ import { Icon } from './Icon';
 const PX_PER_INCH = PLANTING_PX_PER_INCH;
 const PLANT_DIAMETER = 26;
 const BED_BORDER_PX = 2.5;
-/** The border's inner edge curves with the corner radius plants are kept inside. */
-const BED_OUTER_RADIUS_PX = BED_CORNER_RADIUS_IN * PX_PER_INCH + BED_BORDER_PX;
 /** Room above each bed for its name. */
 const BED_LABEL_PX = 26;
 
@@ -384,7 +383,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
                 : {
                     border: `${BED_BORDER_PX}px solid var(--color-text)`,
                     // An ellipse's 50% radius gives an inner edge that is exactly its outline.
-                    borderRadius: bed.shape === 'ellipse' ? '50%' : BED_OUTER_RADIUS_PX,
+                    borderRadius: bed.shape === 'ellipse' ? '50%' : outerRadiusPx(drawnCornerRadius(bed), PX_PER_INCH, BED_BORDER_PX),
                     background: gridBackground,
                     boxShadow: 'var(--shadow-md)',
                   }),

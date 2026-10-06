@@ -6,8 +6,8 @@ import { isInsideOutline, type Outline, type Point } from './geometry';
 export const LAYOUT_SNAP_IN = 6;
 /** No bed side may be shorter than this, in inches. */
 export const MIN_BED_SIDE_IN = 12;
-/** Beds are drawn with rounded corners; plant centers must stay inside the curve. */
-export const BED_CORNER_RADIUS_IN = 3.5;
+/** Rectangular beds are square-cornered unless given a radius; plant centers stay inside any curve. */
+export const BED_CORNER_RADIUS_IN = 0;
 /** The planting view's fixed scale, and the layout editor's 100% zoom. */
 export const PLANTING_PX_PER_INCH = 7;
 
@@ -18,12 +18,13 @@ export const MAX_ZOOM = 16;
 export type BedPlacement = Pick<Bed, 'cx' | 'cy' | 'widthIn' | 'heightIn' | 'rotationDeg'>;
 
 /** Where and how big a bed is (and a polygon's corners), without its identity or name. */
-export type BedGeometry = Pick<Bed, 'cx' | 'cy' | 'widthIn' | 'heightIn' | 'points'>;
+export type BedGeometry = Pick<Bed, 'cx' | 'cy' | 'widthIn' | 'heightIn' | 'points' | 'cornerRadiusIn'>;
 
 /** The geometry fields of a bed, e.g. to hand a drafted resize to the reducer. */
 export function geometryOf(bed: Bed): BedGeometry {
   const g: BedGeometry = { cx: bed.cx, cy: bed.cy, widthIn: bed.widthIn, heightIn: bed.heightIn };
   if (bed.points) g.points = bed.points;
+  if (bed.cornerRadiusIn !== undefined) g.cornerRadiusIn = bed.cornerRadiusIn;
   return g;
 }
 
@@ -33,7 +34,7 @@ export function bedOutline(bed: Bed): Outline {
   if (bed.shape === 'polygon' && bed.points) {
     return { shape: 'polygon', widthIn: bed.widthIn, heightIn: bed.heightIn, points: bed.points };
   }
-  return { shape: 'rect', widthIn: bed.widthIn, heightIn: bed.heightIn, cornerRadiusIn: BED_CORNER_RADIUS_IN };
+  return { shape: 'rect', widthIn: bed.widthIn, heightIn: bed.heightIn, cornerRadiusIn: drawnCornerRadius(bed) };
 }
 
 export interface Bounds {
@@ -103,9 +104,35 @@ export function boxBetween(a: Point, b: Point): { x: number; y: number; width: n
   return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(b.x - a.x), height: Math.abs(b.y - a.y) };
 }
 
-/** Corner radius to draw a bed with: the usual rounding, but never more than a quarter of a side. */
-export function drawnCornerRadius(bed: Pick<Bed, 'widthIn' | 'heightIn'>): number {
-  return Math.min(BED_CORNER_RADIUS_IN, bed.widthIn / 4, bed.heightIn / 4);
+/** The most a rectangle's corners can be rounded: half its shorter side (a pill or circle). */
+export function maxCornerRadius(bed: Pick<Bed, 'widthIn' | 'heightIn'>): number {
+  return Math.min(bed.widthIn, bed.heightIn) / 2;
+}
+
+/**
+ * Corner radius a rectangular bed is drawn with, and its plants kept inside: its own setting
+ * (or the default), but never more than the bed can curve.
+ */
+export function drawnCornerRadius(bed: Pick<Bed, 'widthIn' | 'heightIn' | 'cornerRadiusIn'>): number {
+  return Math.min(bed.cornerRadiusIn ?? BED_CORNER_RADIUS_IN, maxCornerRadius(bed));
+}
+
+/** A typed or stepped corner radius as a bed can take it: whole inches, from square up to the most it can curve. */
+export function normalizeCornerRadius(inches: number, bed: Pick<Bed, 'widthIn' | 'heightIn'>): number {
+  return Math.min(Math.floor(maxCornerRadius(bed)), Math.max(0, Math.round(inches)));
+}
+
+/**
+ * CSS border-radius for the outer edge of a bed drawn with a `borderPx` border, so the border's
+ * inner edge curves with `radiusIn`. A square bed stays square all the way round.
+ */
+export function outerRadiusPx(radiusIn: number, pxPerInch: number, borderPx: number): number {
+  return radiusIn === 0 ? 0 : radiusIn * pxPerInch + borderPx;
+}
+
+/** Screen offset from the viewport's top-left of a garden point; the inverse of screenToGarden. */
+export function gardenToScreen(view: View, p: Point): Point {
+  return { x: (p.x - view.x) * view.zoom, y: (p.y - view.y) * view.zoom };
 }
 
 /** The bed geometry for a rectangle dragged out between two points, or null if it's too small. */
@@ -411,23 +438,26 @@ export function formatLength(inches: number): string {
 
 /**
  * Reads a typed length as inches: "4′ 6″", "4' 6\"", "4ft 6in", "4 6" (feet then inches),
- * "54in", "54″", or a bare number, which means feet. Returns null for anything else, or a
- * length that isn't positive.
+ * "54in", "54″", or a bare number, which means feet (or inches, with `bareUnit: 'in'`). Returns
+ * null for anything else, or a length that isn't positive (zero too, with `allowZero`).
  */
-export function parseLength(text: string): number | null {
+export function parseLength(
+  text: string,
+  { bareUnit = 'ft', allowZero = false }: { bareUnit?: 'ft' | 'in'; allowZero?: boolean } = {},
+): number | null {
   const t = text.trim().toLowerCase().replace(/[’′]/g, "'").replace(/[”″]/g, '"');
   const n = '(\\d+(?:\\.\\d+)?)';
   const patterns: [RegExp, (m: RegExpMatchArray) => number][] = [
     [new RegExp(`^${n}\\s*(?:'|ft|feet|foot)\\s*(?:${n}\\s*(?:"|in|inch|inches)?)?$`), (m) => +m[1] * 12 + (m[2] ? +m[2] : 0)],
     [new RegExp(`^${n}\\s*(?:"|in|inch|inches)$`), (m) => +m[1]],
     [new RegExp(`^${n}\\s+${n}$`), (m) => +m[1] * 12 + +m[2]],
-    [new RegExp(`^${n}$`), (m) => +m[1] * 12],
+    [new RegExp(`^${n}$`), (m) => +m[1] * (bareUnit === 'in' ? 1 : 12)],
   ];
   for (const [re, toInches] of patterns) {
     const m = t.match(re);
     if (m) {
       const v = toInches(m);
-      return v > 0 ? v : null;
+      return v > 0 || (allowZero && v === 0) ? v : null;
     }
   }
   return null;
