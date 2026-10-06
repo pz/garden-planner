@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGarden } from '../state/gardenStore';
 import { useGardens, readGardenName } from '../state/gardensStore';
+import { BUILD_COMMIT } from '../state/buildInfo';
+import { gardenFileName, parseGardenFile, serializeGardenFile } from '../state/gardenFile';
 
 export function GardenSwitcher({
   variant = 'compact',
@@ -9,14 +11,16 @@ export function GardenSwitcher({
   variant?: 'compact' | 'title';
   onEditSetup?: () => void;
 }) {
-  const { gardenIds, activeGardenId, createGarden, removeGarden, switchGarden } = useGardens();
+  const { gardenIds, activeGardenId, createGarden, importGarden, removeGarden, switchGarden } = useGardens();
   // The active garden's name comes live from its own reducer state, not a localStorage
   // re-read — that read can briefly lag one render behind a just-made rename (the write
   // happens in an effect after the render that changed it).
   const { plan } = useGarden();
   const [open, setOpen] = useState(false);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -24,11 +28,34 @@ export function GardenSwitcher({
       if (ref.current && !ref.current.contains(e.target as Node)) {
         setOpen(false);
         setConfirmRemoveId(null);
+        setLoadError(null);
       }
     }
     document.addEventListener('pointerdown', onDocPointerDown);
     return () => document.removeEventListener('pointerdown', onDocPointerDown);
   }, [open]);
+
+  function exportGarden() {
+    const exportedAt = new Date().toISOString();
+    const text = serializeGardenFile(plan, { commit: BUILD_COMMIT, exportedAt });
+    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = gardenFileName(plan, exportedAt);
+    a.click();
+    URL.revokeObjectURL(url);
+    setOpen(false);
+  }
+
+  async function loadGarden(file: File) {
+    const result = parseGardenFile(await file.text());
+    if (!result.ok) {
+      setLoadError(result.error);
+      return;
+    }
+    importGarden(result.plan);
+    setOpen(false);
+  }
 
   const activeName = plan.bed.name;
   const isTitle = variant === 'title';
@@ -167,6 +194,61 @@ export function GardenSwitcher({
           >
             + New garden
           </button>
+
+          <div style={{ borderTop: '1.5px solid var(--color-divider)', margin: '4px 0' }} />
+
+          <button
+            onClick={exportGarden}
+            style={{
+              display: 'block',
+              width: '100%',
+              textAlign: 'left',
+              padding: '8px 10px',
+              borderRadius: 'var(--radius-sm)',
+              border: 'none',
+              background: 'transparent',
+              font: '600 13px Figtree',
+              color: 'var(--color-text)',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'color-mix(in srgb, var(--color-text) 6%, transparent)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+          >
+            Export garden
+          </button>
+          <button
+            onClick={() => fileInput.current?.click()}
+            style={{
+              display: 'block',
+              width: '100%',
+              textAlign: 'left',
+              padding: '8px 10px',
+              borderRadius: 'var(--radius-sm)',
+              border: 'none',
+              background: 'transparent',
+              font: '600 13px Figtree',
+              color: 'var(--color-text)',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'color-mix(in srgb, var(--color-text) 6%, transparent)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+          >
+            Load garden
+          </button>
+          <input
+            ref={fileInput}
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (file) void loadGarden(file);
+            }}
+          />
+          {loadError && (
+            <p role="alert" style={{ font: '400 12px/1.4 Figtree', color: 'var(--color-warning)', padding: '4px 10px' }}>
+              {loadError}
+            </p>
+          )}
         </div>
       )}
     </div>
