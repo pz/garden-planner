@@ -82,6 +82,17 @@ button {
   background: var(--color-accent-600);
 }
 
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-accent-700);
+  padding: 6px 8px;
+}
+
+.btn-ghost:hover {
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+}
+
 .btn-secondary:hover {
   background: color-mix(in srgb, var(--color-text) 7%, transparent);
 }
