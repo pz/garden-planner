@@ -151,6 +151,7 @@ export function PlantToken({
         transform: counterRotateDeg ? `translate(-50%, -50%) rotate(${-counterRotateDeg}deg)` : 'translate(-50%, -50%)',
         cursor: GESTURE_CURSORS[gesture],
         touchAction: 'none',
+        pointerEvents: 'auto', // beds that aren't rectangles let presses through their box
       }}
     >
       <div

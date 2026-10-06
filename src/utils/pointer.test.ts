@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isContextPress, isReleasedMove } from './pointer';
+import { isContextPress, isReleasedMove, polygonClipPath } from './pointer';
 
 describe('isContextPress', () => {
   it('treats the secondary button as a context press', () => {
@@ -24,5 +24,13 @@ describe('isReleasedMove', () => {
   it('never flags touch or pen, which report no buttons for a contact in some browsers', () => {
     expect(isReleasedMove({ pointerType: 'touch', buttons: 0 })).toBe(false);
     expect(isReleasedMove({ pointerType: 'pen', buttons: 0 })).toBe(false);
+  });
+});
+
+describe('polygonClipPath', () => {
+  it('scales each corner from inches to pixels, in order', () => {
+    expect(polygonClipPath([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 2.5 }], 7)).toBe(
+      'polygon(0px 0px, 70px 0px, 70px 17.5px)',
+    );
   });
 });

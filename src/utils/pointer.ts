@@ -15,3 +15,12 @@ export function isContextPress(e: { button: number; ctrlKey: boolean }): boolean
 export function isReleasedMove(e: { pointerType: string; buttons: number }): boolean {
   return e.pointerType === 'mouse' && e.buttons === 0;
 }
+
+/**
+ * A CSS `clip-path` that traces a polygon bed, for a box of `pxPerInch` pixels per inch. Browsers
+ * hit-test inside a clip-path only, so a polygon's empty bounding box doesn't swallow presses
+ * meant for the beds beneath it.
+ */
+export function polygonClipPath(points: { x: number; y: number }[], pxPerInch: number): string {
+  return `polygon(${points.map((p) => `${p.x * pxPerInch}px ${p.y * pxPerInch}px`).join(', ')})`;
+}
