@@ -465,3 +465,58 @@ describe('reducer: rotating and pasting beds', () => {
     expect(state.plants).toHaveLength(1);
   });
 });
+
+describe('beds never overlap', () => {
+  const bedAt = (id: string, x: number, y: number, w = 48, h = 48): Bed => ({
+    id,
+    name: id,
+    shape: 'rect',
+    cx: x + w / 2,
+    cy: y + h / 2,
+    widthIn: w,
+    heightIn: h,
+    rotationDeg: 0,
+  });
+  const plan = (beds: Bed[]): GardenPlan => ({ ...createPlan('g'), beds });
+
+  it('refuses an added or pasted bed that lands on another, and takes one beside it', () => {
+    const state = plan([bedAt('a', 0, 0)]);
+    expect(reducer(state, { type: 'addBed', bed: bedAt('n', 10, 10) })).toBe(state);
+    expect(reducer(state, { type: 'pasteBed', bed: bedAt('n', 10, 10), plants: [] })).toBe(state);
+    expect(reducer(state, { type: 'addBed', bed: bedAt('n', 48, 0) }).beds).toHaveLength(2); // flush is fine
+    expect(reducer(state, { type: 'pasteBed', bed: bedAt('n', 48, 0), plants: [] }).beds).toHaveLength(2);
+  });
+
+  it('refuses a move into another bed, and allows one that stops flush', () => {
+    const state = plan([bedAt('a', 0, 0), bedAt('b', 100, 0)]);
+    expect(reducer(state, { type: 'moveBed', id: 'a', dx: 60, dy: 0 })).toBe(state);
+    const flush = reducer(state, { type: 'moveBed', id: 'a', dx: 52, dy: 0 });
+    expect(flush.beds[0].cx).toBe(24 + 52);
+  });
+
+  it('refuses a resize or a reshape into another bed', () => {
+    const state = plan([bedAt('a', 0, 0), bedAt('b', 100, 0)]);
+    const grown = { cx: 60, cy: 24, widthIn: 120, heightIn: 48 };
+    expect(reducer(state, { type: 'reshapeBed', id: 'a', geometry: grown })).toBe(state);
+    const ok = reducer(state, { type: 'reshapeBed', id: 'a', geometry: { cx: 50, cy: 24, widthIn: 100, heightIn: 48 } });
+    expect(ok.beds[0].widthIn).toBe(100);
+  });
+
+  it('refuses a turn that swings into another bed', () => {
+    // 96″ × 12″, turned a quarter, reaches 42″ above and below its center; another bed sits just above.
+    const long = bedAt('a', 0, 100, 96, 12);
+    const state = plan([long, bedAt('b', 40, 40)]);
+    expect(reducer(state, { type: 'rotateBed', id: 'a', rotationDeg: 90 })).toBe(state);
+  });
+
+  it('lets a bed that already overlaps be moved clear, but not onto something new', () => {
+    const state = plan([bedAt('a', 0, 0), bedAt('s', 20, 0), bedAt('c', 100, 0)]);
+    expect(reducer(state, { type: 'moveBed', id: 's', dx: 0, dy: 200 }).beds[1].cy).toBe(24 + 200);
+    expect(reducer(state, { type: 'moveBed', id: 's', dx: 60, dy: 0 })).toBe(state);
+  });
+
+  it('never blocks undo or reset', () => {
+    const overlapping = [bedAt('a', 0, 0), bedAt('b', 10, 10)];
+    expect(reducer(plan([]), { type: 'restoreLayout', beds: overlapping, plants: [] }).beds).toEqual(overlapping);
+  });
+});

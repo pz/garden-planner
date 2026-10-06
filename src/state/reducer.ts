@@ -1,6 +1,7 @@
 import type { Bed, GardenPlan, PlantInstance, Profile } from '../types';
 import { parseGardenLocation } from '../utils/location';
 import { normalizeAngle, relocatePlants, type BedGeometry } from '../utils/layout';
+import { introducesOverlap } from '../utils/overlap';
 import { conflictKey, findOverlapConflicts } from '../utils/spacing';
 
 /** Template for a fresh garden; always used via createPlan so every garden gets its own id. */
@@ -130,16 +131,20 @@ export function reducer(state: GardenPlan, action: Action): GardenPlan {
     case 'setGardenName':
       return { ...state, name: action.name };
     case 'addBed':
+      // Beds never overlap: one that would land on another is refused (the editor stops it first).
+      if (introducesOverlap(state.beds, null, action.bed)) return state;
       return { ...state, beds: [...state.beds, action.bed] };
     case 'renameBed':
       return { ...state, beds: state.beds.map((b) => (b.id === action.id ? { ...b, name: action.name } : b)) };
-    case 'moveBed':
+    case 'moveBed': {
       // Plants are stored relative to their bed, so they come along without being touched.
       if (action.dx === 0 && action.dy === 0) return state;
-      return {
-        ...state,
-        beds: state.beds.map((b) => (b.id === action.id ? { ...b, cx: b.cx + action.dx, cy: b.cy + action.dy } : b)),
-      };
+      const moving = state.beds.find((b) => b.id === action.id);
+      if (!moving) return state;
+      const moved = { ...moving, cx: moving.cx + action.dx, cy: moving.cy + action.dy };
+      if (introducesOverlap(state.beds, moving, moved)) return state;
+      return { ...state, beds: state.beds.map((b) => (b.id === action.id ? moved : b)) };
+    }
     case 'reshapeBed': {
       // Plants stay where they are in the garden as the edges or corners move; any the bed no
       // longer covers are removed. (The editor confirms that with the user before dispatching.)
@@ -148,6 +153,7 @@ export function reducer(state: GardenPlan, action: Action): GardenPlan {
       const next: Bed = { ...prev, ...action.geometry };
       // A polygon's corners are only meaningful for its old box; never keep stale ones.
       if (prev.shape === 'polygon' && !action.geometry.points) return state;
+      if (introducesOverlap(state.beds, prev, next)) return state;
       const { plants, outsideIds } = relocatePlants(prev, next, state.plants);
       const outside = new Set(outsideIds);
       return {
@@ -162,10 +168,13 @@ export function reducer(state: GardenPlan, action: Action): GardenPlan {
       const rotationDeg = normalizeAngle(action.rotationDeg);
       const prev = state.beds.find((b) => b.id === action.id);
       if (!prev || prev.rotationDeg === rotationDeg) return state;
-      return { ...state, beds: state.beds.map((b) => (b.id === action.id ? { ...b, rotationDeg } : b)) };
+      const turned = { ...prev, rotationDeg };
+      if (introducesOverlap(state.beds, prev, turned)) return state;
+      return { ...state, beds: state.beds.map((b) => (b.id === action.id ? turned : b)) };
     }
     case 'pasteBed':
       // A bed and its plants arrive together, so one undo step takes both away again.
+      if (introducesOverlap(state.beds, null, action.bed)) return state;
       return { ...state, beds: [...state.beds, action.bed], plants: [...state.plants, ...action.plants] };
     case 'removeBed':
       if (!state.beds.some((b) => b.id === action.id)) return state;

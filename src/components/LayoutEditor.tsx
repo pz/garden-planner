@@ -53,6 +53,7 @@ import {
   type Insets,
   type View,
 } from '../utils/layout';
+import { constrainMove, constrainResize, findFreeOffset, findOverlaps, introducesOverlap } from '../utils/overlap';
 import { CROP_COLORS } from './PlantMark';
 import { Icon, type IconName } from './Icon';
 
@@ -71,6 +72,7 @@ const C = {
   draft: '#fff2eb',
   warn: 'oklch(0.55 0.19 28)',
   deleteBtn: '#dcd3c4',
+  overlapFill: 'color-mix(in srgb, oklch(0.55 0.19 28) 14%, var(--color-surface))',
 };
 
 /** Room kept clear of the overlaid tool rail, side panel, and hint bar when fitting the garden. */
@@ -168,6 +170,9 @@ export function LayoutEditor() {
   /** Corners placed so far while drawing a polygon, in garden coordinates. */
   const [corners, setCorners] = useState<Point[]>([]);
   const [helpHidden, setHelpHidden] = useState(readHelpHidden);
+  /** A short message about an edit that was refused, shown in place of the hint for a few seconds. */
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** The bed whose name is being edited in place on the canvas. */
   const [editingNameId, setEditingNameId] = useState<string | null>(null);
 
@@ -250,7 +255,22 @@ export function LayoutEditor() {
   }, [pending, history, restoreLayout, selectedId]);
 
   /** Applies a new size/position, asking first if it would leave plants outside the bed. */
+  function notify(message: string) {
+    setNotice(message);
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice(null), 3500);
+  }
+
+  /** Whether `next`, a changed `bed` (or a new one, with `bed` null), would land on another bed it wasn't on before. */
+  function blocked(bed: Bed | null, next: Bed): boolean {
+    return introducesOverlap(beds, bed, next);
+  }
+
   function applyGeometry(bed: Bed, draft: Bed, change: 'size' | 'corner' | 'radius' = 'size') {
+    if (blocked(bed, draft)) {
+      notify('That would overlap another bed.');
+      return;
+    }
     const { outsideIds } = relocatePlants(bed, draft, plants);
     if (outsideIds.length) {
       setPending({ kind: 'resize', bedId: bed.id, draft, plantIds: outsideIds, change });
@@ -311,6 +331,10 @@ export function LayoutEditor() {
     setCorners([]);
     if (!geometry) return;
     const bed: Bed = { id: crypto.randomUUID(), name: nextBedName(beds), shape: 'polygon', rotationDeg: 0, ...geometry };
+    if (blocked(null, bed)) {
+      notify('That bed would overlap another one, so it wasn’t added.');
+      return;
+    }
     commit(() => addBed(bed));
     setSelectedId(bed.id);
     setTool('select');
@@ -321,7 +345,12 @@ export function LayoutEditor() {
     if (pending) return;
     // Typed and stepped angles are taken to the degree; only the drag handle has marks to stick to.
     const rotationDeg = magneticAngle(deg, true);
-    if (rotationDeg !== bed.rotationDeg) commit(() => rotateBed(bed.id, rotationDeg));
+    if (rotationDeg === bed.rotationDeg) return;
+    if (blocked(bed, { ...bed, rotationDeg })) {
+      notify('Turning it there would overlap another bed.');
+      return;
+    }
+    commit(() => rotateBed(bed.id, rotationDeg));
   }
 
   function copySelected() {
@@ -333,7 +362,15 @@ export function LayoutEditor() {
     const clip = clipboard.current;
     if (!clip) return;
     clip.pastes += 1;
-    const copy = cloneBed(clip.bed, clip.plants, PASTE_OFFSET_IN * clip.pastes, () => crypto.randomUUID(), beds);
+    const copy = cloneBed(clip.bed, clip.plants, 0, () => crypto.randomUUID(), beds);
+    // The copy goes where it overlaps nothing: the usual step down and right, or the nearest free spot to it.
+    const step = PASTE_OFFSET_IN * clip.pastes;
+    const spot = findFreeOffset(copy.bed, beds, { dx: step, dy: step });
+    if (!spot) {
+      notify('There’s no room to paste that bed.');
+      return;
+    }
+    copy.bed = { ...copy.bed, cx: copy.bed.cx + spot.dx, cy: copy.bed.cy + spot.dy };
     commit(() => pasteBed(copy.bed, copy.plants));
     setSelectedId(copy.bed.id);
     pickTool('select');
@@ -404,7 +441,8 @@ export function LayoutEditor() {
       const step = e.shiftKey ? 1 : LAYOUT_SNAP_IN;
       const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
       const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
-      commit(() => moveBed(selected.id, dx, dy));
+      if (blocked(selected, { ...selected, cx: selected.cx + dx, cy: selected.cy + dy })) notify('Another bed is in the way.');
+      else commit(() => moveBed(selected.id, dx, dy));
     }
   };
   useEffect(() => {
@@ -533,18 +571,39 @@ export function LayoutEditor() {
         alignTargets(beds.filter((b) => b.id !== bed.id)),
         snapOf(e),
       );
-      setDrag({ ...drag, dx: moved.dx, dy: moved.dy, guides: moved.guides });
+      // A bed stops (or slides along) where it would run into another one, so it can't overlap.
+      const allowed = constrainMove(beds, bed, { dx: moved.dx, dy: moved.dy }, { dx: drag.dx, dy: drag.dy });
+      const free = allowed.dx === moved.dx && allowed.dy === moved.dy;
+      setDrag({ ...drag, dx: allowed.dx, dy: allowed.dy, guides: free ? moved.guides : [] });
     } else if (drag.kind === 'resize') {
       const bed = beds.find((b) => b.id === drag.bedId);
       if (!bed) return;
       const resized = resizeSnapped(bed, drag.handle, p, alignTargets(beds.filter((b) => b.id !== bed.id)), snapOf(e));
-      setDrag({ ...drag, draft: resized.bed, guides: resized.guides });
+      const allowed = constrainResize(
+        beds,
+        bed,
+        drag.handle,
+        { w: resized.bed.widthIn, h: resized.bed.heightIn },
+        { w: drag.draft.widthIn, h: drag.draft.heightIn },
+      );
+      const free = allowed.w === resized.bed.widthIn && allowed.h === resized.bed.heightIn;
+      setDrag({
+        ...drag,
+        draft: free ? resized.bed : resizeBedTo(bed, allowed.w, allowed.h, drag.handle),
+        guides: free ? resized.guides : [],
+      });
     } else if (drag.kind === 'corner') {
       const bed = beds.find((b) => b.id === drag.bedId);
-      if (bed) setDrag({ ...drag, draft: moveCorner(bed, drag.index, p, snapOf(e)) });
+      if (!bed) return;
+      const draft = moveCorner(bed, drag.index, p, snapOf(e));
+      // A corner can't be dragged into another bed: it stays at its last clear place.
+      if (!blocked(bed, draft)) setDrag({ ...drag, draft });
     } else if (drag.kind === 'rotate') {
       const bed = beds.find((b) => b.id === drag.bedId);
-      if (bed) setDrag({ ...drag, rotationDeg: rotationFromPointer(bed, p, e.altKey) });
+      if (!bed) return;
+      const rotationDeg = rotationFromPointer(bed, p, e.altKey);
+      // Nor can a bed be turned into another one.
+      if (!blocked(bed, { ...bed, rotationDeg })) setDrag({ ...drag, rotationDeg });
     }
   }
 
@@ -560,6 +619,10 @@ export function LayoutEditor() {
       if (!geometry) return;
       const shape = tool === 'ellipse' ? 'ellipse' : 'rect';
       const bed: Bed = { id: crypto.randomUUID(), name: nextBedName(beds), shape, rotationDeg: 0, ...geometry };
+      if (blocked(null, bed)) {
+        notify('That bed would overlap another one, so it wasn’t added.');
+        return;
+      }
       commit(() => addBed(bed));
       setSelectedId(bed.id);
       setTool('select');
@@ -681,14 +744,23 @@ export function LayoutEditor() {
     });
   }
 
+  const overlaps = findOverlaps(beds);
+  const overlapping = new Set(overlaps.flat());
+  const overlapMessage = overlaps.length
+    ? `${bedById.get(overlaps[0][0])?.name} and ${bedById.get(overlaps[0][1])?.name} overlap${overlaps.length > 1 ? ` (and ${overlaps.length - 1} more pair${overlaps.length > 2 ? 's' : ''})` : ''}. Move or resize them apart to finish.`
+    : null;
+
   const drawn = drag?.kind === 'draw' ? rectFromCorners(drag.a, drag.b) : null;
   const draft = drawn ? { ...drawn, rotationDeg: 0 } : null;
+  /** A bed being drawn turns red where letting go would be refused for overlapping another. */
+  const drawBlocked =
+    !!draft && blocked(null, { id: 'draft', name: '', shape: tool === 'ellipse' ? 'ellipse' : 'rect', ...draft });
   const drawBox = drag?.kind === 'draw' ? boxBetween(drag.a, drag.b) : null;
 
   const canvasCursor =
     drag?.kind === 'pan' && drag.moved ? 'grabbing' : spaceHeld ? 'grab' : tool !== 'select' ? 'crosshair' : 'default';
 
-  const hint =
+  const baseHint =
     tool === 'rect'
       ? `Drag to draw a bed. Sides snap to ${formatLength(LAYOUT_SNAP_IN)}.`
       : tool === 'ellipse'
@@ -704,6 +776,9 @@ export function LayoutEditor() {
         : beds.length
           ? 'Click a bed to edit it, or pick a shape tool to add one.'
           : 'Pick a shape tool, then draw your first bed.';
+  // A refusal shows first, then any overlap that has to be fixed, then the usual hint.
+  const hint = notice ?? overlapMessage ?? baseHint;
+  const hintIsWarning = !!(notice ?? overlapMessage);
 
   function toggleHelp() {
     const next = !helpHidden;
@@ -788,8 +863,8 @@ export function LayoutEditor() {
                     onPointerEnter={() => setHoverId(bed.id)}
                     onPointerLeave={() => setHoverId((h) => (h === bed.id ? null : h))}
                     style={{
-                      fill: C.bed,
-                      stroke: isSel ? 'var(--color-accent)' : C.bedStroke,
+                      fill: overlapping.has(bed.id) ? C.overlapFill : C.bed,
+                      stroke: overlapping.has(bed.id) ? C.warn : isSel ? 'var(--color-accent)' : C.bedStroke,
                       strokeWidth: px(isSel ? 3.5 : 1.5),
                       strokeLinejoin: 'round',
                       cursor: tool === 'select' && !pending && !spaceHeld ? 'move' : undefined,
@@ -958,7 +1033,7 @@ export function LayoutEditor() {
                 style={{
                   fill: C.draft,
                   fillOpacity: 0.7,
-                  stroke: 'var(--color-accent)',
+                  stroke: drawBlocked ? C.warn : 'var(--color-accent)',
                   strokeOpacity: draft ? 1 : 0.5,
                   strokeWidth: px(2),
                   strokeDasharray: `${px(6)} ${px(4)}`,
@@ -977,7 +1052,7 @@ export function LayoutEditor() {
               style={{
                 fill: C.draft,
                 fillOpacity: 0.7,
-                stroke: 'var(--color-accent)',
+                stroke: drawBlocked ? C.warn : 'var(--color-accent)',
                 strokeOpacity: draft ? 1 : 0.5,
                 strokeWidth: px(2),
                 strokeDasharray: `${px(6)} ${px(4)}`,
@@ -1066,7 +1141,7 @@ export function LayoutEditor() {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span data-testid="layout-hint" style={{ flex: 1, minWidth: 0, font: '400 13px Figtree', color: '#474238' }}>
+            <span data-testid="layout-hint" style={{ flex: 1, minWidth: 0, font: hintIsWarning ? '600 13px Figtree' : '400 13px Figtree', color: hintIsWarning ? C.warn : '#474238' }}>
               {hint}
             </span>
             <button className="btn btn-ghost" onClick={toggleHelp} style={{ font: '600 12.5px Figtree', flex: 'none' }}>

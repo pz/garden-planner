@@ -35,6 +35,7 @@ import {
   type Bounds,
   type View,
 } from '../utils/layout';
+import { findOverlaps } from '../utils/overlap';
 import { PlantToken, LONG_PRESS_MS, MOVE_THRESHOLD_PX, type GestureHandlers } from './PlantToken';
 import { PlantMenu } from './PlantMenu';
 import { PlantInfoCard } from './PlantInfoCard';
@@ -483,6 +484,8 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
   const gridPx = PX_PER_INCH * 12;
   const gridBackground = `repeating-linear-gradient(90deg, transparent 0 ${gridPx - 1}px, #e6dbc6 ${gridPx - 1}px ${gridPx}px), repeating-linear-gradient(0deg, #f6efe0 0 ${gridPx - 1}px, #efe6d2 ${gridPx - 1}px ${gridPx}px)`;
   const isLayout = mode === 'layout';
+  /** Beds overlapping each other: the layout can't be finished until they're moved apart. */
+  const overlaps = findOverlaps(beds);
 
   function renderBed(bed: Bed) {
     if (!bounds) return null;
@@ -651,7 +654,13 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
                   <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--color-accent)' }} />
                   Editing layout
                 </span>
-                <button onClick={toggleLayout} className="btn btn-primary" style={{ padding: '8px 14px', font: '600 12.5px Figtree' }}>
+                <button
+                  onClick={toggleLayout}
+                  disabled={overlaps.length > 0}
+                  title={overlaps.length ? 'Some beds overlap. Move or resize them apart first.' : undefined}
+                  className="btn btn-primary"
+                  style={{ padding: '8px 14px', font: '600 12.5px Figtree', opacity: overlaps.length ? 0.5 : 1, cursor: overlaps.length ? 'not-allowed' : undefined }}
+                >
                   <Icon name="check" size={15} />
                   Done
                 </button>
@@ -675,6 +684,13 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
           {!isLayout && <HelpTip text="Long-press or right-click anywhere on a bed to plant. Drag to pan; pinch, ⌘/Ctrl-scroll or +/− to zoom; 0 to fit." />}
         </div>
       </div>
+
+      {!isLayout && overlaps.length > 0 && (
+        // A garden saved before beds were kept apart can still hold overlapping ones.
+        <p role="alert" style={{ font: '600 13px Figtree', color: 'var(--color-warning)' }}>
+          Some beds overlap. Open the layout editor to move them apart.
+        </p>
+      )}
 
       {isLayout && <LayoutEditor />}
 
