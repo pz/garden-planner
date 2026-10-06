@@ -32,6 +32,8 @@ import {
   wheelZoomFactor,
   MAX_WHEEL_ZOOM_DELTA,
   fitView,
+  contentTransform,
+  pinchView,
   formatLength,
   gardenBounds,
   gardenToBed,
@@ -713,5 +715,52 @@ describe('cloneBed', () => {
     expect(copied[0].groupId).toBe(copied[1].groupId);
     expect(copied[2].groupId).not.toBe(copied[0].groupId);
     for (const p of copied) expect(['patch', 'solo']).not.toContain(p.groupId);
+  });
+});
+
+describe('fitView maxZoom', () => {
+  const none = { left: 0, right: 0, top: 0, bottom: 0 };
+  it('does not zoom in past the cap, and keeps the garden centered', () => {
+    const v = fitView({ x0: 0, y0: 0, x1: 100, y1: 50 }, 1000, 500, none, 7);
+    expect(v.zoom).toBe(7);
+    // The garden's center (50, 25) lands at the viewport's center.
+    expect(screenToGarden(v, 500, 250)).toEqual({ x: 50, y: 25 });
+  });
+  it('still zooms out to fit a garden larger than the viewport', () => {
+    expect(fitView({ x0: 0, y0: 0, x1: 1000, y1: 500 }, 500, 250, none, 7).zoom).toBeCloseTo(0.5);
+  });
+});
+
+describe('contentTransform', () => {
+  it('puts content at its place in the garden, scaled to the camera', () => {
+    const view = { zoom: 14, x: 10, y: 20 };
+    const t = contentTransform(view, { x: 12, y: 21 }, 7);
+    expect(t).toEqual({ x: 28, y: 14, scale: 2 });
+    // A point 7px (1″) into the content draws at translate + 7 × scale.
+    const g = screenToGarden(view, t.x + 7 * t.scale, t.y);
+    expect(g).toEqual({ x: 13, y: 21 });
+  });
+});
+
+describe('pinchView', () => {
+  const start = { zoom: 7, x: 0, y: 0 };
+  it('zooms by the change in finger distance around their midpoint', () => {
+    const v = pinchView(start, { x: 100, y: 100 }, { x: 200, y: 100 }, { x: 50, y: 100 }, { x: 250, y: 100 });
+    expect(v.zoom).toBe(14);
+    // The garden point that was under the midpoint (150, 100) is still under it.
+    expect(screenToGarden(v, 150, 100).x).toBeCloseTo(screenToGarden(start, 150, 100).x);
+  });
+  it('pans with the fingers when the distance is unchanged', () => {
+    const v = pinchView(start, { x: 100, y: 100 }, { x: 200, y: 100 }, { x: 130, y: 120 }, { x: 230, y: 120 });
+    expect(v.zoom).toBe(7);
+    expect(v.x).toBeCloseTo(-30 / 7);
+    expect(v.y).toBeCloseTo(-20 / 7);
+  });
+  it('respects the zoom limits', () => {
+    const v = pinchView(start, { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 0, y: 0 }, { x: 1000, y: 0 });
+    expect(v.zoom).toBe(MAX_ZOOM);
+  });
+  it('holds still if the fingers started on the same point', () => {
+    expect(pinchView(start, { x: 5, y: 5 }, { x: 5, y: 5 }, { x: 5, y: 5 }, { x: 50, y: 5 }).zoom).toBe(7);
   });
 });

@@ -503,14 +503,20 @@ export interface Insets {
 
 /**
  * The view that centers `bounds` in the part of a `width` × `height` viewport left clear by
- * `insets` (room for overlaid toolbars and panels), as large as fits. An empty garden frames
+ * `insets` (room for overlaid toolbars and panels), as large as fits (up to `maxZoom`). An empty garden frames
  * a default 8′ × 4′ patch of ground at the origin.
  */
-export function fitView(bounds: Bounds | null, width: number, height: number, insets: Insets): View {
+export function fitView(
+  bounds: Bounds | null,
+  width: number,
+  height: number,
+  insets: Insets,
+  maxZoom = MAX_ZOOM,
+): View {
   const b = bounds ?? { x0: 0, y0: 0, x1: 96, y1: 48 };
   const availW = Math.max(120, width - insets.left - insets.right);
   const availH = Math.max(120, height - insets.top - insets.bottom);
-  const zoom = clampZoom(Math.min(availW / Math.max(12, b.x1 - b.x0), availH / Math.max(12, b.y1 - b.y0)));
+  const zoom = Math.min(maxZoom, clampZoom(Math.min(availW / Math.max(12, b.x1 - b.x0), availH / Math.max(12, b.y1 - b.y0))));
   return {
     zoom,
     x: (b.x0 + b.x1) / 2 - (insets.left + availW / 2) / zoom,
@@ -540,4 +546,26 @@ export function wheelZoomFactor(deltaY: number): number {
 /** Zoom as a percentage of the planting view's scale. */
 export function zoomPercent(view: View): number {
   return Math.round((view.zoom / PLANTING_PX_PER_INCH) * 100);
+}
+
+/**
+ * The CSS transform that draws content laid out at `pxPerInch` (its top-left at garden point
+ * `origin`) as seen through `view`: translate by (x, y) px, then scale, from the top-left.
+ */
+export function contentTransform(view: View, origin: Point, pxPerInch: number): { x: number; y: number; scale: number } {
+  return { x: (origin.x - view.x) * view.zoom, y: (origin.y - view.y) * view.zoom, scale: view.zoom / pxPerInch };
+}
+
+/**
+ * The camera for a two-finger gesture: `start` is the view when the fingers went down at
+ * screen offsets a0 and b0, and they're now at a1 and b1. The garden point under each finger's
+ * midpoint stays under it, and the zoom follows the change in the fingers' distance.
+ */
+export function pinchView(start: View, a0: Point, b0: Point, a1: Point, b1: Point): View {
+  const dist0 = Math.hypot(b0.x - a0.x, b0.y - a0.y);
+  const dist1 = Math.hypot(b1.x - a1.x, b1.y - a1.y);
+  const mid0 = { x: (a0.x + b0.x) / 2, y: (a0.y + b0.y) / 2 };
+  const mid1 = { x: (a1.x + b1.x) / 2, y: (a1.y + b1.y) / 2 };
+  const zoomed = dist0 > 0 ? zoomAt(start, mid0.x, mid0.y, dist1 / dist0) : start;
+  return panBy(zoomed, mid1.x - mid0.x, mid1.y - mid0.y);
 }

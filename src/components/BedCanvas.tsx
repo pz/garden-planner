@@ -19,11 +19,21 @@ import {
   PLANTING_PX_PER_INCH,
   bedBounds,
   bedOutline,
+  contentTransform,
   drawnCornerRadius,
+  fitView,
   gardenBounds,
   gardenToBed,
+  isDrag,
   outerRadiusPx,
+  panBy,
+  pinchView,
   screenToGarden,
+  wheelZoomFactor,
+  zoomAt,
+  zoomPercent,
+  type Bounds,
+  type View,
 } from '../utils/layout';
 import { PlantToken, LONG_PRESS_MS, MOVE_THRESHOLD_PX, type GestureHandlers } from './PlantToken';
 import { PlantMenu } from './PlantMenu';
@@ -40,6 +50,9 @@ const PLANT_DIAMETER = 26;
 const BED_BORDER_PX = 2.5;
 /** Room above each bed for its name. */
 const BED_LABEL_PX = 26;
+/** Clear space kept around the garden when it's fitted to the viewport. */
+const FIT_PADDING_PX = 24;
+const FIT_INSETS = { left: FIT_PADDING_PX, right: FIT_PADDING_PX, top: FIT_PADDING_PX, bottom: FIT_PADDING_PX };
 
 function uid(): string {
   return crypto.randomUUID();
@@ -50,7 +63,19 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
   const { beds, plants, profile } = plan;
 
   const bedRefs = useRef(new Map<string, HTMLDivElement>());
-  const gardenRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  /** The viewport's size, once measured. */
+  const [vpSize, setVpSize] = useState<{ w: number; h: number } | null>(null);
+  /** The pan/zoom camera over the garden; null until the viewport is measured and the garden fitted. */
+  const [camera, setCamera] = useState<View | null>(null);
+  const [panning, setPanning] = useState(false);
+  /** Pointers currently down on the viewport (offsets from its top-left), and what they're doing. */
+  const pointersRef = useRef(new Map<number, Point>());
+  const gestureRef = useRef<
+    | { kind: 'pan'; id: number; start: Point; view0: View; moved: boolean }
+    | { kind: 'pinch'; ids: [number, number]; starts: [Point, Point]; view0: View }
+    | null
+  >(null);
   const emptyPressRef = useRef<{
     bedId: string;
     timer: ReturnType<typeof setTimeout> | null;
@@ -165,15 +190,14 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
 
   /** The bed-local point under the pointer, unclamped (it may be outside the bed's shape). */
   function toBedLocal(bedId: string, clientX: number, clientY: number): Point | null {
-    const el = gardenRef.current;
+    const el = viewportRef.current;
     const bed = bedById.get(bedId);
-    if (!el || !bed || !bounds) return null;
-    // Screen → garden (the garden box starts at the container's top-left, below the label
-    // strip) → the bed's own, possibly turned, frame. A turned bed's on-screen box isn't its
-    // frame, so this can't be measured off the bed's element.
+    if (!el || !bed || !camera) return null;
+    // Screen → garden (through the pan/zoom camera) → the bed's own, possibly turned, frame. A
+    // turned or scaled bed's on-screen box isn't its frame, so this can't be measured off the
+    // bed's element.
     const rect = el.getBoundingClientRect();
-    const view = { zoom: PX_PER_INCH, x: bounds.x0, y: bounds.y0 - BED_LABEL_PX / PX_PER_INCH };
-    return gardenToBed(bed, screenToGarden(view, clientX - rect.left, clientY - rect.top));
+    return gardenToBed(bed, screenToGarden(camera, clientX - rect.left, clientY - rect.top));
   }
 
   function toBedCoords(bedId: string, clientX: number, clientY: number): Point | null {
@@ -229,6 +253,141 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
     const st = emptyPressRef.current;
     if (st?.timer) clearTimeout(st.timer);
     emptyPressRef.current = null;
+  }
+
+  function cancelEmptyPress() {
+    const st = emptyPressRef.current;
+    if (st?.timer) clearTimeout(st.timer);
+    emptyPressRef.current = null;
+  }
+
+  // --- pan and zoom ---------------------------------------------------------------------
+
+  const showGarden = mode === 'plant' && view === 'bed' && !!bounds;
+  /** The garden's box (name strip included) in garden coordinates; also where its content is anchored. */
+  const gardenBox: Bounds | null = bounds && { ...bounds, y0: bounds.y0 - BED_LABEL_PX / PX_PER_INCH };
+
+  const fitGarden = () => {
+    if (vpSize && gardenBox) setCamera(fitView(gardenBox, vpSize.w, vpSize.h, FIT_INSETS, PX_PER_INCH));
+  };
+  const zoomBy = (factor: number) => {
+    if (vpSize) setCamera((c) => c && zoomAt(c, vpSize.w / 2, vpSize.h / 2, factor));
+  };
+
+  // Measure the viewport while it's on screen, and start each visit (and each garden) fitted.
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!showGarden || !el) {
+      setVpSize(null);
+      setCamera(null);
+      return;
+    }
+    const ro = new ResizeObserver(() => {
+      const r = el.getBoundingClientRect();
+      if (r.width && r.height) setVpSize({ w: r.width, h: r.height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [showGarden]);
+  useEffect(() => setCamera(null), [plan.id]);
+  useEffect(() => {
+    if (showGarden && vpSize && !camera && gardenBox) {
+      setCamera(fitView(gardenBox, vpSize.w, vpSize.h, FIT_INSETS, PX_PER_INCH));
+    }
+  }, [showGarden, vpSize, camera, gardenBox]);
+
+  // Wheel: pinch / ⌘-scroll zooms around the pointer, plain scroll pans. Needs a non-passive
+  // listener so the page doesn't scroll or zoom as well.
+  const hasCamera = !!camera;
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el || !hasCamera) return;
+    function onWheel(e: WheelEvent) {
+      e.preventDefault();
+      const r = el!.getBoundingClientRect();
+      if (e.ctrlKey || e.metaKey) {
+        setCamera((c) => c && zoomAt(c, e.clientX - r.left, e.clientY - r.top, wheelZoomFactor(e.deltaY)));
+      } else {
+        setCamera((c) => c && panBy(c, -e.deltaX, -e.deltaY));
+      }
+    }
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [hasCamera]);
+
+  // +, − and 0 zoom in, out and fit, unless a text field has the keyboard.
+  useEffect(() => {
+    if (!showGarden) return;
+    function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      if (e.key === '=' || e.key === '+') zoomBy(1.25);
+      else if (e.key === '-') zoomBy(0.8);
+      else if (e.key === '0') fitGarden();
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  });
+
+  function localPoint(e: React.PointerEvent): Point {
+    const r = viewportRef.current!.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  // Pressing the ground or a bed's bare surface pans; a press on a plant never gets here (the
+  // plant handles it). A drag that starts on a bed also cancels its long-press-to-plant, and a
+  // second finger turns the gesture into a pinch.
+  function onViewportDown(e: React.PointerEvent) {
+    if ((e.button !== 0 && e.button !== 1) || !camera) return;
+    const p = localPoint(e);
+    pointersRef.current.set(e.pointerId, p);
+    const down = [...pointersRef.current];
+    if (down.length === 2) {
+      cancelEmptyPress();
+      const [[ida, a], [idb, b]] = down;
+      gestureRef.current = { kind: 'pinch', ids: [ida, idb], starts: [a, b], view0: camera };
+      viewportRef.current?.setPointerCapture(e.pointerId);
+      setPanning(true);
+    } else if (down.length === 1) {
+      gestureRef.current = { kind: 'pan', id: e.pointerId, start: p, view0: camera, moved: false };
+    }
+  }
+
+  function onViewportMove(e: React.PointerEvent) {
+    const g = gestureRef.current;
+    if (!g || !pointersRef.current.has(e.pointerId)) return;
+    const p = localPoint(e);
+    pointersRef.current.set(e.pointerId, p);
+    if (g.kind === 'pinch') {
+      const [a1, b1] = g.ids.map((id) => pointersRef.current.get(id));
+      if (a1 && b1) setCamera(pinchView(g.view0, g.starts[0], g.starts[1], a1, b1));
+    } else if (e.pointerId === g.id) {
+      const dx = p.x - g.start.x;
+      const dy = p.y - g.start.y;
+      if (!g.moved && isDrag(dx, dy)) {
+        g.moved = true;
+        cancelEmptyPress();
+        viewportRef.current?.setPointerCapture(e.pointerId);
+        setPanning(true);
+      }
+      if (g.moved) setCamera(panBy(g.view0, dx, dy));
+    }
+  }
+
+  function onViewportUp(e: React.PointerEvent) {
+    if (!pointersRef.current.delete(e.pointerId)) return;
+    const g = gestureRef.current;
+    const left = [...pointersRef.current];
+    if (g?.kind === 'pinch' && left.length === 1 && camera) {
+      // One finger stays down after a pinch: carry on panning from where the camera is now.
+      gestureRef.current = { kind: 'pan', id: left[0][0], start: left[0][1], view0: camera, moved: true };
+      return;
+    }
+    if (left.length === 0) {
+      gestureRef.current = null;
+      setPanning(false);
+    }
   }
 
   const gestureHandlers: GestureHandlers = {
@@ -513,7 +672,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
           <p style={{ font: '400 13px Figtree', color: 'var(--color-text-muted)' }}>
             {beds.length} {beds.length === 1 ? 'bed' : 'beds'} · {profile.sunExposure.replace('-', ' ')}
           </p>
-          {!isLayout && <HelpTip text="Long-press or right-click anywhere on a bed to plant." />}
+          {!isLayout && <HelpTip text="Long-press or right-click anywhere on a bed to plant. Drag to pan; pinch, ⌘/Ctrl-scroll or +/− to zoom; 0 to fit." />}
         </div>
       </div>
 
@@ -551,19 +710,45 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
             </p>
           )}
           <div
-            ref={gardenRef}
-            // The garden is drawn at a fixed scale and never shrinks with the window (plants
-            // are positioned in absolute inches); a narrow window scrolls to reach it instead.
-            style={{
-              position: 'relative',
-              flexShrink: 0,
-              alignSelf: 'flex-start',
-              width: (bounds.x1 - bounds.x0) * PX_PER_INCH,
-              height: (bounds.y1 - bounds.y0) * PX_PER_INCH + BED_LABEL_PX,
-              margin: BED_BORDER_PX,
-            }}
-          >
-            {beds.map(renderBed)}
+              ref={viewportRef}
+              data-testid="garden-viewport"
+              onPointerDown={onViewportDown}
+              onPointerMove={onViewportMove}
+              onPointerUp={onViewportUp}
+              onPointerCancel={onViewportUp}
+              // The garden is drawn at a fixed scale inside this frame, which the camera pans and
+              // zooms over; a narrow window just shows less of it instead of squashing it.
+              style={{
+                position: 'relative',
+                height: 'max(420px, calc(100vh - 230px))',
+                overflow: 'hidden',
+                borderRadius: 'var(--radius-lg)',
+                border: '1.5px solid var(--color-divider)',
+                background: '#f9f4ed',
+                touchAction: 'none',
+                cursor: panning ? 'grabbing' : 'grab',
+              }}
+            >
+              {camera && gardenBox && (() => {
+                const t = contentTransform(camera, { x: gardenBox.x0, y: gardenBox.y0 }, PX_PER_INCH);
+                return (
+                  <div
+                    data-testid="garden-content"
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      top: 0,
+                      width: (gardenBox.x1 - gardenBox.x0) * PX_PER_INCH,
+                      height: (gardenBox.y1 - gardenBox.y0) * PX_PER_INCH,
+                      transformOrigin: '0 0',
+                      transform: `translate(${t.x}px, ${t.y}px) scale(${t.scale})`,
+                    }}
+                  >
+                    {beds.map(renderBed)}
+                  </div>
+                );
+              })()}
+              {camera && <ZoomControls percent={zoomPercent(camera)} onZoomOut={() => zoomBy(0.8)} onZoomIn={() => zoomBy(1.25)} onFit={fitGarden} />}
           </div>
 
           {menuState && menuBed && (
@@ -675,6 +860,58 @@ function PolygonBedShape({ points, widthIn, heightIn }: { points: Point[]; width
         strokeLinejoin="round"
       />
     </svg>
+  );
+}
+
+function ZoomControls({
+  percent,
+  onZoomOut,
+  onZoomIn,
+  onFit,
+}: {
+  percent: number;
+  onZoomOut: () => void;
+  onZoomIn: () => void;
+  onFit: () => void;
+}) {
+  const round = { width: 32, height: 32, padding: 0, justifyContent: 'center', borderRadius: 999, borderColor: 'transparent' } as const;
+  return (
+    <div
+      // Presses on the controls must not start a pan.
+      onPointerDown={(e) => e.stopPropagation()}
+      style={{
+        position: 'absolute',
+        right: 16,
+        bottom: 16,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 2,
+        padding: 4,
+        borderRadius: 999,
+        background: 'var(--color-bg)',
+        boxShadow: 'var(--shadow-md)',
+        cursor: 'default',
+      }}
+    >
+      <button className="btn btn-secondary" title="Zoom out (−)" aria-label="Zoom out" onClick={onZoomOut} style={round}>
+        <Icon name="minus" size={16} />
+      </button>
+      <button
+        className="btn btn-secondary"
+        title="Fit garden (0)"
+        aria-label="Fit garden"
+        onClick={onFit}
+        style={{ borderColor: 'transparent', minWidth: 58, padding: '6px 8px', font: '600 13px Figtree' }}
+      >
+        {percent}%
+      </button>
+      <button className="btn btn-secondary" title="Zoom in (+)" aria-label="Zoom in" onClick={onZoomIn} style={round}>
+        <Icon name="plus" size={16} />
+      </button>
+      <button className="btn btn-secondary" title="Fit garden (0)" aria-label="Fit garden to view" onClick={onFit} style={round}>
+        <Icon name="fit" size={16} />
+      </button>
+    </div>
   );
 }
 
