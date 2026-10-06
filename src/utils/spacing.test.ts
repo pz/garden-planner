@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { PlantInstance } from '../types';
 import { conflictKey, findOverlapConflicts, fitsAt } from './spacing';
+import { rectOutline } from './geometry';
 
 function plant(overrides: Partial<PlantInstance> & Pick<PlantInstance, 'id' | 'cropId' | 'x' | 'y'>): PlantInstance {
-  return { groupId: overrides.id, ...overrides };
+  return { groupId: overrides.id, bedId: 'b1', ...overrides };
 }
 
 describe('conflictKey', () => {
@@ -31,6 +32,14 @@ describe('findOverlapConflicts', () => {
     const plants = [
       plant({ id: 'a', cropId: 'tomato', x: 0, y: 0, groupId: 'g1' }),
       plant({ id: 'b', cropId: 'basil', x: 18, y: 0, groupId: 'g2' }),
+    ];
+    expect(findOverlapConflicts(plants)).toEqual([]);
+  });
+
+  it('never flags plants in different beds, even at the same local coordinates', () => {
+    const plants = [
+      plant({ id: 'a', cropId: 'tomato', x: 5, y: 5, groupId: 'g1', bedId: 'b1' }),
+      plant({ id: 'b', cropId: 'tomato', x: 5, y: 5, groupId: 'g2', bedId: 'b2' }),
     ];
     expect(findOverlapConflicts(plants)).toEqual([]);
   });
@@ -69,38 +78,46 @@ describe('fitsAt', () => {
   const bedH = 48;
 
   it('accepts a placement well inside the bed with no neighbors', () => {
-    expect(fitsAt(48, 24, 24, bedW, bedH, [])).toBe(true);
+    expect(fitsAt(48, 24, 24, rectOutline(bedW, bedH), [])).toBe(true);
   });
 
   it('accepts a placement near an edge as long as its own center stays in the bed', () => {
     // spacing ring (r=12) would overflow the left/top edge, but only the center matters.
-    expect(fitsAt(5, 24, 24, bedW, bedH, [])).toBe(true);
-    expect(fitsAt(48, 5, 24, bedW, bedH, [])).toBe(true);
+    expect(fitsAt(5, 24, 24, rectOutline(bedW, bedH), [])).toBe(true);
+    expect(fitsAt(48, 5, 24, rectOutline(bedW, bedH), [])).toBe(true);
   });
 
   it('rejects a placement whose center itself would leave the bed', () => {
-    expect(fitsAt(-1, 24, 24, bedW, bedH, [])).toBe(false);
-    expect(fitsAt(48, bedH + 1, 24, bedW, bedH, [])).toBe(false);
+    expect(fitsAt(-1, 24, 24, rectOutline(bedW, bedH), [])).toBe(false);
+    expect(fitsAt(48, bedH + 1, 24, rectOutline(bedW, bedH), [])).toBe(false);
   });
 
   it('accepts a placement exactly flush with an edge', () => {
-    expect(fitsAt(0, 24, 24, bedW, bedH, [])).toBe(true);
-    expect(fitsAt(bedW, 24, 24, bedW, bedH, [])).toBe(true);
+    expect(fitsAt(0, 24, 24, rectOutline(bedW, bedH), [])).toBe(true);
+    expect(fitsAt(bedW, 24, 24, rectOutline(bedW, bedH), [])).toBe(true);
   });
 
   it('rejects a placement in a rounded corner past the arc, but accepts one on the straight edge beside it', () => {
-    expect(fitsAt(0, 0, 24, bedW, bedH, [], 4)).toBe(false);
-    expect(fitsAt(bedW, bedH, 24, bedW, bedH, [], 4)).toBe(false);
-    expect(fitsAt(4, 0, 24, bedW, bedH, [], 4)).toBe(true);
+    expect(fitsAt(0, 0, 24, rectOutline(bedW, bedH, 4), [])).toBe(false);
+    expect(fitsAt(bedW, bedH, 24, rectOutline(bedW, bedH, 4), [])).toBe(false);
+    expect(fitsAt(4, 0, 24, rectOutline(bedW, bedH, 4), [])).toBe(true);
   });
 
   it('rejects a new plant that would crowd an existing one', () => {
     const existing = [plant({ id: 'a', cropId: 'tomato', x: 48, y: 24 })];
-    expect(fitsAt(48.1, 24, 24, bedW, bedH, existing)).toBe(false);
+    expect(fitsAt(48.1, 24, 24, rectOutline(bedW, bedH), existing)).toBe(false);
   });
 
   it('accepts a new plant placed far enough from existing ones', () => {
     const existing = [plant({ id: 'a', cropId: 'tomato', x: 48, y: 24 })];
-    expect(fitsAt(80, 24, 24, bedW, bedH, existing)).toBe(true);
+    expect(fitsAt(80, 24, 24, rectOutline(bedW, bedH), existing)).toBe(true);
+  });
+});
+
+describe('fitsAt with a non-rectangular outline', () => {
+  it('rejects a spot inside the bounding box but outside an ellipse', () => {
+    const ellipse = { shape: 'ellipse' as const, widthIn: 96, heightIn: 48 };
+    expect(fitsAt(48, 24, 12, ellipse, [])).toBe(true);
+    expect(fitsAt(2, 2, 12, ellipse, [])).toBe(false);
   });
 });

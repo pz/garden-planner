@@ -1,9 +1,20 @@
-import type { PlantInstance } from '../types';
+import type { PlantInstance, Point } from '../types';
 import { getCrop } from '../data/crops';
 
-export interface Point {
-  x: number;
-  y: number;
+export type { Point };
+
+/**
+ * The region plant centers must stay inside, in a bed's local frame (inches from its top-left
+ * corner, 0…widthIn × 0…heightIn). Built from a bed by `bedOutline` in layout.ts.
+ */
+export type Outline =
+  | { shape: 'rect'; widthIn: number; heightIn: number; cornerRadiusIn: number }
+  | { shape: 'ellipse'; widthIn: number; heightIn: number }
+  | { shape: 'polygon'; widthIn: number; heightIn: number; points: Point[] };
+
+/** A plain rectangle outline, optionally with rounded corners. */
+export function rectOutline(widthIn: number, heightIn: number, cornerRadiusIn = 0): Outline {
+  return { shape: 'rect', widthIn, heightIn, cornerRadiusIn };
 }
 
 export interface GroupBox {
@@ -64,17 +75,15 @@ export function lockedAxis(dx: number, dy: number): Point {
  * Ghost points for a patch dragged out from `origin` along a locked `axis` — one column per
  * spacing step along the axis, one row per spacing step perpendicular to it, so a single drag
  * sweeps out a line (rows = 0) or a rectangular grid (rows > 0), matching "drag a patch to
- * size." Only a ghost's own center has to stay inside the bed, matching plant placement rules
- * generally — its spacing ring may extend past the edge, but not past a rounded corner.
+ * size." Only a ghost's own center has to stay inside the bed's outline, matching plant
+ * placement rules generally — its spacing ring may extend past the edge.
  */
 export function computeGhosts(
   origin: Point,
   axis: Point,
   cursor: Point,
   spacingIn: number,
-  boundW: number,
-  boundH: number,
-  cornerRadiusIn = 0,
+  outline: Outline,
 ): Point[] {
   const dx = cursor.x - origin.x;
   const dy = cursor.y - origin.y;
@@ -93,7 +102,7 @@ export function computeGhosts(
       if (row === 0 && col === 0) continue; // origin is already a placed plant
       const x = origin.x + axis.x * spacingIn * col * colSign + perpX * spacingIn * row * rowSign;
       const y = origin.y + axis.y * spacingIn * col * colSign + perpY * spacingIn * row * rowSign;
-      if (!isInsideBed({ x, y }, boundW, boundH, cornerRadiusIn)) continue;
+      if (!isInsideOutline({ x, y }, outline)) continue;
       pts.push({ x, y });
     }
   }
@@ -136,20 +145,87 @@ export function clampToBed(p: Point, w: number, h: number, r = 0): Point {
   return { x: Math.min(w, Math.max(0, p.x)), y: Math.min(h, Math.max(0, p.y)) };
 }
 
+function distToSegment(p: Point, a: Point, b: Point): { d: number; q: Point } {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+  const q = { x: a.x + t * dx, y: a.y + t * dy };
+  return { d: Math.hypot(p.x - q.x, p.y - q.y), q };
+}
+
+/** Whether `p` is inside (or on the boundary of) the polygon with corners `pts`, in order. */
+export function isInsidePolygon(p: Point, pts: Point[]): boolean {
+  for (let i = 0; i < pts.length; i++) {
+    if (distToSegment(p, pts[i], pts[(i + 1) % pts.length]).d <= EPSILON_IN) return true;
+  }
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const a = pts[i];
+    const b = pts[j];
+    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+/** Whether a plant center at `p` lies inside `outline`. Points on the boundary count as inside. */
+export function isInsideOutline(p: Point, outline: Outline): boolean {
+  switch (outline.shape) {
+    case 'rect':
+      return isInsideBed(p, outline.widthIn, outline.heightIn, outline.cornerRadiusIn);
+    case 'ellipse': {
+      const a = outline.widthIn / 2;
+      const b = outline.heightIn / 2;
+      const nx = (p.x - a) / a;
+      const ny = (p.y - b) / b;
+      return nx * nx + ny * ny <= 1 + EPSILON_IN;
+    }
+    case 'polygon':
+      return isInsidePolygon(p, outline.points);
+  }
+}
+
+/**
+ * A point inside `outline` near `p`: `p` itself if it's already inside. Outside a polygon it's
+ * the nearest point on its boundary; outside an ellipse, the boundary point on the line to its
+ * center (not quite the nearest for a long, thin ellipse, but always on the outline).
+ */
+export function clampToOutline(p: Point, outline: Outline): Point {
+  if (isInsideOutline(p, outline)) return { x: p.x, y: p.y };
+  switch (outline.shape) {
+    case 'rect':
+      return clampToBed(p, outline.widthIn, outline.heightIn, outline.cornerRadiusIn);
+    case 'ellipse': {
+      const a = outline.widthIn / 2;
+      const b = outline.heightIn / 2;
+      const k = 1 / Math.hypot((p.x - a) / a, (p.y - b) / b);
+      return { x: a + (p.x - a) * k, y: b + (p.y - b) * k };
+    }
+    case 'polygon': {
+      let best: Point = outline.points[0];
+      let bestD = Infinity;
+      const pts = outline.points;
+      for (let i = 0; i < pts.length; i++) {
+        const { d, q } = distToSegment(p, pts[i], pts[(i + 1) % pts.length]);
+        if (d < bestD) {
+          bestD = d;
+          best = q;
+        }
+      }
+      return best;
+    }
+  }
+}
+
 /**
  * Clamp a proposed (dx, dy) translation so every member of a group keeps its center inside
- * the bed once moved — keeping the whole patch rigid (every member shifts by the same
- * amount) rather than letting the bed edge distort its shape. With rounded corners
- * (`cornerRadiusIn` > 0) the patch slides along a corner's arc rather than poking past it.
+ * the bed's outline once moved — keeping the whole patch rigid (every member shifts by the
+ * same amount) rather than letting the bed edge distort its shape. Against a curved or slanted
+ * edge (a rounded corner, an ellipse, a polygon side) the patch slides along it rather than
+ * poking past.
  */
-export function clampGroupDelta(
-  members: PlantInstance[],
-  dx: number,
-  dy: number,
-  boundW: number,
-  boundH: number,
-  cornerRadiusIn = 0,
-): Point {
+export function clampGroupDelta(members: PlantInstance[], dx: number, dy: number, outline: Outline): Point {
+  // Every outline lies within its 0…widthIn × 0…heightIn box, so that's the first, cheap clamp.
   const rectClamp = (d: Point): Point => {
     let minDx = -Infinity;
     let maxDx = Infinity;
@@ -157,25 +233,24 @@ export function clampGroupDelta(
     let maxDy = Infinity;
     for (const m of members) {
       minDx = Math.max(minDx, -m.x);
-      maxDx = Math.min(maxDx, boundW - m.x);
+      maxDx = Math.min(maxDx, outline.widthIn - m.x);
       minDy = Math.max(minDy, -m.y);
-      maxDy = Math.min(maxDy, boundH - m.y);
+      maxDy = Math.min(maxDy, outline.heightIn - m.y);
     }
     return { x: Math.min(maxDx, Math.max(minDx, d.x)), y: Math.min(maxDy, Math.max(minDy, d.y)) };
   };
-  const fits = (d: Point) =>
-    members.every((m) => isInsideBed({ x: m.x + d.x, y: m.y + d.y }, boundW, boundH, cornerRadiusIn));
+  const fits = (d: Point) => members.every((m) => isInsideOutline({ x: m.x + d.x, y: m.y + d.y }, outline));
 
   let d = rectClamp({ x: dx, y: dy });
-  if (cornerRadiusIn <= 0 || fits(d)) return d;
+  if (fits(d)) return d;
 
-  // Each member's allowed translations form a convex region (the bed, shifted), so repeatedly
-  // pulling the offending member back onto its corner arc converges on a delta that fits all
-  // of them — normally in one or two steps, since only the member nearest the corner binds.
+  // Repeatedly pulling the offending member back onto the outline converges on a delta that
+  // fits all of them — normally in one or two steps, since only the member nearest the edge
+  // binds. (Exactly so for convex outlines; a concave polygon may need the fallback below.)
   for (let i = 0; i < 32 && !fits(d); i++) {
     for (const m of members) {
       const at = { x: m.x + d.x, y: m.y + d.y };
-      const fixed = clampToBed(at, boundW, boundH, cornerRadiusIn);
+      const fixed = clampToOutline(at, outline);
       d = rectClamp({ x: d.x + fixed.x - at.x, y: d.y + fixed.y - at.y });
     }
   }

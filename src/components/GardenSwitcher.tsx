@@ -57,7 +57,7 @@ export function GardenSwitcher({
     setOpen(false);
   }
 
-  const activeName = plan.bed.name;
+  const activeName = plan.name;
   const isTitle = variant === 'title';
 
   return (
