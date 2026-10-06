@@ -420,3 +420,37 @@ describe('polygon and ellipse beds', () => {
     expect(parsed.plants.map((p) => p.id)).toEqual(['b']);
   });
 });
+
+describe('reducer: rotating and pasting beds', () => {
+  const bed2: Bed = { id: 'bed-2', name: 'Herbs', shape: 'rect', cx: 150, cy: 24, widthIn: 24, heightIn: 48, rotationDeg: 0 };
+  const plant: PlantInstance = { id: 'a', bedId: 'bed-1', cropId: 'tomato', x: 10, y: 10, groupId: 'g1' };
+
+  it('rotateBed turns only the targeted bed, normalizing the angle, and leaves plants alone', () => {
+    const state = { ...basePlan([plant]), beds: [...DEFAULT_PLAN.beds, bed2] };
+    const next = reducer(state, { type: 'rotateBed', id: 'bed-1', rotationDeg: -45 });
+    expect(next.beds[0].rotationDeg).toBe(315);
+    expect(next.beds[0]).toEqual({ ...state.beds[0], rotationDeg: 315 });
+    expect(next.beds[1]).toBe(state.beds[1]);
+    expect(next.plants).toBe(state.plants);
+  });
+
+  it('rotateBed to the same angle (or a full turn of it) returns the same state', () => {
+    const state = basePlan();
+    expect(reducer(state, { type: 'rotateBed', id: 'bed-1', rotationDeg: 360 })).toBe(state);
+  });
+
+  it('rotateBed ignores an unknown bed', () => {
+    const state = basePlan();
+    expect(reducer(state, { type: 'rotateBed', id: 'nope', rotationDeg: 90 })).toBe(state);
+  });
+
+  it('pasteBed adds the bed and its plants together, untouched otherwise', () => {
+    const state = basePlan([plant]);
+    const pasted: PlantInstance = { ...plant, id: 'b', bedId: 'bed-2', groupId: 'g9' };
+    const next = reducer(state, { type: 'pasteBed', bed: bed2, plants: [pasted] });
+    expect(next.beds).toEqual([...state.beds, bed2]);
+    expect(next.plants).toEqual([plant, pasted]);
+    expect(state.beds).toHaveLength(1);
+    expect(state.plants).toHaveLength(1);
+  });
+});

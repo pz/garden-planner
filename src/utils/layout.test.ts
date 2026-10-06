@@ -7,6 +7,14 @@ import {
   MIN_ZOOM,
   bedBounds,
   bedOutline,
+  boxCorners,
+  cloneBed,
+  copyName,
+  normalizeAngle,
+  parseAngle,
+  resizeCursor,
+  rotationFromPointer,
+  snapAngle,
   closesPolygon,
   edgeLabels,
   geometryOf,
@@ -509,5 +517,137 @@ describe('labelOffset', () => {
   it('clears a horizontal edge by half the label height, and a vertical one by half its width', () => {
     expect(labelOffset({ x: 0, y: -1 }, 20, 5, 2)).toBe(7);
     expect(labelOffset({ x: 1, y: 0 }, 20, 5, 2)).toBe(22);
+  });
+});
+
+describe('boxCorners', () => {
+  it('lists the corners clockwise from the top-left, turning with the bed', () => {
+    expect(boxCorners(bed())).toEqual([{ x: 0, y: 0 }, { x: 96, y: 0 }, { x: 96, y: 48 }, { x: 0, y: 48 }]);
+    const c = boxCorners(bed({ rotationDeg: 90 }));
+    // Turned 90° clockwise about (48, 24): the top-left corner swings to the top-right.
+    expect(c[0].x).toBeCloseTo(72);
+    expect(c[0].y).toBeCloseTo(-24);
+  });
+});
+
+describe('normalizeAngle / snapAngle', () => {
+  it('brings angles into 0…360', () => {
+    expect(normalizeAngle(-45)).toBe(315);
+    expect(normalizeAngle(360)).toBe(0);
+    expect(normalizeAngle(725)).toBe(5);
+    expect(Object.is(normalizeAngle(-360), 0)).toBe(true);
+  });
+
+  it('snaps to the nearest 45°, rounding half-way up, and wraps', () => {
+    expect(snapAngle(22.4)).toBe(0);
+    expect(snapAngle(22.5)).toBe(45);
+    expect(snapAngle(-22.6)).toBe(315);
+    expect(snapAngle(350)).toBe(0);
+  });
+});
+
+describe('rotationFromPointer', () => {
+  const center = { cx: 0, cy: 0 };
+
+  it('reads 0° with the handle straight above the center, 90° to its right', () => {
+    expect(rotationFromPointer(center, { x: 0, y: -10 })).toBe(0);
+    expect(rotationFromPointer(center, { x: 10, y: 0 })).toBe(90);
+    expect(rotationFromPointer(center, { x: 0, y: 10 })).toBe(180);
+    expect(rotationFromPointer(center, { x: -10, y: 0 })).toBe(270);
+  });
+
+  it('snaps to 45° steps', () => {
+    expect(rotationFromPointer(center, { x: 10, y: -9 })).toBe(45);
+    expect(rotationFromPointer(center, { x: 3, y: -10 })).toBe(0);
+  });
+});
+
+describe('parseAngle', () => {
+  it.each([
+    ['90', 90],
+    ['90°', 90],
+    [' -45 deg ', -45],
+    ['12.5 degrees', 12.5],
+  ])('reads %j as %d', (text, deg) => {
+    expect(parseAngle(text)).toBe(deg);
+  });
+
+  it.each(['', 'ninety', '90 rad', '9 0'])('rejects %j', (text) => {
+    expect(parseAngle(text)).toBeNull();
+  });
+});
+
+describe('resizeCursor', () => {
+  it('matches the handle on an unturned bed', () => {
+    expect(resizeCursor({ sx: 1, sy: 0 }, 0)).toBe('ew-resize');
+    expect(resizeCursor({ sx: 0, sy: -1 }, 0)).toBe('ns-resize');
+    expect(resizeCursor({ sx: 1, sy: 1 }, 0)).toBe('nwse-resize');
+    expect(resizeCursor({ sx: 1, sy: -1 }, 0)).toBe('nesw-resize');
+    expect(resizeCursor({ sx: -1, sy: -1 }, 0)).toBe('nwse-resize');
+  });
+
+  it('turns with the bed', () => {
+    expect(resizeCursor({ sx: 1, sy: 0 }, 90)).toBe('ns-resize');
+    expect(resizeCursor({ sx: 1, sy: 0 }, 45)).toBe('nwse-resize');
+    expect(resizeCursor({ sx: 1, sy: 1 }, 45)).toBe('ns-resize');
+  });
+});
+
+describe('resizeBedTo on a turned bed', () => {
+  it('still holds the side opposite the handle in place', () => {
+    const b = bed({ rotationDeg: 90 });
+    const before = boxCorners(b);
+    const next = resizeBedTo(b, 120, 48, { sx: 1, sy: 0 }); // the bed's own right edge
+    const after = boxCorners(next);
+    // Its left edge (top-left and bottom-left corners) doesn't move.
+    for (const i of [0, 3]) {
+      expect(after[i].x).toBeCloseTo(before[i].x);
+      expect(after[i].y).toBeCloseTo(before[i].y);
+    }
+    expect(next.rotationDeg).toBe(90);
+  });
+});
+
+describe('copyName', () => {
+  it('appends "copy", then numbers further copies', () => {
+    expect(copyName('Herbs', [bed({ name: 'Herbs' })])).toBe('Herbs copy');
+    expect(copyName('Herbs', [bed({ name: 'Herbs' }), bed({ name: 'herbs copy' })])).toBe('Herbs copy 2');
+    expect(copyName('Herbs', [bed({ name: 'Herbs copy' }), bed({ name: 'Herbs copy 2' })])).toBe('Herbs copy 3');
+  });
+});
+
+describe('cloneBed', () => {
+  let n = 0;
+  const makeId = () => `id${++n}`;
+
+  it('copies the bed offset on both axes with a new id and name, keeping shape and rotation', () => {
+    n = 0;
+    const src = polyBed({ name: 'Corner', rotationDeg: 45 });
+    const { bed: copy } = cloneBed(src, [], 12, makeId, [src]);
+    expect(copy).toEqual({ ...src, id: 'id1', name: 'Corner copy', cx: src.cx + 12, cy: src.cy + 12 });
+  });
+
+  it('copies only that bed’s plants, with new ids, at the same bed-local spots', () => {
+    n = 0;
+    const src = bed();
+    const plants = [plant('a', 10, 10), plant('other', 5, 5, 'b2')];
+    const { bed: copy, plants: copied } = cloneBed(src, plants, 12, makeId, [src]);
+    expect(copied).toHaveLength(1);
+    expect(copied[0]).toMatchObject({ bedId: copy.id, x: 10, y: 10, cropId: 'tomato' });
+    expect(copied[0].id).not.toBe('a');
+  });
+
+  it('gives each copied patch one new group id, never the original’s', () => {
+    n = 0;
+    const src = bed();
+    const plants = [
+      { ...plant('a', 10, 10), groupId: 'patch' },
+      { ...plant('b', 14, 10), groupId: 'patch' },
+      { ...plant('c', 40, 10), groupId: 'solo' },
+    ];
+    const { plants: copied } = cloneBed(src, plants, 12, makeId, [src]);
+    expect(copied[0].groupId).toBe(copied[1].groupId);
+    expect(copied[2].groupId).not.toBe(copied[0].groupId);
+    for (const p of copied) expect(['patch', 'solo']).not.toContain(p.groupId);
   });
 });

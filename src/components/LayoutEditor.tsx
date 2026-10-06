@@ -6,7 +6,11 @@ import type { Bed, PlantInstance } from '../types';
 import type { Point } from '../utils/geometry';
 import {
   LAYOUT_SNAP_IN,
+  ROTATION_STEP_DEG,
+  bedBounds,
   bedToGarden,
+  boxCorners,
+  cloneBed,
   boxBetween,
   closesPolygon,
   drawnCornerRadius,
@@ -21,18 +25,23 @@ import {
   nextBedName,
   normalizeSide,
   panBy,
+  parseAngle,
   parseLength,
   plantSummary,
   polygonFromCorners,
   rectFromCorners,
   relocatePlants,
   resizeBedTo,
+  resizeCursor,
   resizeFromPointer,
+  rotationFromPointer,
   screenToGarden,
+  snapAngle,
   snapTo,
   wheelZoomFactor,
   zoomAt,
   zoomPercent,
+  type BedPlacement,
   type Handle,
   type Insets,
   type View,
@@ -69,6 +78,7 @@ type Drag =
   | { kind: 'move'; bedId: string; start: Point; dx: number; dy: number }
   | { kind: 'resize'; bedId: string; handle: Handle; draft: Bed }
   | { kind: 'corner'; bedId: string; index: number; draft: Bed }
+  | { kind: 'rotate'; bedId: string; rotationDeg: number }
   | { kind: 'draw'; a: Point; b: Point };
 
 type Pending =
@@ -81,18 +91,15 @@ const EDGE_HANDLES: Handle[] = [
   { sx: -1, sy: 0 },
   { sx: 1, sy: 0 },
 ];
+/** Each paste of the same copy lands this much further down and to the right. */
+const PASTE_OFFSET_IN = 12;
+
 const CORNER_HANDLES: Handle[] = [
   { sx: -1, sy: -1 },
   { sx: 1, sy: -1 },
   { sx: 1, sy: 1 },
   { sx: -1, sy: 1 },
 ];
-
-function resizeCursor(h: Handle): string {
-  if (h.sx === 0) return 'ns-resize';
-  if (h.sy === 0) return 'ew-resize';
-  return h.sx === h.sy ? 'nwse-resize' : 'nesw-resize';
-}
 
 const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 const MOD = IS_MAC ? '⌘' : 'Ctrl ';
@@ -105,6 +112,10 @@ const SHORTCUTS: [string, string][] = [
   [`${MOD}scroll`, 'Zoom'],
   ['0', 'Fit'],
   ['Arrows', `Nudge ${formatLength(LAYOUT_SNAP_IN)}`],
+  [`${MOD}C`, 'Copy'],
+  [`${MOD}X`, 'Cut'],
+  [`${MOD}V`, 'Paste'],
+  [`${MOD}D`, 'Duplicate'],
   ['Del', 'Delete'],
   [`${MOD}Z`, 'Undo'],
 ];
@@ -123,7 +134,7 @@ function isTyping(target: EventTarget | null): boolean {
 }
 
 export function LayoutEditor() {
-  const { plan, addBed, renameBed, moveBed, reshapeBed, removeBed, restoreLayout } = useGarden();
+  const { plan, addBed, renameBed, moveBed, reshapeBed, rotateBed, pasteBed, removeBed, restoreLayout } = useGarden();
   const { beds, plants } = plan;
 
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -138,6 +149,11 @@ export function LayoutEditor() {
   const [history, setHistory] = useState<LayoutSnapshot[]>([]);
   const [spaceHeld, setSpaceHeld] = useState(false);
   const [cursor, setCursor] = useState<Point | null>(null);
+  /**
+   * The bed last copied or cut (as it was then, with its plants), and how many times it's been
+   * pasted: each paste lands a further step down and to the right so copies don't stack.
+   */
+  const clipboard = useRef<{ bed: Bed; plants: PlantInstance[]; pastes: number } | null>(null);
   /** Corners placed so far while drawing a polygon, in garden coordinates. */
   const [corners, setCorners] = useState<Point[]>([]);
   const [helpHidden, setHelpHidden] = useState(readHelpHidden);
@@ -276,6 +292,27 @@ export function LayoutEditor() {
     setCursor(null);
   }
 
+  function setRotation(bed: Bed, deg: number) {
+    if (pending) return;
+    const rotationDeg = snapAngle(deg);
+    if (rotationDeg !== bed.rotationDeg) commit(() => rotateBed(bed.id, rotationDeg));
+  }
+
+  function copySelected() {
+    if (!selected) return;
+    clipboard.current = { bed: selected, plants: plants.filter((p) => p.bedId === selected.id), pastes: 0 };
+  }
+
+  function paste() {
+    const clip = clipboard.current;
+    if (!clip) return;
+    clip.pastes += 1;
+    const copy = cloneBed(clip.bed, clip.plants, PASTE_OFFSET_IN * clip.pastes, () => crypto.randomUUID(), beds);
+    commit(() => pasteBed(copy.bed, copy.plants));
+    setSelectedId(copy.bed.id);
+    pickTool('select');
+  }
+
   // Keyboard shortcuts, ignored while typing in the side panel's fields.
   const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
   const onKey = (e: KeyboardEvent) => {
@@ -298,7 +335,28 @@ export function LayoutEditor() {
       if (e.key === 'Enter') confirmPending();
       return;
     }
-    if (mod) return;
+    if (mod) {
+      // The clipboard holds one bed (and its plants); cut skips the delete confirmation since
+      // the bed can be pasted back, and undo restores it either way.
+      const k = e.key.toLowerCase();
+      if (k === 'c' && selected) {
+        e.preventDefault();
+        copySelected();
+      } else if (k === 'x' && selected) {
+        e.preventDefault();
+        copySelected();
+        commit(() => removeBed(selected.id));
+        setSelectedId(null);
+      } else if (k === 'v' && clipboard.current) {
+        e.preventDefault();
+        paste();
+      } else if (k === 'd' && selected) {
+        e.preventDefault();
+        copySelected();
+        paste();
+      }
+      return;
+    }
     if (e.key === 'Escape') {
       // First Esc abandons a half-drawn polygon; the next one leaves the drawing tool.
       if (corners.length) setCorners([]);
@@ -388,6 +446,13 @@ export function LayoutEditor() {
     setDrag({ kind: 'resize', bedId: bed.id, handle, draft: bed });
   }
 
+  function onRotateDown(e: React.PointerEvent, bed: Bed) {
+    if (e.button !== 0 || pending) return;
+    e.stopPropagation();
+    capture(e);
+    setDrag({ kind: 'rotate', bedId: bed.id, rotationDeg: bed.rotationDeg });
+  }
+
   function onCornerDown(e: React.PointerEvent, bed: Bed, index: number) {
     if (e.button !== 0 || pending) return;
     e.stopPropagation();
@@ -424,6 +489,9 @@ export function LayoutEditor() {
     } else if (drag.kind === 'corner') {
       const bed = beds.find((b) => b.id === drag.bedId);
       if (bed) setDrag({ ...drag, draft: moveCorner(bed, drag.index, p) });
+    } else if (drag.kind === 'rotate') {
+      const bed = beds.find((b) => b.id === drag.bedId);
+      if (bed) setDrag({ ...drag, rotationDeg: rotationFromPointer(bed, p) });
     }
   }
 
@@ -450,6 +518,9 @@ export function LayoutEditor() {
     } else if (d.kind === 'corner') {
       const bed = beds.find((b) => b.id === d.bedId);
       if (bed && d.draft !== bed) applyGeometry(bed, d.draft, true);
+    } else if (d.kind === 'rotate') {
+      const bed = beds.find((b) => b.id === d.bedId);
+      if (bed) setRotation(bed, d.rotationDeg);
     }
   }
 
@@ -459,6 +530,7 @@ export function LayoutEditor() {
   function displayed(bed: Bed): Bed {
     if (drag?.kind === 'move' && drag.bedId === bed.id) return { ...bed, cx: bed.cx + drag.dx, cy: bed.cy + drag.dy };
     if ((drag?.kind === 'resize' || drag?.kind === 'corner') && drag.bedId === bed.id) return drag.draft;
+    if (drag?.kind === 'rotate' && drag.bedId === bed.id) return { ...bed, rotationDeg: drag.rotationDeg };
     if (pending?.kind === 'resize' && pending.bedId === bed.id) return pending.draft;
     return bed;
   }
@@ -481,6 +553,18 @@ export function LayoutEditor() {
   const zoom = view?.zoom ?? 1;
   const px = (v: number) => v / zoom;
   const bedById = new Map(beds.map((b) => [b.id, b]));
+
+  function plantDot(p: PlantInstance): ReactNode {
+    const at = plantPoint(p, bedById);
+    if (!at) return null;
+    const hot = flagged.has(p.id);
+    return (
+      <g key={p.id} transform={`translate(${at.x} ${at.y})`} style={{ pointerEvents: 'none' }}>
+        {hot && <circle r={px(11)} style={{ fill: C.warn, fillOpacity: 0.16, stroke: C.warn, strokeWidth: px(2.5) }} />}
+        <circle r={px(5)} style={{ fill: hot ? C.warn : CROP_COLORS[p.cropId] ?? C.muted, opacity: hot ? 1 : 0.55 }} />
+      </g>
+    );
+  }
 
   function pill(key: string, at: Point, text: string, strong: boolean): ReactNode {
     const fs = px(11);
@@ -526,18 +610,22 @@ export function LayoutEditor() {
     return dimensionPills(key, b, strong);
   }
 
-  /** Width below the bottom edge and length right of the right edge, clear of the outline. */
-  function dimensionPills(key: string, g: Pick<Bed, 'cx' | 'cy' | 'widthIn' | 'heightIn'>, strong: boolean): ReactNode[] {
-    const off = px(strong ? 14 : 10);
-    const lengthText = formatLength(g.heightIn);
-    const lengthHalfW = (lengthText.length * px(11) * 0.56 + px(10)) / 2;
-    return [
-      pill(`${key}-w`, { x: g.cx, y: g.cy + g.heightIn / 2 + off }, formatLength(g.widthIn), strong),
-      pill(`${key}-h`, { x: g.cx + g.widthIn / 2 + off / 2 + lengthHalfW, y: g.cy }, lengthText, strong),
-    ];
+  /** Length beside the box's right side and width below its bottom one, turned with the bed. */
+  function dimensionPills(key: string, g: BedPlacement, strong: boolean): ReactNode[] {
+    // boxCorners runs top-left → top-right → bottom-right → bottom-left, so the closed outline's
+    // second and third edges are the right and bottom sides.
+    const [, right, bottom] = edgeLabels(boxCorners(g));
+    return [right, bottom].map((l, i) => {
+      const text = formatLength(l.lengthIn);
+      const halfW = (text.length * px(11) * 0.56 + px(10)) / 2;
+      const halfH = (px(11) * 1.6) / 2;
+      const off = labelOffset(l.outward, halfW, halfH, px(strong ? 10 : 6));
+      return pill(`${key}-${i}`, { x: l.mid.x + l.outward.x * off, y: l.mid.y + l.outward.y * off }, text, strong);
+    });
   }
 
-  const draft = drag?.kind === 'draw' ? rectFromCorners(drag.a, drag.b) : null;
+  const drawn = drag?.kind === 'draw' ? rectFromCorners(drag.a, drag.b) : null;
+  const draft = drawn ? { ...drawn, rotationDeg: 0 } : null;
   const drawBox = drag?.kind === 'draw' ? boxBetween(drag.a, drag.b) : null;
 
   const canvasCursor =
@@ -553,9 +641,9 @@ export function LayoutEditor() {
             ? 'Click to add corners · click the first corner or press Enter to close · Esc cancels'
             : `Click to place the first corner. Corners snap to ${formatLength(LAYOUT_SNAP_IN)}.`
           : selected?.shape === 'polygon'
-            ? 'Drag the bed to move it, its corners to reshape it, or its box edges to resize it.'
+            ? 'Drag the bed to move it, its corners to reshape it, its box edges to resize it, or the handle above to turn it.'
             : selected
-              ? 'Drag the bed to move it, or its edges and corners to resize it.'
+              ? 'Drag the bed to move it, its edges and corners to resize it, or the handle above to turn it.'
         : beds.length
           ? 'Click a bed to edit it, or pick a shape tool to add one.'
           : 'Pick a shape tool, then draw your first bed.';
@@ -633,48 +721,52 @@ export function LayoutEditor() {
             const b = displayed(bed);
             const isSel = bed.id === selectedId;
             return (
-              <g key={bed.id} transform={`translate(${b.cx} ${b.cy}) rotate(${b.rotationDeg})`}>
-                <BedShape
-                  bed={b}
-                  data-bed-id={bed.id}
-                  onPointerDown={(e) => onBedDown(e, bed)}
-                  onPointerEnter={() => setHoverId(bed.id)}
-                  onPointerLeave={() => setHoverId((h) => (h === bed.id ? null : h))}
-                  style={{
-                    fill: C.bed,
-                    stroke: isSel ? 'var(--color-accent)' : C.bedStroke,
-                    strokeWidth: px(isSel ? 3.5 : 1.5),
-                    strokeLinejoin: 'round',
-                    cursor: tool === 'select' && !pending && !spaceHeld ? 'move' : undefined,
-                  }}
-                />
-                {/* An ellipse or polygon doesn't fill its box, so show the box it resizes by. */}
-                {b.shape !== 'rect' && (isSel || bed.id === hoverId) && (
-                  <rect
-                    x={-b.widthIn / 2}
-                    y={-b.heightIn / 2}
-                    width={b.widthIn}
-                    height={b.heightIn}
+              // Each bed's plants are drawn with it, so a bed on top of another covers its plants too.
+              <g key={bed.id}>
+                <g transform={`translate(${b.cx} ${b.cy}) rotate(${b.rotationDeg})`}>
+                  <BedShape
+                    bed={b}
+                    data-bed-id={bed.id}
+                    onPointerDown={(e) => onBedDown(e, bed)}
+                    onPointerEnter={() => setHoverId(bed.id)}
+                    onPointerLeave={() => setHoverId((h) => (h === bed.id ? null : h))}
                     style={{
-                      fill: 'none',
-                      stroke: isSel ? 'var(--color-accent)' : C.faint,
-                      strokeWidth: px(isSel ? 2 : 1),
-                      strokeDasharray: `${px(6)} ${px(4)}`,
-                      pointerEvents: 'none',
+                      fill: C.bed,
+                      stroke: isSel ? 'var(--color-accent)' : C.bedStroke,
+                      strokeWidth: px(isSel ? 3.5 : 1.5),
+                      strokeLinejoin: 'round',
+                      cursor: tool === 'select' && !pending && !spaceHeld ? 'move' : undefined,
                     }}
                   />
-                )}
+                  {/* An ellipse or polygon doesn't fill its box, so show the box it resizes by. */}
+                  {b.shape !== 'rect' && (isSel || bed.id === hoverId) && (
+                    <rect
+                      x={-b.widthIn / 2}
+                      y={-b.heightIn / 2}
+                      width={b.widthIn}
+                      height={b.heightIn}
+                      style={{
+                        fill: 'none',
+                        stroke: isSel ? 'var(--color-accent)' : C.faint,
+                        strokeWidth: px(isSel ? 2 : 1),
+                        strokeDasharray: `${px(6)} ${px(4)}`,
+                        pointerEvents: 'none',
+                      }}
+                    />
+                  )}
+                </g>
+                {plants.filter((p) => p.bedId === bed.id).map(plantDot)}
               </g>
             );
           })}
 
           {beds.map((bed) => {
-            const b = displayed(bed);
+            const box = bedBounds(displayed(bed));
             return (
               <text
                 key={`name-${bed.id}`}
-                x={b.cx - b.widthIn / 2}
-                y={b.cy - b.heightIn / 2 - px(7)}
+                x={box.x0}
+                y={box.y0 - px(7)}
                 style={{ font: `600 ${px(12)}px Figtree`, fill: C.muted, pointerEvents: 'none' }}
               >
                 {bed.name}
@@ -682,25 +774,6 @@ export function LayoutEditor() {
             );
           })}
 
-          {plants.map((p) => {
-            const at = plantPoint(p, bedById);
-            if (!at) return null;
-            const hot = flagged.has(p.id);
-            return (
-              <g key={p.id} transform={`translate(${at.x} ${at.y})`} style={{ pointerEvents: 'none' }}>
-                {hot && (
-                  <circle
-                    r={px(11)}
-                    style={{ fill: C.warn, fillOpacity: 0.16, stroke: C.warn, strokeWidth: px(2.5) }}
-                  />
-                )}
-                <circle
-                  r={px(5)}
-                  style={{ fill: hot ? C.warn : CROP_COLORS[p.cropId] ?? C.muted, opacity: hot ? 1 : 0.55 }}
-                />
-              </g>
-            );
-          })}
 
           {beds.flatMap((bed) => {
             const isSel = bed.id === selectedId;
@@ -724,7 +797,7 @@ export function LayoutEditor() {
                     y1={h.sy ? h.sy * hh : -hh}
                     y2={h.sy ? h.sy * hh : hh}
                     onPointerDown={(e) => onHandleDown(e, selected, h)}
-                    style={{ ...hit, cursor: resizeCursor(h) }}
+                    style={{ ...hit, cursor: resizeCursor(h, b.rotationDeg) }}
                   />
                 ))}
                 {CORNER_HANDLES.map((h) => (
@@ -735,9 +808,24 @@ export function LayoutEditor() {
                     cy={h.sy * hh}
                     r={px(10)}
                     onPointerDown={(e) => onHandleDown(e, selected, h)}
-                    style={{ fill: 'transparent', cursor: resizeCursor(h) }}
+                    style={{ fill: 'transparent', cursor: resizeCursor(h, b.rotationDeg) }}
                   />
                 ))}
+                <line x1={0} y1={-hh} x2={0} y2={-hh - px(22)} style={{ stroke: 'var(--color-accent)', strokeWidth: px(2), pointerEvents: 'none' }} />
+                <g
+                  data-rotate-handle=""
+                  transform={`translate(0 ${-hh - px(34)})`}
+                  onPointerDown={(e) => onRotateDown(e, selected)}
+                  style={{ cursor: drag?.kind === 'rotate' ? 'grabbing' : 'grab' }}
+                >
+                  <title>Drag to rotate</title>
+                  <circle r={px(16)} style={{ fill: 'transparent' }} />
+                  <circle r={px(8)} style={{ fill: 'var(--color-accent)', stroke: C.ground, strokeWidth: px(2) }} />
+                  <path
+                    d={`M${-px(10)} ${-px(7)}A${px(12.5)} ${px(12.5)} 0 0 1 ${px(10)} ${-px(7)}`}
+                    style={{ fill: 'none', stroke: 'var(--color-accent)', strokeWidth: px(2.2), strokeLinecap: 'round' }}
+                  />
+                </g>
                 {b.points?.map((q, i) => (
                   <circle
                     key={`v${i}`}
@@ -752,6 +840,8 @@ export function LayoutEditor() {
               </g>
             );
           })()}
+
+          {drag?.kind === 'rotate' && selected && pill('angle', { x: selected.cx, y: selected.cy }, `${drag.rotationDeg}°`, true)}
 
           {drawBox && tool === 'ellipse' && (
             <>
@@ -952,6 +1042,7 @@ export function LayoutEditor() {
             onBack={() => setSelectedId(null)}
             onRename={(name) => renameBed(selected.id, name)}
             onSize={(w, h) => setSizeFromPanel(selected, w, h)}
+            onRotate={(deg) => setRotation(selected, deg)}
             onDelete={() => requestDelete(selected)}
           />
         ) : (
@@ -1083,6 +1174,7 @@ function BedPanel({
   onBack,
   onRename,
   onSize,
+  onRotate,
   onDelete,
 }: {
   bed: Bed;
@@ -1090,6 +1182,7 @@ function BedPanel({
   onBack: () => void;
   onRename: (name: string) => void;
   onSize: (widthIn: number, heightIn: number) => void;
+  onRotate: (deg: number) => void;
   onDelete: () => void;
 }) {
   const nameRef = useRef<HTMLInputElement>(null);
@@ -1172,17 +1265,34 @@ function BedPanel({
           <span style={{ font: '700 11px Figtree', letterSpacing: '0.08em', textTransform: 'uppercase', color: C.muted }}>
             Size
           </span>
-          <LengthRow
+          <StepperRow
             label="Width"
-            value={bed.widthIn}
-            onStep={(d) => onSize(bed.widthIn + d, bed.heightIn)}
+            display={formatLength(bed.widthIn)}
+            parse={parseLength}
             onCommit={(v) => onSize(v, bed.heightIn)}
+            down={{ icon: 'minus', title: 'Shrink width', onClick: () => onSize(bed.widthIn - LAYOUT_SNAP_IN, bed.heightIn) }}
+            up={{ icon: 'plus', title: 'Grow width', onClick: () => onSize(bed.widthIn + LAYOUT_SNAP_IN, bed.heightIn) }}
           />
-          <LengthRow
+          <StepperRow
             label="Length"
-            value={bed.heightIn}
-            onStep={(d) => onSize(bed.widthIn, bed.heightIn + d)}
+            display={formatLength(bed.heightIn)}
+            parse={parseLength}
             onCommit={(v) => onSize(bed.widthIn, v)}
+            down={{ icon: 'minus', title: 'Shrink length', onClick: () => onSize(bed.widthIn, bed.heightIn - LAYOUT_SNAP_IN) }}
+            up={{ icon: 'plus', title: 'Grow length', onClick: () => onSize(bed.widthIn, bed.heightIn + LAYOUT_SNAP_IN) }}
+          />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <span style={{ font: '700 11px Figtree', letterSpacing: '0.08em', textTransform: 'uppercase', color: C.muted }}>
+            Rotation
+          </span>
+          <StepperRow
+            label="Angle"
+            display={`${bed.rotationDeg}°`}
+            parse={parseAngle}
+            onCommit={onRotate}
+            down={{ icon: 'ccw', title: `Rotate left ${ROTATION_STEP_DEG}°`, onClick: () => onRotate(bed.rotationDeg - ROTATION_STEP_DEG) }}
+            up={{ icon: 'cw', title: `Rotate right ${ROTATION_STEP_DEG}°`, onClick: () => onRotate(bed.rotationDeg + ROTATION_STEP_DEG) }}
           />
         </div>
         <p style={{ font: '400 13px Figtree', color: C.muted }}>
@@ -1203,18 +1313,27 @@ function BedPanel({
   );
 }
 
-function LengthRow({
+/**
+ * A labelled value with step buttons either side and a field to type it in: `display` shows
+ * while the field isn't being edited; on Enter or leaving the field, `parse` reads what was
+ * typed and `onCommit` gets it (nothing happens if it doesn't parse). Esc cancels the edit.
+ */
+function StepperRow({
   label,
-  value,
-  onStep,
+  display,
+  parse,
   onCommit,
+  down,
+  up,
 }: {
   label: string;
-  value: number;
-  onStep: (delta: number) => void;
-  onCommit: (inches: number) => void;
+  display: string;
+  parse: (text: string) => number | null;
+  onCommit: (value: number) => void;
+  down: { icon: IconName; title: string; onClick: () => void };
+  up: { icon: IconName; title: string; onClick: () => void };
 }) {
-  /** What's typed while the field has focus; null when it just shows the bed's size. */
+  /** What's typed while the field has focus; null when it just shows `display`. */
   const [text, setText] = useState<string | null>(null);
   const cancelled = useRef(false);
   const stepBtn = { width: 32, height: 32, padding: 0, justifyContent: 'center', borderRadius: 999 } as const;
@@ -1222,21 +1341,21 @@ function LengthRow({
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <span style={{ flex: 1, font: '400 14px Figtree' }}>{label}</span>
-      <button className="btn btn-secondary" title={`Shrink ${label.toLowerCase()}`} aria-label={`Shrink ${label.toLowerCase()}`} onClick={() => onStep(-LAYOUT_SNAP_IN)} style={stepBtn}>
-        <Icon name="minus" size={15} />
+      <button className="btn btn-secondary" title={down.title} aria-label={down.title} onClick={down.onClick} style={stepBtn}>
+        <Icon name={down.icon} size={15} />
       </button>
       <input
         aria-label={label}
-        value={text ?? formatLength(value)}
+        value={text ?? display}
         onFocus={(e) => {
           cancelled.current = false;
-          setText(formatLength(value));
+          setText(display);
           const el = e.target;
           setTimeout(() => el.select(), 0);
         }}
         onChange={(e) => setText(e.target.value)}
         onBlur={() => {
-          const parsed = text === null || cancelled.current ? null : parseLength(text);
+          const parsed = text === null || cancelled.current ? null : parse(text);
           setText(null);
           if (parsed !== null) onCommit(parsed);
         }}
@@ -1260,8 +1379,8 @@ function LengthRow({
           borderRadius: 10,
         }}
       />
-      <button className="btn btn-secondary" title={`Grow ${label.toLowerCase()}`} aria-label={`Grow ${label.toLowerCase()}`} onClick={() => onStep(LAYOUT_SNAP_IN)} style={stepBtn}>
-        <Icon name="plus" size={15} />
+      <button className="btn btn-secondary" title={up.title} aria-label={up.title} onClick={up.onClick} style={stepBtn}>
+        <Icon name={up.icon} size={15} />
       </button>
     </div>
   );

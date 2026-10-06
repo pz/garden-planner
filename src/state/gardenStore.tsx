@@ -19,6 +19,8 @@ interface GardenContextValue {
   renameBed: (id: string, name: string) => void;
   moveBed: (id: string, dx: number, dy: number) => void;
   reshapeBed: (id: string, geometry: BedGeometry) => void;
+  rotateBed: (id: string, rotationDeg: number) => void;
+  pasteBed: (bed: Bed, plants: PlantInstance[]) => void;
   removeBed: (id: string) => void;
   restoreLayout: (beds: Bed[], plants: PlantInstance[]) => void;
   addPlants: (plants: PlantInstance[]) => void;
@@ -52,6 +54,8 @@ export function GardenProvider({ gardenId, children }: { gardenId: string; child
       renameBed: (id, name) => dispatch({ type: 'renameBed', id, name }),
       moveBed: (id, dx, dy) => dispatch({ type: 'moveBed', id, dx, dy }),
       reshapeBed: (id, geometry) => dispatch({ type: 'reshapeBed', id, geometry }),
+      rotateBed: (id, rotationDeg) => dispatch({ type: 'rotateBed', id, rotationDeg }),
+      pasteBed: (bed, plants) => dispatch({ type: 'pasteBed', bed, plants }),
       removeBed: (id) => dispatch({ type: 'removeBed', id }),
       restoreLayout: (beds, plants) => dispatch({ type: 'restoreLayout', beds, plants }),
       addPlants: (plants) => dispatch({ type: 'addPlants', plants }),

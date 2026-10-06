@@ -14,6 +14,9 @@ export const PLANTING_PX_PER_INCH = 7;
 export const MIN_ZOOM = 0.4;
 export const MAX_ZOOM = 16;
 
+/** Just enough of a bed to place it: center, size and turn. */
+export type BedPlacement = Pick<Bed, 'cx' | 'cy' | 'widthIn' | 'heightIn' | 'rotationDeg'>;
+
 /** Where and how big a bed is (and a polygon's corners), without its identity or name. */
 export type BedGeometry = Pick<Bed, 'cx' | 'cy' | 'widthIn' | 'heightIn' | 'points'>;
 
@@ -54,25 +57,30 @@ function rotate(p: Point, deg: number): Point {
 }
 
 /** A point in a bed's local frame (inches from its unrotated top-left) to garden coordinates. */
-export function bedToGarden(bed: Bed, local: Point): Point {
+export function bedToGarden(bed: BedPlacement, local: Point): Point {
   const q = rotate({ x: local.x - bed.widthIn / 2, y: local.y - bed.heightIn / 2 }, bed.rotationDeg);
   return { x: bed.cx + q.x, y: bed.cy + q.y };
 }
 
 /** Inverse of bedToGarden. */
-export function gardenToBed(bed: Bed, p: Point): Point {
+export function gardenToBed(bed: BedPlacement, p: Point): Point {
   const q = rotate({ x: p.x - bed.cx, y: p.y - bed.cy }, -bed.rotationDeg);
   return { x: q.x + bed.widthIn / 2, y: q.y + bed.heightIn / 2 };
 }
 
-/** Axis-aligned box around a bed's four corners, in garden coordinates. */
-export function bedBounds(bed: Bed): Bounds {
-  const corners = [
+/** The corners of a bed's (possibly turned) box in garden coordinates: top-left, top-right, bottom-right, bottom-left. */
+export function boxCorners(bed: BedPlacement): Point[] {
+  return [
     { x: 0, y: 0 },
     { x: bed.widthIn, y: 0 },
     { x: bed.widthIn, y: bed.heightIn },
     { x: 0, y: bed.heightIn },
   ].map((c) => bedToGarden(bed, c));
+}
+
+/** Axis-aligned box around a bed's four corners, in garden coordinates. */
+export function bedBounds(bed: BedPlacement): Bounds {
+  const corners = boxCorners(bed);
   const xs = corners.map((c) => c.x);
   const ys = corners.map((c) => c.y);
   return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
@@ -299,6 +307,79 @@ export function edgeLabels(corners: Point[], closed = true): EdgeLabel[] {
  */
 export function labelOffset(outward: Point, halfW: number, halfH: number, gap: number): number {
   return gap + Math.abs(outward.x) * halfW + Math.abs(outward.y) * halfH;
+}
+
+/** Beds turn in steps of this many degrees, by handle, buttons or typed angle. */
+export const ROTATION_STEP_DEG = 45;
+
+/** An angle in degrees brought into 0…360 (never -0 or 360). */
+export function normalizeAngle(deg: number): number {
+  return (((deg % 360) + 360) % 360) + 0;
+}
+
+/** An angle rounded to the nearest rotation step, normalized. Half-way rounds up. */
+export function snapAngle(deg: number, step = ROTATION_STEP_DEG): number {
+  return normalizeAngle(Math.round(deg / step) * step);
+}
+
+/**
+ * The bed's rotation when its rotate handle (which sits above the top edge when unturned) is
+ * dragged to the garden point `pointer`, snapped to the rotation step.
+ */
+export function rotationFromPointer(bed: Pick<Bed, 'cx' | 'cy'>, pointer: Point): number {
+  const deg = (Math.atan2(pointer.y - bed.cy, pointer.x - bed.cx) * 180) / Math.PI + 90;
+  return snapAngle(deg);
+}
+
+/** Reads a typed angle like "90", "90°" or "-45 deg". Null for anything else. */
+export function parseAngle(text: string): number | null {
+  const m = text.trim().toLowerCase().match(/^(-?\d+(?:\.\d+)?)\s*(?:°|deg|degrees?)?$/);
+  return m ? +m[1] : null;
+}
+
+/**
+ * The resize cursor for dragging `handle` on a bed turned by `rotationDeg`: the handle's
+ * direction, turned with the bed, to the nearest of the four double-arrow cursors.
+ */
+export function resizeCursor(handle: Handle, rotationDeg: number): string {
+  const cursors = ['ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize'];
+  const deg = (Math.atan2(handle.sy, handle.sx) * 180) / Math.PI + rotationDeg;
+  const half = (((deg % 180) + 180) % 180);
+  return cursors[Math.round(half / 45) % 4];
+}
+
+/** "Herbs copy", or "Herbs copy 2", "Herbs copy 3"… if that's taken. */
+export function copyName(name: string, beds: Bed[]): string {
+  const taken = new Set(beds.map((b) => b.name.trim().toLowerCase()));
+  const base = `${name} copy`;
+  if (!taken.has(base.toLowerCase())) return base;
+  let n = 2;
+  while (taken.has(`${base} ${n}`.toLowerCase())) n++;
+  return `${base} ${n}`;
+}
+
+/**
+ * A copy of `bed` and its plants, shifted by `offsetIn` on both axes, ready to add to the
+ * garden: new ids throughout from `makeId`, and its patches get new group ids (shared within
+ * the copy, never with the original) so the copy's plants never count as part of the
+ * original's patches.
+ */
+export function cloneBed(
+  bed: Bed,
+  plants: PlantInstance[],
+  offsetIn: number,
+  makeId: () => string,
+  beds: Bed[],
+): { bed: Bed; plants: PlantInstance[] } {
+  const copy: Bed = { ...bed, id: makeId(), name: copyName(bed.name, beds), cx: bed.cx + offsetIn, cy: bed.cy + offsetIn };
+  const groupIds = new Map<string, string>();
+  const copied = plants
+    .filter((p) => p.bedId === bed.id)
+    .map((p) => {
+      if (!groupIds.has(p.groupId)) groupIds.set(p.groupId, makeId());
+      return { ...p, id: makeId(), bedId: copy.id, groupId: groupIds.get(p.groupId)! };
+    });
+  return { bed: copy, plants: copied };
 }
 
 /** "Tomato ×2, Basil ×1": how many of each crop, in order of first appearance. */
