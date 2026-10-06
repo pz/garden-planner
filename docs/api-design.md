@@ -167,8 +167,9 @@ New `crops.json` fields, hand-curated and never LLM-generated, with data-integri
 2. Add a `GardenApi` interface and `LocalGardenApi`; `gardenStore.tsx` calls it instead of `dispatch`.
 3. Move the UI's commits onto commands. Live ghosts and drags keep using the pure functions.
 4. Refactor `planProblem` into the shared `validatePlan`, and add the `northDeg` and `dismissedWarnings` fields to the types and `parsePlan`.
-5. Add the crop reference data, and the shade and companion warnings.
-6. Later: HTTP and MCP adapters, generated from the OpenAPI and JSON Schema source of truth.
+5. **Mock API for client tests.** In the same PR, add a mock `GardenApi` (scripted responses, injectable errors and warnings, recorded calls) so the client can be tested without the real command layer, and Playwright tests that run the UI against it (e.g. an `outside_bed` error shows up as the right message; introduced warnings render; a stale `rev` is handled). The store takes its `GardenApi` by injection, with the real local implementation as the default.
+6. Add the crop reference data, and the shade and companion warnings.
+7. Later: HTTP and MCP adapters, generated from the OpenAPI and JSON Schema source of truth.
 
 ## 8. Decisions
 

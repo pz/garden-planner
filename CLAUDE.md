@@ -8,7 +8,8 @@ A client-only React + TypeScript (Vite) app for planning a vegetable garden bed 
 - `npm run build` — production build
 - `npm run lint` — oxlint
 - `npm run test` — unit tests (vitest)
-- For any change to interaction/rendering code (drag, placement, canvas), verify it in a real browser (e.g. Playwright against `npm run dev`) rather than trusting the build alone — this is a gesture-heavy canvas app where type-correct code can still be visually wrong.
+- `npm run test:e2e` — browser tests (Playwright, `e2e/`); run these for any change to interaction, rendering or the state layer, and add a test there for new user-visible behavior. Selectors: prefer roles/labels/text; `data-bed-id` and `data-plant-id` are available for geometry.
+- For any change to interaction/rendering code (drag, placement, canvas), verify it in a real browser rather than trusting the build alone — this is a gesture-heavy canvas app where type-correct code can still be visually wrong. `npm run test:e2e` covers the main flows; also look at the change itself (screenshots, per the PR section below).
 
 ## Architecture: keep logic out of the app
 
