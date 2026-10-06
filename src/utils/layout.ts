@@ -78,9 +78,59 @@ export interface SnapOptions {
 
 /** Lengths stick to whole feet (a stronger pull) and half feet; between them they move by the inch. */
 const LENGTH_DETENT_PX = [
-  { step: 12, px: 8 },
-  { step: 6, px: 5 },
+  { step: 12, px: 12 },
+  { step: 6, px: 7 },
 ];
+
+/** How close (screen px) an edge must come to another bed's edge or center to line up with it. */
+export const ALIGN_PX = 14;
+
+/** A line to draw where an edit has snapped: a vertical line at x = `at`, or a horizontal one at y = `at`. */
+export interface Guide {
+  axis: 'x' | 'y';
+  at: number;
+}
+
+/** Positions along each garden axis that edits line up with: other beds' edges and centers. */
+export interface AlignTargets {
+  xs: number[];
+  ys: number[];
+}
+
+/** Edges and centers of `beds`, as alignment targets. */
+export function alignTargets(beds: Bed[]): AlignTargets {
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (const b of beds) {
+    const box = bedBounds(b);
+    xs.push(box.x0, (box.x0 + box.x1) / 2, box.x1);
+    ys.push(box.y0, (box.y0 + box.y1) / 2, box.y1);
+  }
+  return { xs, ys };
+}
+
+/**
+ * A garden coordinate as an edit drops it: it lines up with the nearest of `targets` (other
+ * beds) if one is close, else sticks to a foot or half-foot grid mark, else goes by the inch.
+ * `guide` is the position to draw a guide line at when it snapped to something, and `kind`
+ * which sort of thing it was.
+ */
+export function snapCoordinate(
+  v: number,
+  targets: number[],
+  { zoom, free = false }: SnapOptions = DEFAULT_SNAP,
+): { value: number; guide: number | null; kind: 'target' | 'grid' | null } {
+  if (!free) {
+    let near: number | null = null;
+    for (const t of targets) {
+      if (Math.abs(t - v) <= ALIGN_PX / zoom && (near === null || Math.abs(t - v) < Math.abs(near - v))) near = t;
+    }
+    if (near !== null) return { value: near, guide: near, kind: 'target' };
+    const mark = detentNear(v, lengthDetents(zoom));
+    if (mark !== null) return { value: mark + 0, guide: mark + 0, kind: 'grid' };
+  }
+  return { value: Math.round(v) + 0, guide: null, kind: null };
+}
 
 /** The detents for lengths at `zoom`. */
 export function lengthDetents(zoom: number): Detent[] {
@@ -101,22 +151,55 @@ export function snapLength(v: number, { zoom, free = false }: SnapOptions = DEFA
 
 /**
  * How far to shift a bed, which was dragged by `delta` inches, so that one of its `edges`
- * (coordinates before the move) lands on a foot or half-foot mark if any is close; otherwise it
- * moves by the whole inch. Of several edges in reach, the one needing the smallest nudge wins.
+ * (coordinates before the move) lines up with a target or lands on a foot mark if any is close
+ * (see snapCoordinate); otherwise it moves by the whole inch. Of several edges in reach, the
+ * one needing the smallest nudge wins. `guide` is where to draw a guide line, if it snapped.
  */
-export function snapShift(edges: number[], delta: number, { zoom, free = false }: SnapOptions = DEFAULT_SNAP): number {
-  if (!free) {
-    const detents = lengthDetents(zoom);
-    let best: number | null = null;
-    for (const e of edges) {
-      const target = detentNear(e + delta, detents);
-      if (target === null) continue;
-      const shift = target - e;
-      if (best === null || Math.abs(shift - delta) < Math.abs(best - delta)) best = shift;
-    }
-    if (best !== null) return best + 0;
+export function shiftAxis(
+  edges: number[],
+  delta: number,
+  targets: number[] = [],
+  snap: SnapOptions = DEFAULT_SNAP,
+): { shift: number; guide: number | null } {
+  let best: { shift: number; guide: number; aligned: boolean } | null = null;
+  for (const e of edges) {
+    const { value, guide, kind } = snapCoordinate(e + delta, targets, snap);
+    if (guide === null) continue;
+    const shift = value - e;
+    const aligned = kind === 'target';
+    // Lining up with another bed beats a grid mark; otherwise the smaller nudge wins.
+    const better =
+      best === null ||
+      (aligned && !best.aligned) ||
+      (aligned === best.aligned && Math.abs(shift - delta) < Math.abs(best.shift - delta));
+    if (better) best = { shift, guide, aligned };
   }
-  return Math.round(delta) + 0;
+  return best ? { shift: best.shift + 0, guide: best.guide } : { shift: Math.round(delta) + 0, guide: null };
+}
+
+/** shiftAxis without the guide, for edits with no use for one. */
+export function snapShift(edges: number[], delta: number, snap: SnapOptions = DEFAULT_SNAP, targets: number[] = []): number {
+  return shiftAxis(edges, delta, targets, snap).shift;
+}
+
+/**
+ * Dragging a bed by (dx, dy) from `bed`'s place: how far it actually moves, with its box's sides
+ * (and center) snapping to other beds' (`targets`) and to the grid, and the guide lines to draw.
+ */
+export function moveSnapped(
+  bed: Bed,
+  dx: number,
+  dy: number,
+  targets: AlignTargets,
+  snap: SnapOptions = DEFAULT_SNAP,
+): { dx: number; dy: number; guides: Guide[] } {
+  const box = bedBounds(bed);
+  const x = shiftAxis([box.x0, (box.x0 + box.x1) / 2, box.x1], dx, targets.xs, snap);
+  const y = shiftAxis([box.y0, (box.y0 + box.y1) / 2, box.y1], dy, targets.ys, snap);
+  const guides: Guide[] = [];
+  if (x.guide !== null) guides.push({ axis: 'x', at: x.guide });
+  if (y.guide !== null) guides.push({ axis: 'y', at: y.guide });
+  return { dx: x.shift, dy: y.shift, guides };
 }
 
 /** Angles stick near every 45° (strongly) and every 15° (lightly); between them they turn by the degree. */
@@ -266,22 +349,69 @@ export function resizeBedTo(bed: Bed, widthIn: number, heightIn: number, handle:
 }
 
 /**
- * The bed resized by dragging `handle` to the garden point `pointer`: each side the handle
- * moves is measured from the fixed opposite side, goes by the inch and sticks to foot marks
- * (see snapLength), and never shrinks below MIN_BED_SIDE_IN, even if the pointer crosses over
- * to the other side.
+ * Which garden axis a bed's local `axis` runs along when the bed is turned a multiple of 90°,
+ * and whether it points the same way (+1) or the opposite way (−1); null for any other angle.
  */
-export function resizeFromPointer(bed: Bed, handle: Handle, pointer: Point, snap: SnapOptions = DEFAULT_SNAP): Bed {
+function gardenAxisOf(rotationDeg: number, axis: 'x' | 'y'): { garden: 'x' | 'y'; sign: 1 | -1 } | null {
+  if (rotationDeg % 90 !== 0) return null;
+  const r = (rotationDeg * Math.PI) / 180;
+  const v = axis === 'x' ? { x: Math.cos(r), y: Math.sin(r) } : { x: -Math.sin(r), y: Math.cos(r) };
+  const garden = Math.abs(v.x) > 0.5 ? 'x' : 'y';
+  return { garden, sign: v[garden] > 0 ? 1 : -1 };
+}
+
+/**
+ * The bed resized by dragging `handle` to the garden point `pointer`: each side the handle
+ * moves is measured from the fixed opposite side and never shrinks below MIN_BED_SIDE_IN, even
+ * if the pointer crosses over to the other side. The moving edge goes by the inch and sticks
+ * to foot marks of the size (see snapLength); on a bed turned a multiple of 90° it also lines
+ * up with other beds (`targets`) and the garden's own grid, whichever is closest, and `guides`
+ * says where to draw lines for that.
+ */
+export function resizeSnapped(
+  bed: Bed,
+  handle: Handle,
+  pointer: Point,
+  targets: AlignTargets = { xs: [], ys: [] },
+  snap: SnapOptions = DEFAULT_SNAP,
+): { bed: Bed; guides: Guide[] } {
+  const guides: Guide[] = [];
   const local = gardenToBed(bed, pointer);
-  const width =
-    handle.sx === 0
-      ? bed.widthIn
-      : Math.max(MIN_BED_SIDE_IN, snapLength(handle.sx === 1 ? local.x : bed.widthIn - local.x, snap));
-  const height =
-    handle.sy === 0
-      ? bed.heightIn
-      : Math.max(MIN_BED_SIDE_IN, snapLength(handle.sy === 1 ? local.y : bed.heightIn - local.y, snap));
-  return resizeBedTo(bed, width, height, handle);
+  /** The new side length along one local axis for the pointer, snapped. */
+  function side(axis: 'x' | 'y'): number {
+    const s = axis === 'x' ? handle.sx : handle.sy;
+    const size = axis === 'x' ? bed.widthIn : bed.heightIn;
+    if (s === 0) return size;
+    const raw = s === 1 ? local[axis] : size - local[axis];
+    let best = { length: snapLength(raw, snap), distance: Infinity };
+    // Closer to the pointer than the size's own foot marks, an aligned edge wins.
+    if (best.length !== Math.round(raw)) best.distance = Math.abs(best.length - raw);
+    const g = gardenAxisOf(bed.rotationDeg, axis);
+    if (g && !snap.free) {
+      // The fixed side's position along the garden axis, and how a longer side moves the other one.
+      const fixedLocal = { x: axis === 'x' ? (s === 1 ? 0 : size) : local.x, y: axis === 'y' ? (s === 1 ? 0 : size) : local.y };
+      const fixed = bedToGarden(bed, fixedLocal)[g.garden];
+      const direction = g.sign * s;
+      const { value, guide, kind } = snapCoordinate(pointer[g.garden], targets[g.garden === 'x' ? 'xs' : 'ys'], snap);
+      if (guide !== null) {
+        const length = (value - fixed) * direction;
+        const distance = Math.abs(length - raw);
+        if (length >= MIN_BED_SIDE_IN && (kind === 'target' || distance <= best.distance)) {
+          best = { length, distance };
+          guides.push({ axis: g.garden, at: guide });
+        }
+      }
+    }
+    return Math.max(MIN_BED_SIDE_IN, best.length);
+  }
+  const width = side('x');
+  const height = side('y');
+  return { bed: resizeBedTo(bed, width, height, handle), guides };
+}
+
+/** resizeSnapped without the guides, for callers with no use for them. */
+export function resizeFromPointer(bed: Bed, handle: Handle, pointer: Point, snap: SnapOptions = DEFAULT_SNAP): Bed {
+  return resizeSnapped(bed, handle, pointer, undefined, snap).bed;
 }
 
 /**

@@ -35,10 +35,12 @@ import {
   relocatePlants,
   resizeBedTo,
   resizeCursor,
-  resizeFromPointer,
+  resizeSnapped,
   magneticAngle,
   rotationFromPointer,
-  snapShift,
+  alignTargets,
+  moveSnapped,
+  type Guide,
   stepAngle,
   type SnapOptions,
   screenToGarden,
@@ -80,8 +82,8 @@ type Tool = 'select' | 'rect' | 'ellipse' | 'polygon';
 
 type Drag =
   | { kind: 'pan'; startX: number; startY: number; view0: View; moved: boolean; deselectOnClick: boolean }
-  | { kind: 'move'; bedId: string; start: Point; dx: number; dy: number }
-  | { kind: 'resize'; bedId: string; handle: Handle; draft: Bed }
+  | { kind: 'move'; bedId: string; start: Point; dx: number; dy: number; guides: Guide[] }
+  | { kind: 'resize'; bedId: string; handle: Handle; draft: Bed; guides: Guide[] }
   | { kind: 'corner'; bedId: string; index: number; draft: Bed }
   | { kind: 'rotate'; bedId: string; rotationDeg: number }
   | { kind: 'draw'; a: Point; b: Point };
@@ -460,7 +462,7 @@ export function LayoutEditor() {
     if (!p) return;
     capture(e);
     setSelectedId(bed.id);
-    setDrag({ kind: 'move', bedId: bed.id, start: p, dx: 0, dy: 0 });
+    setDrag({ kind: 'move', bedId: bed.id, start: p, dx: 0, dy: 0, guides: [] });
   }
 
   /** Names are editable by clicking them, with the select tool. */
@@ -482,7 +484,7 @@ export function LayoutEditor() {
     if (e.button !== 0 || pending) return;
     e.stopPropagation();
     capture(e);
-    setDrag({ kind: 'resize', bedId: bed.id, handle, draft: bed });
+    setDrag({ kind: 'resize', bedId: bed.id, handle, draft: bed, guides: [] });
   }
 
   function onRotateDown(e: React.PointerEvent, bed: Bed) {
@@ -523,17 +525,20 @@ export function LayoutEditor() {
     } else if (drag.kind === 'move') {
       const bed = beds.find((b) => b.id === drag.bedId);
       if (!bed) return;
-      // Moves go by the inch, and a side of the bed sticks to a foot mark when it comes close.
-      const box = bedBounds(bed);
-      const snap = snapOf(e);
-      setDrag({
-        ...drag,
-        dx: snapShift([box.x0, box.x1], p.x - drag.start.x, snap),
-        dy: snapShift([box.y0, box.y1], p.y - drag.start.y, snap),
-      });
+      // Moves go by the inch; the bed's sides and center line up with other beds and the grid.
+      const moved = moveSnapped(
+        bed,
+        p.x - drag.start.x,
+        p.y - drag.start.y,
+        alignTargets(beds.filter((b) => b.id !== bed.id)),
+        snapOf(e),
+      );
+      setDrag({ ...drag, dx: moved.dx, dy: moved.dy, guides: moved.guides });
     } else if (drag.kind === 'resize') {
       const bed = beds.find((b) => b.id === drag.bedId);
-      if (bed) setDrag({ ...drag, draft: resizeFromPointer(bed, drag.handle, p, snapOf(e)) });
+      if (!bed) return;
+      const resized = resizeSnapped(bed, drag.handle, p, alignTargets(beds.filter((b) => b.id !== bed.id)), snapOf(e));
+      setDrag({ ...drag, draft: resized.bed, guides: resized.guides });
     } else if (drag.kind === 'corner') {
       const bed = beds.find((b) => b.id === drag.bedId);
       if (bed) setDrag({ ...drag, draft: moveCorner(bed, drag.index, p, snapOf(e)) });
@@ -921,6 +926,19 @@ export function LayoutEditor() {
               <circle cx={drag.a.x} cy={drag.a.y} r={px(4.5)} style={{ fill: 'var(--color-accent)' }} />
             </g>
           )}
+          {(drag?.kind === 'move' || drag?.kind === 'resize') &&
+            drag.guides.map((g) => (
+              // Where the edit has snapped to: another bed's edge or center, or a foot mark.
+              <line
+                key={`${g.axis}${g.at}`}
+                data-guide={g.axis}
+                x1={g.axis === 'x' ? g.at : view.x}
+                x2={g.axis === 'x' ? g.at : view.x + size.w / zoom}
+                y1={g.axis === 'y' ? g.at : view.y}
+                y2={g.axis === 'y' ? g.at : view.y + size.h / zoom}
+                style={{ stroke: 'var(--color-accent)', strokeWidth: px(1.5), strokeDasharray: `${px(5)} ${px(4)}`, pointerEvents: 'none' }}
+              />
+            ))}
           {drag?.kind === 'rotate' && selected && pill('angle', { x: selected.cx, y: selected.cy }, `${drag.rotationDeg}°`, true, drag.rotationDeg % 45 === 0)}
 
           {drawBox && tool === 'ellipse' && (

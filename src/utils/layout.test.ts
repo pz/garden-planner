@@ -20,6 +20,10 @@ import {
   detentNear,
   snapLength,
   snapShift,
+  snapCoordinate,
+  alignTargets,
+  moveSnapped,
+  resizeSnapped,
   closesPolygon,
   edgeLabels,
   geometryOf,
@@ -184,9 +188,9 @@ describe('resizeFromPointer', () => {
   });
 
   it('sticks to a foot mark when the pointer is close, but not when it is not', () => {
-    // At 7 px/in a foot mark pulls from 8px ≈ 1.14″ away.
-    expect(resizeFromPointer(bed(), { sx: 1, sy: 0 }, { x: 108.9, y: 0 }).widthIn).toBe(108);
-    expect(resizeFromPointer(bed(), { sx: 1, sy: 0 }, { x: 109.3, y: 0 }).widthIn).toBe(109);
+    // At 7 px/in a foot mark pulls from 12px ≈ 1.7″ away.
+    expect(resizeFromPointer(bed(), { sx: 1, sy: 0 }, { x: 109.6, y: 0 }).widthIn).toBe(108);
+    expect(resizeFromPointer(bed(), { sx: 1, sy: 0 }, { x: 110, y: 0 }).widthIn).toBe(110);
   });
 
   it('pulls from the same screen distance at any zoom, and not at all when free', () => {
@@ -873,5 +877,109 @@ describe('pinchView', () => {
   });
   it('holds still if the fingers started on the same point', () => {
     expect(pinchView(start, { x: 5, y: 5 }, { x: 5, y: 5 }, { x: 5, y: 5 }, { x: 50, y: 5 }).zoom).toBe(7);
+  });
+});
+
+describe('snapCoordinate', () => {
+  const snap = { zoom: 7 };
+  it('lines up with a target when close, ahead of the grid', () => {
+    // 100.5 is 0.5 from the target and 4.5 from the 96 mark.
+    expect(snapCoordinate(100.5, [101], snap)).toEqual({ value: 101, guide: 101, kind: 'target' });
+  });
+  it('takes the nearest of several targets', () => {
+    expect(snapCoordinate(50, [48.5, 51.2, 90], snap).value).toBe(51.2);
+  });
+  it('falls back to a foot mark, then to the inch', () => {
+    expect(snapCoordinate(97.2, [200], snap)).toEqual({ value: 96, guide: 96, kind: 'grid' });
+    expect(snapCoordinate(100.2, [200], snap)).toEqual({ value: 100, guide: null, kind: null });
+  });
+  it('is inclusive at the pull distance (14px for targets) and not beyond it', () => {
+    expect(snapCoordinate(52, [50], snap).guide).toBe(50); // exactly 2″ = 14px at 7 px/in
+    expect(snapCoordinate(52.01, [50], snap).guide).toBeNull();
+  });
+  it('does nothing but round when free', () => {
+    expect(snapCoordinate(50.4, [50], { zoom: 7, free: true })).toEqual({ value: 50, guide: null, kind: null });
+  });
+});
+
+describe('alignTargets', () => {
+  it('collects the edges and centers of the beds, in garden coordinates', () => {
+    const t = alignTargets([bed({ cx: 48, cy: 24 }), bed({ id: 'b', cx: 200, cy: 100, widthIn: 40, heightIn: 20 })]);
+    expect(t.xs).toEqual([0, 48, 96, 180, 200, 220]);
+    expect(t.ys).toEqual([0, 24, 48, 90, 100, 110]);
+  });
+});
+
+describe('moveSnapped', () => {
+  const none = { xs: [], ys: [] };
+  it('slides a side of the bed onto another bed\'s edge when close, and reports a guide', () => {
+    // The bed spans x 0…96; moving by 103 puts its right side at 199, 1″ short of a bed edge at 200.
+    const r = moveSnapped(bed(), 103, 0.4, { xs: [200], ys: [] });
+    expect(r.dx).toBe(104);
+    expect(r.dy).toBe(0);
+    expect(r.guides).toContainEqual({ axis: 'x', at: 200 });
+  });
+  it('lines the center up too', () => {
+    const r = moveSnapped(bed(), 51.5, 0, { xs: [100], ys: [] }); // center 48 → 99.5, target 100
+    expect(r.dx).toBe(52);
+  });
+  it('sticks to the visible 1 ft grid, and moves by the inch elsewhere', () => {
+    const near = moveSnapped(bed(), 12.9, 30.5, none); // left side → 12.9 (the 12 mark is 0.9 away)
+    expect(near.dx).toBe(12);
+    expect(near.guides).toContainEqual({ axis: 'x', at: 12 });
+  });
+  it('adds no guide when nothing is in reach', () => {
+    // Every edge and center of this bed ends up more than a pull's distance from a 6″ mark.
+    const r = moveSnapped(bed({ widthIn: 97, heightIn: 49, cx: 48.5, cy: 24.5 }), 3, 3, none);
+    expect(r).toEqual({ dx: 3, dy: 3, guides: [] });
+  });
+  it('does not snap at all when free', () => {
+    const r = moveSnapped(bed(), 12.4, 0, { xs: [12], ys: [] }, { zoom: 7, free: true });
+    expect(r).toEqual({ dx: 12, dy: 0, guides: [] });
+  });
+});
+
+describe('resizeSnapped', () => {
+  it('lines the moving edge up with another bed and reports a guide', () => {
+    // Bed spans x 0…96. The pointer is 1″ short of another bed's edge at 140.
+    const r = resizeSnapped(bed(), { sx: 1, sy: 0 }, { x: 139, y: 0 }, { xs: [140], ys: [] });
+    expect(r.bed.widthIn).toBe(140);
+    expect(r.guides).toEqual([{ axis: 'x', at: 140 }]);
+  });
+  it('measures from the fixed side when the left edge moves', () => {
+    // Left edge dragged to x = -40 → width 136, aligned with a bed edge at -40.5.
+    const r = resizeSnapped(bed(), { sx: -1, sy: 0 }, { x: -40.2, y: 24 }, { xs: [-40.5], ys: [] });
+    expect(r.bed.widthIn).toBe(136.5);
+    expect(bedBounds(r.bed).x0).toBe(-40.5);
+    expect(r.guides).toEqual([{ axis: 'x', at: -40.5 }]);
+  });
+  it('aligns a vertical resize to the y targets', () => {
+    const r = resizeSnapped(bed(), { sx: 0, sy: 1 }, { x: 10, y: 79.5 }, { xs: [], ys: [80] });
+    expect(r.bed.heightIn).toBe(80);
+    expect(r.guides).toEqual([{ axis: 'y', at: 80 }]);
+  });
+  it('works through a bed turned 90°', () => {
+    // Turned a quarter, the bed\'s local right edge points down the garden.
+    const b = bed({ rotationDeg: 90 });
+    const bottom = bedBounds(b).y1;
+    const r = resizeSnapped(b, { sx: 1, sy: 0 }, { x: b.cx, y: bottom + 39 }, { xs: [], ys: [bottom + 40] });
+    expect(r.bed.widthIn).toBe(136);
+    expect(r.guides).toEqual([{ axis: 'y', at: bottom + 40 }]);
+  });
+  it('only uses the size marks on a bed turned any other angle', () => {
+    const b = bed({ rotationDeg: 45 });
+    const r = resizeSnapped(b, { sx: 1, sy: 0 }, bedToGarden(b, { x: 109.6, y: 24 }), { xs: [1000], ys: [1000] });
+    expect(r.bed.widthIn).toBe(108);
+    expect(r.guides).toEqual([]);
+  });
+  it('still never shrinks below the minimum, even next to an aligned edge', () => {
+    const r = resizeSnapped(bed(), { sx: 1, sy: 0 }, { x: 5, y: 0 }, { xs: [5], ys: [] });
+    expect(r.bed.widthIn).toBe(MIN_BED_SIDE_IN);
+    expect(r.guides).toEqual([]);
+  });
+  it('ignores targets when free', () => {
+    const r = resizeSnapped(bed(), { sx: 1, sy: 0 }, { x: 139, y: 0 }, { xs: [140], ys: [] }, { zoom: 7, free: true });
+    expect(r.bed.widthIn).toBe(139);
+    expect(r.guides).toEqual([]);
   });
 });
