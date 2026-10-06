@@ -135,6 +135,7 @@ export function PlantToken({
 
   return (
     <div
+      data-plant-id={plant.id}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}

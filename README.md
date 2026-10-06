@@ -14,8 +14,11 @@ plant and harvest for your USDA zone. There is no backend yet; each garden is sa
 | `npx tsc -b --noEmit` | Typecheck only |
 | `npm run lint` | [oxlint](https://oxc.rs) |
 | `npm run test` / `npm run test:watch` | Unit tests ([vitest](https://vitest.dev), plain Node) |
+| `npm run test:e2e` | Browser tests ([Playwright](https://playwright.dev), `e2e/`); starts the dev server itself |
 
-CI (`.github/workflows/ci.yml`) runs typecheck, lint and tests on every PR.
+CI (`.github/workflows/ci.yml`) runs typecheck, lint, unit tests and the browser tests on every PR.
+First time running the browser tests locally: `npx playwright install chromium` (or set
+`PW_CHROMIUM_PATH` to an existing Chromium).
 
 ## Code organization
 
@@ -85,6 +88,12 @@ Tests are colocated (`foo.ts` → `foo.test.ts`) and run in plain Node. Everythi
 `core` and `data` is testable headless, which is also what lets the engine be driven
 without a UI (scripted or randomized simulations). See [`CLAUDE.md`](CLAUDE.md) for the
 testing conventions and the pre-push checklist.
+
+`e2e/` holds the Playwright suite: a small set of real-browser tests of what users do (plant,
+drag, remove and undo, spacing warnings, the layout editor, export/load, first-run setup). They
+seed a garden into `localStorage`, assert on what the app saves as well as on what it shows,
+block all non-local network requests, and fail on any uncaught page error. They exist so the
+state layer can be refactored (e.g. onto `api`) without silently changing how the app behaves.
 
 ## Docs
 
