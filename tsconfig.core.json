@@ -1,0 +1,24 @@
+{
+  // Typechecks the headless layers (data, core, and later api) with no DOM lib and no ambient
+  // browser/Vite types, so any use of `window`, `document`, `localStorage`, etc. fails here
+  // even though tsconfig.app.json (which sees the DOM) would accept it.
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.core.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023"],
+    "module": "esnext",
+    "types": [],
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["src/types.ts", "src/data", "src/core"]
+}

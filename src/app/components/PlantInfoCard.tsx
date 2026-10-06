@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import type { PlantInstance } from '../types';
-import { getCrop } from '../data/crops';
-import { getTip } from '../data/tips';
-import { getZone } from '../data/zones';
+import type { PlantInstance } from '../../types';
+import { getCrop } from '../../data/crops';
+import { getTip } from '../../data/tips';
+import { getZone } from '../../data/zones';
 import { useDismissedTip } from '../state/dismissedTipsStore';
-import { formatDate, scheduleFor } from '../utils/dates';
+import { formatDate, scheduleFor } from '../../core/dates';
 import { CROP_COLORS, PlantMark } from './PlantMark';
 
 export function PlantInfoCard({

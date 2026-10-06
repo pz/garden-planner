@@ -2,57 +2,11 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useGarden } from '../state/gardenStore';
 import { popSnapshot, pushSnapshot, type LayoutSnapshot } from '../state/layoutHistory';
 import { storageKey } from '../state/storageNamespace';
-import type { Bed, PlantInstance } from '../types';
-import type { Point } from '../utils/geometry';
-import {
-  LAYOUT_SNAP_IN,
-  ROTATION_STEP_DEG,
-  bedToGarden,
-  boxCorners,
-  cloneBed,
-  boxBetween,
-  closesPolygon,
-  drawnCornerRadius,
-  edgeLabels,
-  fitView,
-  gardenToScreen,
-  formatLength,
-  gardenBounds,
-  geometryOf,
-  isDrag,
-  labelAnchor,
-  labelOffset,
-  moveCorner,
-  nextBedName,
-  normalizeCornerRadius,
-  normalizeSide,
-  panBy,
-  parseAngle,
-  parseLength,
-  plantSummary,
-  polygonFromCorners,
-  rectFromCorners,
-  relocatePlants,
-  resizeBedTo,
-  resizeCursor,
-  resizeSnapped,
-  magneticAngle,
-  rotationFromPointer,
-  alignTargets,
-  moveSnapped,
-  type Guide,
-  stepAngle,
-  type SnapOptions,
-  screenToGarden,
-  snapTo,
-  wheelZoomFactor,
-  zoomAt,
-  zoomPercent,
-  type BedPlacement,
-  type Handle,
-  type Insets,
-  type View,
-} from '../utils/layout';
+import type { Bed, PlantInstance } from '../../types';
+import type { Point } from '../../core/geometry';
+import { LAYOUT_SNAP_IN, boxBetween, closesPolygon, edgeLabels, formatLength, labelAnchor, labelOffset, moveCorner, parseAngle, parseLength, rectFromCorners, resizeCursor, resizeSnapped, magneticAngle, rotationFromPointer, alignTargets, moveSnapped, type Guide, stepAngle, type SnapOptions, snapTo } from '../layoutInteraction';
+import { ROTATION_STEP_DEG, bedToGarden, boxCorners, cloneBed, drawnCornerRadius, gardenBounds, geometryOf, nextBedName, normalizeCornerRadius, normalizeSide, plantSummary, polygonFromCorners, relocatePlants, resizeBedTo, type BedPlacement, type Handle } from '../../core/layout';
+import { fitView, gardenToScreen, isDrag, panBy, screenToGarden, wheelZoomFactor, zoomAt, zoomPercent, type Insets, type View } from '../viewport';
 import { CROP_COLORS } from './PlantMark';
 import { Icon, type IconName } from './Icon';
 

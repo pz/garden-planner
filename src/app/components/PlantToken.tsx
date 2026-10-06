@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react';
-import type { PlantInstance } from '../types';
-import { getCrop } from '../data/crops';
+import type { PlantInstance } from '../../types';
+import { getCrop } from '../../data/crops';
 import { PlantMark, CROP_COLORS } from './PlantMark';
-import { isContextPress, isReleasedMove } from '../utils/pointer';
+import { isContextPress, isReleasedMove } from '../pointer';
 
 export const LONG_PRESS_MS = 450;
 export const MOVE_THRESHOLD_PX = 6;

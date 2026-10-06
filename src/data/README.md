@@ -17,7 +17,7 @@ this doc explains what each field *means*.
 | `id` | string | Stable identifier. Referenced by `PlantInstance.cropId` in saved plans — **never rename or remove an id**; add a new crop instead, or a garden someone already planted will fail to look it up (`getCrop` throws on an unknown id). |
 | `name` | string | Display name. |
 | `family` | one of `"fruiting" \| "brassica" \| "root" \| "allium" \| "legume" \| "leafy" \| "cucurbit" \| "herb"` | Drives the flat family glyph in `PlantMark`. Must be one of `CropFamily` in `types.ts`. |
-| `spacingIn` | number > 0 | Minimum center-to-center spacing between plants of this crop, in inches. Used for overlap/fit checks (`utils/spacing.ts`). |
+| `spacingIn` | number > 0 | Minimum center-to-center spacing between plants of this crop, in inches. Used for overlap/fit checks (`core/spacing.ts`). |
 | `defaultPatch` | boolean | Whether this crop is normally grown as a multi-plant patch (affects UI defaults, not scheduling). |
 | `sowMethod` | `"transplant" \| "direct-sow"` | Which planting-schedule fields below apply — see next row. |
 | `startIndoorsWeeksBeforeLastFrost` | number (weeks) | **Transplant crops only.** Weeks before the zone's last frost to start seeds indoors. |
@@ -27,7 +27,7 @@ this doc explains what each field *means*.
 
 A `transplant` crop must set `startIndoorsWeeksBeforeLastFrost` (and normally
 `transplantWeeksAfterLastFrost`); a `direct-sow` crop must set
-`directSowWeeksRelativeToLastFrost`. `utils/dates.ts#scheduleFor` defaults a
+`directSowWeeksRelativeToLastFrost`. `core/dates.ts#scheduleFor` defaults a
 missing offset to `0` rather than failing, but omitting it is a data bug, not
 a supported shorthand — `crops.test.ts` asserts every crop sets the offset its
 `sowMethod` requires, so a bad hand-edit fails a test rather than shipping
@@ -62,7 +62,7 @@ test. The UI tolerates a missing tip (`getTip` returns `undefined` and the card
 just omits it), but that's a fallback, not a supported state.
 
 Users can dismiss a tip from the info card; that preference is stored per crop
-in `localStorage` (see `src/state/dismissedTips.ts`), shared across all gardens,
+in `localStorage` (see `src/app/state/dismissedTips.ts`), shared across all gardens,
 and reversible via the card's "Show growing tip" link.
 
 ## `zones.ts`
@@ -80,15 +80,15 @@ are consecutive and the colors distinct.
 
 USDA plant hardiness zone polygons for the contiguous US, used by the setup
 screen's map both to draw the zone overlay and to look up the zone under the
-pin (`utils/zoneMap.ts`). Outside this coverage the app falls back to the rough
-latitude estimate in `utils/geoZone.ts`.
+pin (`core/zoneMap.ts`). Outside this coverage the app falls back to the rough
+latitude estimate in `core/geoZone.ts`.
 
 - **Source:** [Open Plant Hardiness Zones (OPHZ)](https://github.com/kgjenkins/ophz)
   `topojson/ophz.topojson`, derived from the 2012 USDA map and released under the
   [ODC Public Domain Dedication and License](https://opendatacommons.org/licenses/pddl/1-0/).
 - **Processing:** half-zones merged into whole zones (`8a`/`8b` → `8`), zone 11
   folded into 10 (the app's warmest zone), then heavily simplified so the file is
-  ~290 KB (~80 KB gzipped). It's loaded lazily (`usdaZones.ts`), so it never
+  ~290 KB (~80 KB gzipped). It's loaded lazily (`core/usdaZones.ts`), so it never
   weighs on the main bundle.
 - **Simplification caveat:** thin coastal strips (barrier islands, the Keys,
   Cape Cod) fall just outside the simplified polygons; `resolveZoneForLocation`

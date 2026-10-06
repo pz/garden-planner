@@ -1,54 +1,27 @@
-import type { Bed, PlantInstance } from '../types';
-import { getCrop } from '../data/crops';
-import { isInsideOutline, type Outline, type Point } from './geometry';
+import type { Bed } from '../types';
+import {
+  bedBounds,
+  type BedGeometry,
+  bedToGarden,
+  gardenToBed,
+  type Handle,
+  MIN_BED_SIDE_IN,
+  normalizeAngle,
+  normalizeCorners,
+  outlinePoints,
+  resizeBedTo,
+  ROTATION_STEP_DEG,
+  signedArea2,
+} from '../core/layout';
+import { PLANTING_PX_PER_INCH } from './viewport';
+import type { Point } from '../core/geometry';
 
 /** Bed edges and sizes snap to this step, in inches. */
 export const LAYOUT_SNAP_IN = 6;
-/** No bed side may be shorter than this, in inches. */
-export const MIN_BED_SIDE_IN = 12;
-/** Rectangular beds are square-cornered unless given a radius; plant centers stay inside any curve. */
-export const BED_CORNER_RADIUS_IN = 0;
-/** The planting view's fixed scale, and the layout editor's 100% zoom. */
-export const PLANTING_PX_PER_INCH = 7;
-
-export const MIN_ZOOM = 0.4;
-export const MAX_ZOOM = 16;
-
-/** Just enough of a bed to place it: center, size and turn. */
-export type BedPlacement = Pick<Bed, 'cx' | 'cy' | 'widthIn' | 'heightIn' | 'rotationDeg'>;
-
-/** Where and how big a bed is (and a polygon's corners), without its identity or name. */
-export type BedGeometry = Pick<Bed, 'cx' | 'cy' | 'widthIn' | 'heightIn' | 'points' | 'cornerRadiusIn'>;
-
-/** The geometry fields of a bed, e.g. to hand a drafted resize to the reducer. */
-export function geometryOf(bed: Bed): BedGeometry {
-  const g: BedGeometry = { cx: bed.cx, cy: bed.cy, widthIn: bed.widthIn, heightIn: bed.heightIn };
-  if (bed.points) g.points = bed.points;
-  if (bed.cornerRadiusIn !== undefined) g.cornerRadiusIn = bed.cornerRadiusIn;
-  return g;
-}
-
-/** The region of a bed that plant centers must stay inside, in its local frame. */
-export function bedOutline(bed: Bed): Outline {
-  if (bed.shape === 'ellipse') return { shape: 'ellipse', widthIn: bed.widthIn, heightIn: bed.heightIn };
-  if (bed.shape === 'polygon' && bed.points) {
-    return { shape: 'polygon', widthIn: bed.widthIn, heightIn: bed.heightIn, points: bed.points };
-  }
-  return { shape: 'rect', widthIn: bed.widthIn, heightIn: bed.heightIn, cornerRadiusIn: drawnCornerRadius(bed) };
-}
-
-export interface Bounds {
-  x0: number;
-  y0: number;
-  x1: number;
-  y1: number;
-}
-
 export function snapTo(v: number, step = LAYOUT_SNAP_IN): number {
   // `+ 0` folds -0 into 0 so snapped values compare and serialize cleanly.
   return Math.round(v / step) * step + 0;
 }
-
 /**
  * A place values stick to: multiples of `step`, within `tolerance` of one (in the value's own
  * units, as seen from the current zoom). Earlier detents in a list win over later ones.
@@ -57,7 +30,6 @@ export interface Detent {
   step: number;
   tolerance: number;
 }
-
 /** The nearest multiple of a detent's step that `v` is within the detent's tolerance of, else null. */
 export function detentNear(v: number, detents: Detent[]): number | null {
   for (const { step, tolerance } of detents) {
@@ -67,7 +39,6 @@ export function detentNear(v: number, detents: Detent[]): number | null {
   }
   return null;
 }
-
 /** Whether edits stick to detents, and how far (in screen px) a length detent pulls at this zoom. */
 export interface SnapOptions {
   /** Screen pixels per inch, so a detent pulls the same distance on screen at any zoom. */
@@ -75,28 +46,23 @@ export interface SnapOptions {
   /** Alt held: no detents, just whole inches and degrees. */
   free?: boolean;
 }
-
 /** Lengths stick to whole feet (a stronger pull) and half feet; between them they move by the inch. */
 const LENGTH_DETENT_PX = [
   { step: 12, px: 12 },
   { step: 6, px: 7 },
 ];
-
 /** How close (screen px) an edge must come to another bed's edge or center to line up with it. */
 export const ALIGN_PX = 14;
-
 /** A line to draw where an edit has snapped: a vertical line at x = `at`, or a horizontal one at y = `at`. */
 export interface Guide {
   axis: 'x' | 'y';
   at: number;
 }
-
 /** Positions along each garden axis that edits line up with: other beds' edges and centers. */
 export interface AlignTargets {
   xs: number[];
   ys: number[];
 }
-
 /** Edges and centers of `beds`, as alignment targets. */
 export function alignTargets(beds: Bed[]): AlignTargets {
   const xs: number[] = [];
@@ -108,7 +74,6 @@ export function alignTargets(beds: Bed[]): AlignTargets {
   }
   return { xs, ys };
 }
-
 /**
  * A garden coordinate as an edit drops it: it lines up with the nearest of `targets` (other
  * beds) if one is close, else sticks to a foot or half-foot grid mark, else goes by the inch.
@@ -131,15 +96,12 @@ export function snapCoordinate(
   }
   return { value: Math.round(v) + 0, guide: null, kind: null };
 }
-
 /** The detents for lengths at `zoom`. */
 export function lengthDetents(zoom: number): Detent[] {
   return LENGTH_DETENT_PX.map(({ step, px }) => ({ step, tolerance: px / zoom }));
 }
-
 /** The editor's default snapping, at the planting view's scale (for callers with no zoom of their own). */
 export const DEFAULT_SNAP: SnapOptions = { zoom: PLANTING_PX_PER_INCH };
-
 /**
  * A length or position as an edit drops it: whole inches, except that it sticks to the nearest
  * foot or half-foot mark when the pointer is close enough to feel it.
@@ -148,7 +110,6 @@ export function snapLength(v: number, { zoom, free = false }: SnapOptions = DEFA
   const detent = free ? null : detentNear(v, lengthDetents(zoom));
   return (detent ?? Math.round(v)) + 0;
 }
-
 /**
  * How far to shift a bed, which was dragged by `delta` inches, so that one of its `edges`
  * (coordinates before the move) lines up with a target or lands on a foot mark if any is close
@@ -176,12 +137,10 @@ export function shiftAxis(
   }
   return best ? { shift: best.shift + 0, guide: best.guide } : { shift: Math.round(delta) + 0, guide: null };
 }
-
 /** shiftAxis without the guide, for edits with no use for one. */
 export function snapShift(edges: number[], delta: number, snap: SnapOptions = DEFAULT_SNAP, targets: number[] = []): number {
   return shiftAxis(edges, delta, targets, snap).shift;
 }
-
 /**
  * Dragging a bed by (dx, dy) from `bed`'s place: how far it actually moves, with its box's sides
  * (and center) snapping to other beds' (`targets`) and to the grid, and the guide lines to draw.
@@ -201,65 +160,16 @@ export function moveSnapped(
   if (y.guide !== null) guides.push({ axis: 'y', at: y.guide });
   return { dx: x.shift, dy: y.shift, guides };
 }
-
 /** Angles stick near every 45° (strongly) and every 15° (lightly); between them they turn by the degree. */
 export const ANGLE_DETENTS: Detent[] = [
   { step: 45, tolerance: 6 },
   { step: 15, tolerance: 2 },
 ];
-
 /** An angle as an edit drops it: whole degrees, sticking to a detent when close; normalized to 0…360. */
 export function magneticAngle(deg: number, free = false): number {
   const detent = free ? null : detentNear(deg, ANGLE_DETENTS);
   return normalizeAngle(detent ?? Math.round(deg));
 }
-
-function rotate(p: Point, deg: number): Point {
-  if (deg === 0) return p;
-  const r = (deg * Math.PI) / 180;
-  const c = Math.cos(r);
-  const s = Math.sin(r);
-  return { x: p.x * c - p.y * s, y: p.x * s + p.y * c };
-}
-
-/** A point in a bed's local frame (inches from its unrotated top-left) to garden coordinates. */
-export function bedToGarden(bed: BedPlacement, local: Point): Point {
-  const q = rotate({ x: local.x - bed.widthIn / 2, y: local.y - bed.heightIn / 2 }, bed.rotationDeg);
-  return { x: bed.cx + q.x, y: bed.cy + q.y };
-}
-
-/** Inverse of bedToGarden. */
-export function gardenToBed(bed: BedPlacement, p: Point): Point {
-  const q = rotate({ x: p.x - bed.cx, y: p.y - bed.cy }, -bed.rotationDeg);
-  return { x: q.x + bed.widthIn / 2, y: q.y + bed.heightIn / 2 };
-}
-
-/** The corners of a bed's (possibly turned) box in garden coordinates: top-left, top-right, bottom-right, bottom-left. */
-export function boxCorners(bed: BedPlacement): Point[] {
-  return [
-    { x: 0, y: 0 },
-    { x: bed.widthIn, y: 0 },
-    { x: bed.widthIn, y: bed.heightIn },
-    { x: 0, y: bed.heightIn },
-  ].map((c) => bedToGarden(bed, c));
-}
-
-/** The outline of a bed in garden coordinates: its corners, or a fine polygon around an ellipse. */
-export function outlinePoints(bed: Bed): Point[] {
-  if (bed.shape === 'polygon' && bed.points) return bed.points.map((q) => bedToGarden(bed, q));
-  if (bed.shape === 'ellipse') {
-    const n = 64; // a multiple of 4, so the extreme points of an unturned ellipse are sampled exactly
-    return Array.from({ length: n }, (_, i) => {
-      const t = (i / n) * 2 * Math.PI;
-      return bedToGarden(bed, {
-        x: bed.widthIn / 2 + (bed.widthIn / 2) * Math.cos(t),
-        y: bed.heightIn / 2 + (bed.heightIn / 2) * Math.sin(t),
-      });
-    });
-  }
-  return boxCorners(bed);
-}
-
 /** Where a bed's name goes: a point on the shape's highest edge or corner, and how the text hangs from it. */
 export interface LabelAnchor {
   x: number;
@@ -267,7 +177,6 @@ export interface LabelAnchor {
   /** `start`: the name begins at x (a flat top edge, from its left end). `middle`: centered on x (a single highest point). */
   align: 'start' | 'middle';
 }
-
 /**
  * Where to put a bed's name so it sits just above the shape itself, not above its bounding
  * box's corner (which for an ellipse, a turned bed or an odd polygon can be far from any of
@@ -284,50 +193,10 @@ export function labelAnchor(bed: Bed): LabelAnchor {
   }
   return { x: highest[0].x, y: top, align: 'middle' };
 }
-
-/** Axis-aligned box around a bed's four corners, in garden coordinates. */
-export function bedBounds(bed: BedPlacement): Bounds {
-  const corners = boxCorners(bed);
-  const xs = corners.map((c) => c.x);
-  const ys = corners.map((c) => c.y);
-  return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
-}
-
-/** Box around every bed, or null for a garden with no beds. */
-export function gardenBounds(beds: Bed[]): Bounds | null {
-  if (beds.length === 0) return null;
-  const all = beds.map(bedBounds);
-  return {
-    x0: Math.min(...all.map((b) => b.x0)),
-    y0: Math.min(...all.map((b) => b.y0)),
-    x1: Math.max(...all.map((b) => b.x1)),
-    y1: Math.max(...all.map((b) => b.y1)),
-  };
-}
-
 /** The axis-aligned box spanned by two points, whichever way round they are. */
 export function boxBetween(a: Point, b: Point): { x: number; y: number; width: number; height: number } {
   return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(b.x - a.x), height: Math.abs(b.y - a.y) };
 }
-
-/** The most a rectangle's corners can be rounded: half its shorter side (a pill or circle). */
-export function maxCornerRadius(bed: Pick<Bed, 'widthIn' | 'heightIn'>): number {
-  return Math.min(bed.widthIn, bed.heightIn) / 2;
-}
-
-/**
- * Corner radius a rectangular bed is drawn with, and its plants kept inside: its own setting
- * (or the default), but never more than the bed can curve.
- */
-export function drawnCornerRadius(bed: Pick<Bed, 'widthIn' | 'heightIn' | 'cornerRadiusIn'>): number {
-  return Math.min(bed.cornerRadiusIn ?? BED_CORNER_RADIUS_IN, maxCornerRadius(bed));
-}
-
-/** A typed or stepped corner radius as a bed can take it: whole inches, from square up to the most it can curve. */
-export function normalizeCornerRadius(inches: number, bed: Pick<Bed, 'widthIn' | 'heightIn'>): number {
-  return Math.min(Math.floor(maxCornerRadius(bed)), Math.max(0, Math.round(inches)));
-}
-
 /**
  * CSS border-radius for the outer edge of a bed drawn with a `borderPx` border, so the border's
  * inner edge curves with `radiusIn`. A square bed stays square all the way round.
@@ -335,12 +204,6 @@ export function normalizeCornerRadius(inches: number, bed: Pick<Bed, 'widthIn' |
 export function outerRadiusPx(radiusIn: number, pxPerInch: number, borderPx: number): number {
   return radiusIn === 0 ? 0 : radiusIn * pxPerInch + borderPx;
 }
-
-/** Screen offset from the viewport's top-left of a garden point; the inverse of screenToGarden. */
-export function gardenToScreen(view: View, p: Point): Point {
-  return { x: (p.x - view.x) * view.zoom, y: (p.y - view.y) * view.zoom };
-}
-
 /** The bed geometry for a rectangle dragged out between two points, or null if it's too small. */
 export function rectFromCorners(a: Point, b: Point): BedGeometry | null {
   const x0 = snapTo(Math.min(a.x, b.x));
@@ -350,45 +213,6 @@ export function rectFromCorners(a: Point, b: Point): BedGeometry | null {
   if (x1 - x0 < MIN_BED_SIDE_IN || y1 - y0 < MIN_BED_SIDE_IN) return null;
   return { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, widthIn: x1 - x0, heightIn: y1 - y0 };
 }
-
-/** A typed or stepped side length as a bed can take it: whole inches, and at least the minimum. */
-export function normalizeSide(inches: number): number {
-  return Math.max(MIN_BED_SIDE_IN, Math.round(inches));
-}
-
-/**
- * Which edge or corner is being dragged: -1/+1 for the left/right (or top/bottom) side, 0 for
- * an axis the handle doesn't change. {sx: 1, sy: 0} is the right edge; {sx: -1, sy: 1} is the
- * bottom-left corner.
- */
-export interface Handle {
-  sx: -1 | 0 | 1;
-  sy: -1 | 0 | 1;
-}
-
-/**
- * The bed resized to `widthIn` × `heightIn` with the side opposite `handle` held in place —
- * dragging the right edge grows the bed rightward, never around its center. A polygon's corners
- * scale with it. Sizes are taken as given; see resizeFromPointer for snapping and the minimum.
- */
-export function resizeBedTo(bed: Bed, widthIn: number, heightIn: number, handle: Handle): Bed {
-  // Along an axis the handle moves, the opposite side (local 0 or the old size) stays put and
-  // the new center sits half the new size away from it; along an axis it doesn't, the center
-  // stays where it was.
-  const axisCenter = (s: -1 | 0 | 1, oldSize: number, newSize: number) =>
-    s === 0 ? oldSize / 2 : ((1 - s) * oldSize) / 2 + (s * newSize) / 2;
-  const center = bedToGarden(bed, {
-    x: axisCenter(handle.sx, bed.widthIn, widthIn),
-    y: axisCenter(handle.sy, bed.heightIn, heightIn),
-  });
-  const next: Bed = { ...bed, cx: center.x, cy: center.y, widthIn, heightIn };
-  // A polygon stretches with its box, so its corners keep their place relative to the edges.
-  if (bed.points) {
-    next.points = bed.points.map((q) => ({ x: (q.x * widthIn) / bed.widthIn, y: (q.y * heightIn) / bed.heightIn }));
-  }
-  return next;
-}
-
 /**
  * Which garden axis a bed's local `axis` runs along when the bed is turned a multiple of 90°,
  * and whether it points the same way (+1) or the opposite way (−1); null for any other angle.
@@ -400,7 +224,6 @@ function gardenAxisOf(rotationDeg: number, axis: 'x' | 'y'): { garden: 'x' | 'y'
   const garden = Math.abs(v.x) > 0.5 ? 'x' : 'y';
   return { garden, sign: v[garden] > 0 ? 1 : -1 };
 }
-
 /**
  * The bed resized by dragging `handle` to the garden point `pointer`: each side the handle
  * moves is measured from the fixed opposite side and never shrinks below MIN_BED_SIDE_IN, even
@@ -449,77 +272,10 @@ export function resizeSnapped(
   const height = side('y');
   return { bed: resizeBedTo(bed, width, height, handle), guides };
 }
-
 /** resizeSnapped without the guides, for callers with no use for them. */
 export function resizeFromPointer(bed: Bed, handle: Handle, pointer: Point, snap: SnapOptions = DEFAULT_SNAP): Bed {
   return resizeSnapped(bed, handle, pointer, undefined, snap).bed;
 }
-
-/**
- * Re-expresses a bed's plants in `next`'s local frame so they keep their place in the garden
- * when the bed is resized or reshaped (they don't stretch or slide with the edges). `outsideIds` are the
- * plants whose centers `next` no longer contains. Other beds' plants pass through untouched.
- */
-export function relocatePlants(
-  prev: Bed,
-  next: Bed,
-  plants: PlantInstance[],
-): { plants: PlantInstance[]; outsideIds: string[] } {
-  const outsideIds: string[] = [];
-  const outline = bedOutline(next);
-  const moved = plants.map((p) => {
-    if (p.bedId !== prev.id) return p;
-    const local = gardenToBed(next, bedToGarden(prev, p));
-    if (!isInsideOutline(local, outline)) outsideIds.push(p.id);
-    return { ...p, x: local.x, y: local.y };
-  });
-  return { plants: moved, outsideIds };
-}
-
-/** Twice the signed area of a polygon: positive when its corners run clockwise on screen (y down). */
-export function signedArea2(pts: Point[]): number {
-  let a = 0;
-  for (let i = 0; i < pts.length; i++) {
-    const p = pts[i];
-    const q = pts[(i + 1) % pts.length];
-    a += p.x * q.y - q.x * p.y;
-  }
-  return a;
-}
-
-/**
- * Corners re-expressed so their bounding box starts at (0, 0), with the box's size and its
- * center in the corners' original frame. Null if the box is under the minimum side on either
- * axis or the corners enclose no area (all in a line).
- */
-function normalizeCorners(pts: Point[]): { points: Point[]; widthIn: number; heightIn: number; center: Point } | null {
-  if (pts.length < 3) return null;
-  const xs = pts.map((p) => p.x);
-  const ys = pts.map((p) => p.y);
-  const x0 = Math.min(...xs);
-  const y0 = Math.min(...ys);
-  const widthIn = Math.max(...xs) - x0;
-  const heightIn = Math.max(...ys) - y0;
-  if (widthIn < MIN_BED_SIDE_IN || heightIn < MIN_BED_SIDE_IN || signedArea2(pts) === 0) return null;
-  return {
-    points: pts.map((p) => ({ x: p.x - x0, y: p.y - y0 })),
-    widthIn,
-    heightIn,
-    center: { x: x0 + widthIn / 2, y: y0 + heightIn / 2 },
-  };
-}
-
-/**
- * The geometry of a new polygon bed from corners clicked in the garden (already snapped), or
- * null if they don't make a usable bed: fewer than three corners, a box under the minimum
- * side, or no enclosed area.
- */
-export function polygonFromCorners(corners: Point[]): Required<Pick<BedGeometry, 'points'>> & BedGeometry | null {
-  const n = normalizeCorners(corners);
-  if (!n) return null;
-  return { cx: n.center.x, cy: n.center.y, widthIn: n.widthIn, heightIn: n.heightIn, points: n.points };
-}
-
 /**
  * The polygon bed with corner `index` dragged to the garden point `pointer`, snapped (see
  * snapLength) measured from the bed's top-left. The box re-fits the corners, and the other corners
@@ -535,10 +291,8 @@ export function moveCorner(bed: Bed, index: number, pointer: Point, snap: SnapOp
   const center = bedToGarden(bed, n.center);
   return { ...bed, cx: center.x, cy: center.y, widthIn: n.widthIn, heightIn: n.heightIn, points: n.points };
 }
-
 /** How close (in screen pixels) a click must land to a polygon's first corner to close it. */
 export const CLOSE_POLYGON_PX = 14;
-
 /**
  * Whether a click at `cursor` (snapped) should close an in-progress polygon: it's back on the
  * first corner — within a comfortable target on screen at this zoom, and never less than one
@@ -548,7 +302,6 @@ export function closesPolygon(corners: Point[], cursor: Point, zoom: number): bo
   const toleranceIn = Math.max(LAYOUT_SNAP_IN, CLOSE_POLYGON_PX / zoom);
   return corners.length >= 3 && Math.hypot(cursor.x - corners[0].x, cursor.y - corners[0].y) <= toleranceIn;
 }
-
 export interface EdgeLabel {
   /** Midpoint of the edge. */
   mid: Point;
@@ -556,7 +309,6 @@ export interface EdgeLabel {
   outward: Point;
   lengthIn: number;
 }
-
 /**
  * Length label anchors for each edge of a closed polygon (`closed: false` for an open chain
  * being drawn, which leaves out the closing edge). Zero-length edges are skipped.
@@ -581,7 +333,6 @@ export function edgeLabels(corners: Point[], closed = true): EdgeLabel[] {
   }
   return labels;
 }
-
 /**
  * How far out along an edge's `outward` normal to center a `halfW` × `halfH` label so it clears
  * the edge by `gap`: further for a label sitting across its edge than for one alongside it.
@@ -589,20 +340,6 @@ export function edgeLabels(corners: Point[], closed = true): EdgeLabel[] {
 export function labelOffset(outward: Point, halfW: number, halfH: number, gap: number): number {
   return gap + Math.abs(outward.x) * halfW + Math.abs(outward.y) * halfH;
 }
-
-/** The turn buttons step to multiples of this many degrees. */
-export const ROTATION_STEP_DEG = 45;
-
-/** An angle in degrees brought into 0…360 (never -0 or 360). */
-export function normalizeAngle(deg: number): number {
-  return (((deg % 360) + 360) % 360) + 0;
-}
-
-/** An angle rounded to the nearest rotation step, normalized. Half-way rounds up. */
-export function snapAngle(deg: number, step = ROTATION_STEP_DEG): number {
-  return normalizeAngle(Math.round(deg / step) * step);
-}
-
 /**
  * The bed's rotation when its rotate handle (which sits above the top edge when unturned) is
  * dragged to the garden point `pointer`: by the degree, sticking near the 15° and 45° marks
@@ -612,7 +349,6 @@ export function rotationFromPointer(bed: Pick<Bed, 'cx' | 'cy'>, pointer: Point,
   const deg = (Math.atan2(pointer.y - bed.cy, pointer.x - bed.cx) * 180) / Math.PI + 90;
   return magneticAngle(deg, free);
 }
-
 /**
  * The angle one press of a turn button reaches: the next multiple of `step` in `direction`
  * (+1 clockwise, −1 anticlockwise), even from an angle between two, normalized.
@@ -623,13 +359,11 @@ export function stepAngle(deg: number, direction: 1 | -1, step = ROTATION_STEP_D
   const next = direction === 1 ? Math.floor(marks + 1e-9) + 1 : Math.ceil(marks - 1e-9) - 1;
   return normalizeAngle(next * step);
 }
-
 /** Reads a typed angle like "90", "90°" or "-45 deg". Null for anything else. */
 export function parseAngle(text: string): number | null {
   const m = text.trim().toLowerCase().match(/^(-?\d+(?:\.\d+)?)\s*(?:°|deg|degrees?)?$/);
   return m ? +m[1] : null;
 }
-
 /**
  * The resize cursor for dragging `handle` on a bed turned by `rotationDeg`: the handle's
  * direction, turned with the bed, to the nearest of the four double-arrow cursors.
@@ -640,59 +374,6 @@ export function resizeCursor(handle: Handle, rotationDeg: number): string {
   const half = (((deg % 180) + 180) % 180);
   return cursors[Math.round(half / 45) % 4];
 }
-
-/** "Herbs copy", or "Herbs copy 2", "Herbs copy 3"… if that's taken. */
-export function copyName(name: string, beds: Bed[]): string {
-  const taken = new Set(beds.map((b) => b.name.trim().toLowerCase()));
-  const base = `${name} copy`;
-  if (!taken.has(base.toLowerCase())) return base;
-  let n = 2;
-  while (taken.has(`${base} ${n}`.toLowerCase())) n++;
-  return `${base} ${n}`;
-}
-
-/**
- * A copy of `bed` and its plants, shifted by `offsetIn` on both axes, ready to add to the
- * garden: new ids throughout from `makeId`, and its patches get new group ids (shared within
- * the copy, never with the original) so the copy's plants never count as part of the
- * original's patches.
- */
-export function cloneBed(
-  bed: Bed,
-  plants: PlantInstance[],
-  offsetIn: number,
-  makeId: () => string,
-  beds: Bed[],
-): { bed: Bed; plants: PlantInstance[] } {
-  const copy: Bed = { ...bed, id: makeId(), name: copyName(bed.name, beds), cx: bed.cx + offsetIn, cy: bed.cy + offsetIn };
-  const groupIds = new Map<string, string>();
-  const copied = plants
-    .filter((p) => p.bedId === bed.id)
-    .map((p) => {
-      if (!groupIds.has(p.groupId)) groupIds.set(p.groupId, makeId());
-      return { ...p, id: makeId(), bedId: copy.id, groupId: groupIds.get(p.groupId)! };
-    });
-  return { bed: copy, plants: copied };
-}
-
-/** "Tomato ×2, Basil ×1": how many of each crop, in order of first appearance. */
-export function plantSummary(plants: PlantInstance[]): string {
-  const counts = new Map<string, number>();
-  for (const p of plants) {
-    const name = getCrop(p.cropId).name;
-    counts.set(name, (counts.get(name) ?? 0) + 1);
-  }
-  return [...counts].map(([name, n]) => `${name} ×${n}`).join(', ');
-}
-
-/** "Bed N" for the lowest N from the bed count upward that no existing bed is already named. */
-export function nextBedName(beds: Bed[]): string {
-  const taken = new Set(beds.map((b) => b.name.trim().toLowerCase()));
-  let n = beds.length + 1;
-  while (taken.has(`bed ${n}`)) n++;
-  return `Bed ${n}`;
-}
-
 /** 54 → "4′ 6″", 48 → "4′", 6 → "6″". Rounds to the nearest inch. */
 export function formatLength(inches: number): string {
   const total = Math.round(inches);
@@ -701,7 +382,6 @@ export function formatLength(inches: number): string {
   if (ft === 0) return `${inch}″`;
   return inch === 0 ? `${ft}′` : `${ft}′ ${inch}″`;
 }
-
 /**
  * Reads a typed length as inches: "4′ 6″", "4' 6\"", "4ft 6in", "4 6" (feet then inches),
  * "54in", "54″", or a bare number, which means feet (or inches, with `bareUnit: 'in'`). Returns
@@ -727,111 +407,4 @@ export function parseLength(
     }
   }
   return null;
-}
-
-/**
- * The editor's camera: `zoom` screen pixels per inch, and (x, y) the garden point at the
- * viewport's top-left corner.
- */
-export interface View {
-  zoom: number;
-  x: number;
-  y: number;
-}
-
-export function clampZoom(z: number): number {
-  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
-}
-
-/** Garden point under screen offset (sx, sy) from the viewport's top-left. */
-export function screenToGarden(view: View, sx: number, sy: number): Point {
-  return { x: view.x + sx / view.zoom, y: view.y + sy / view.zoom };
-}
-
-/** Zooms by `factor`, keeping the garden point under screen offset (sx, sy) where it is. */
-export function zoomAt(view: View, sx: number, sy: number, factor: number): View {
-  const zoom = clampZoom(view.zoom * factor);
-  const p = screenToGarden(view, sx, sy);
-  return { zoom, x: p.x - sx / zoom, y: p.y - sy / zoom };
-}
-
-/** Pans by a screen-pixel delta (dragging content right moves the camera left). */
-export function panBy(view: View, dxPx: number, dyPx: number): View {
-  return { ...view, x: view.x - dxPx / view.zoom, y: view.y - dyPx / view.zoom };
-}
-
-export interface Insets {
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
-}
-
-/**
- * The view that centers `bounds` in the part of a `width` × `height` viewport left clear by
- * `insets` (room for overlaid toolbars and panels), as large as fits (up to `maxZoom`). An empty garden frames
- * a default 8′ × 4′ patch of ground at the origin.
- */
-export function fitView(
-  bounds: Bounds | null,
-  width: number,
-  height: number,
-  insets: Insets,
-  maxZoom = MAX_ZOOM,
-): View {
-  const b = bounds ?? { x0: 0, y0: 0, x1: 96, y1: 48 };
-  const availW = Math.max(120, width - insets.left - insets.right);
-  const availH = Math.max(120, height - insets.top - insets.bottom);
-  const zoom = Math.min(maxZoom, clampZoom(Math.min(availW / Math.max(12, b.x1 - b.x0), availH / Math.max(12, b.y1 - b.y0))));
-  return {
-    zoom,
-    x: (b.x0 + b.x1) / 2 - (insets.left + availW / 2) / zoom,
-    y: (b.y0 + b.y1) / 2 - (insets.top + availH / 2) / zoom,
-  };
-}
-
-/** A press that travels further than this many screen pixels is a drag, not a click. */
-export const CLICK_SLOP_PX = 3;
-
-export function isDrag(dxPx: number, dyPx: number): boolean {
-  return Math.hypot(dxPx, dyPx) > CLICK_SLOP_PX;
-}
-
-/**
- * Largest wheel delta one event may zoom by. Trackpad pinches send small deltas and are
- * unaffected; a mouse wheel sends ~100 per notch, which would otherwise zoom ~2.7× per click.
- */
-export const MAX_WHEEL_ZOOM_DELTA = 25;
-
-/** Zoom factor for one wheel/pinch event: smooth, and symmetric so in-then-out returns to start. */
-export function wheelZoomFactor(deltaY: number): number {
-  const d = Math.max(-MAX_WHEEL_ZOOM_DELTA, Math.min(MAX_WHEEL_ZOOM_DELTA, deltaY));
-  return Math.exp(-d * 0.01);
-}
-
-/** Zoom as a percentage of the planting view's scale. */
-export function zoomPercent(view: View): number {
-  return Math.round((view.zoom / PLANTING_PX_PER_INCH) * 100);
-}
-
-/**
- * The CSS transform that draws content laid out at `pxPerInch` (its top-left at garden point
- * `origin`) as seen through `view`: translate by (x, y) px, then scale, from the top-left.
- */
-export function contentTransform(view: View, origin: Point, pxPerInch: number): { x: number; y: number; scale: number } {
-  return { x: (origin.x - view.x) * view.zoom, y: (origin.y - view.y) * view.zoom, scale: view.zoom / pxPerInch };
-}
-
-/**
- * The camera for a two-finger gesture: `start` is the view when the fingers went down at
- * screen offsets a0 and b0, and they're now at a1 and b1. The garden point under each finger's
- * midpoint stays under it, and the zoom follows the change in the fingers' distance.
- */
-export function pinchView(start: View, a0: Point, b0: Point, a1: Point, b1: Point): View {
-  const dist0 = Math.hypot(b0.x - a0.x, b0.y - a0.y);
-  const dist1 = Math.hypot(b1.x - a1.x, b1.y - a1.y);
-  const mid0 = { x: (a0.x + b0.x) / 2, y: (a0.y + b0.y) / 2 };
-  const mid1 = { x: (a1.x + b1.x) / 2, y: (a1.y + b1.y) / 2 };
-  const zoomed = dist0 > 0 ? zoomAt(start, mid0.x, mid0.y, dist1 / dist0) : start;
-  return panBy(zoomed, mid1.x - mid0.x, mid1.y - mid0.y);
 }

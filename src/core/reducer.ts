@@ -1,7 +1,7 @@
 import type { Bed, GardenPlan, PlantInstance, Profile } from '../types';
-import { parseGardenLocation } from '../utils/location';
-import { normalizeAngle, relocatePlants, type BedGeometry } from '../utils/layout';
-import { conflictKey, findOverlapConflicts } from '../utils/spacing';
+import { parseGardenLocation } from './location';
+import { normalizeAngle, relocatePlants, type BedGeometry } from './layout';
+import { conflictKey, findOverlapConflicts } from './spacing';
 
 /** Template for a fresh garden; always used via createPlan so every garden gets its own id. */
 export const DEFAULT_PLAN: GardenPlan = {

@@ -6,8 +6,8 @@ Goal: every edit to a garden goes through one API, so an AI agent can read and e
 
 ## 1. Principles
 
-1. **One command layer is the only way to change a plan.** A pure `src/api/` module exposes `applyCommands(plan, commands, options) → Result`. It has no React, DOM or transport. The UI, a future HTTP server and a future MCP server all call it. The rules live in `src/utils/`, as `CLAUDE.md` requires; the API validates by calling them.
-2. **The wire format is the file format.** The API speaks the same `GardenPlan` v3 JSON that Export garden writes and Load garden reads (`src/state/gardenFile.ts`). See section 2. Nothing is renamed, so existing exports keep loading.
+1. **One command layer is the only way to change a plan.** A pure `src/api/` module exposes `applyCommands(plan, commands, options) → Result`. It has no React, DOM or transport. The UI, a future HTTP server and a future MCP server all call it. The rules live in `src/core/` and `src/data/`, as `CLAUDE.md` requires; the API validates by calling them.
+2. **The wire format is the file format.** The API speaks the same `GardenPlan` v3 JSON that Export garden writes and Load garden reads (`src/core/gardenFile.ts`). See section 2. Nothing is renamed, so existing exports keep loading.
 3. **The client talks to an async `GardenApi` interface.** `LocalGardenApi` (localStorage) comes first; `HttpGardenApi` later. The UI doesn't change when we swap them.
 4. **Per-frame drag previews stay synchronous.** They call the pure geometry functions directly. Commits and explicit validation go through the API.
 5. **Warnings are derived, never stored.** The only stored state is dismissals.

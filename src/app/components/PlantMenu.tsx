@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
-import { CROPS } from '../data/crops';
-import { fitsAt } from '../utils/spacing';
-import type { Outline } from '../utils/geometry';
-import type { PlantInstance } from '../types';
+import { CROPS } from '../../data/crops';
+import { fitsAt } from '../../core/spacing';
+import type { Outline } from '../../core/geometry';
+import type { PlantInstance } from '../../types';
 import { CROP_COLORS, PlantMark } from './PlantMark';
 
 export function PlantMenu({
