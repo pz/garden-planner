@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import type { PlantInstance } from '../types';
 import { getCrop } from '../data/crops';
 import { PlantMark, CROP_COLORS } from './PlantMark';
+import { isContextPress, isReleasedMove } from '../utils/pointer';
 
 export const LONG_PRESS_MS = 450;
 export const MOVE_THRESHOLD_PX = 6;
@@ -63,7 +64,7 @@ export function PlantToken({
 
   function handlePointerDown(e: React.PointerEvent) {
     e.stopPropagation();
-    if (e.button === 2) return; // right-click reserved for empty-canvas menu elsewhere
+    if (isContextPress(e)) return; // right-click / macOS Ctrl-click: no gesture, and no capture to strand
     (e.target as Element).setPointerCapture(e.pointerId);
     const st = {
       startX: e.clientX,
@@ -83,6 +84,8 @@ export function PlantToken({
   function handlePointerMove(e: React.PointerEvent) {
     const st = stateRef.current;
     if (!st) return;
+    // The button came up unseen (a context menu swallowed the pointerup): end, don't start a drag.
+    if (isReleasedMove(e)) return cancelGesture(e);
     const dx = e.clientX - st.startX;
     const dy = e.clientY - st.startY;
     const dist = Math.sqrt(dx * dx + dy * dy);
@@ -101,6 +104,16 @@ export function PlantToken({
     }
     if (st.mode === 'move') handlers.onMoveUpdate(plant.id, e.clientX, e.clientY);
     if (st.mode === 'multiply') handlers.onMultiplyUpdate(plant.id, e.clientX, e.clientY);
+  }
+
+  function cancelGesture(e: React.PointerEvent) {
+    const st = stateRef.current;
+    clearTimer();
+    setGesture('idle');
+    stateRef.current = null;
+    if ((e.target as Element).hasPointerCapture?.(e.pointerId)) (e.target as Element).releasePointerCapture(e.pointerId);
+    if (st?.mode === 'move') handlers.onMoveEnd(plant.id, false);
+    else if (st?.mode === 'multiply') handlers.onMultiplyEnd(plant.id, false);
   }
 
   function handlePointerUp(e: React.PointerEvent) {
@@ -125,6 +138,7 @@ export function PlantToken({
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
+      onPointerCancel={cancelGesture}
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();

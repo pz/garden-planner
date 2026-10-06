@@ -35,6 +35,7 @@ import {
   type Bounds,
   type View,
 } from '../utils/layout';
+import { isContextPress, isReleasedMove } from '../utils/pointer';
 import { PlantToken, LONG_PRESS_MS, MOVE_THRESHOLD_PX, type GestureHandlers } from './PlantToken';
 import { PlantMenu } from './PlantMenu';
 import { PlantInfoCard } from './PlantInfoCard';
@@ -228,7 +229,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
 
   function handleBedPointerDown(e: React.PointerEvent, bedId: string) {
     if (e.target !== bedRefs.current.get(bedId)) return; // ignore bubbled events from plants
-    if (e.button === 2) return;
+    if (isContextPress(e)) return; // the contextmenu event opens the menu for these
     if (!pressIsOnBed(bedId, e.clientX, e.clientY)) return;
     const startX = e.clientX;
     const startY = e.clientY;
@@ -242,6 +243,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
   function handleBedPointerMove(e: React.PointerEvent) {
     const st = emptyPressRef.current;
     if (!st) return;
+    if (isReleasedMove(e)) return cancelEmptyPress();
     const dist = Math.hypot(e.clientX - st.startX, e.clientY - st.startY);
     if (dist > MOVE_THRESHOLD_PX && st.timer) {
       clearTimeout(st.timer);
@@ -339,7 +341,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
   // plant handles it). A drag that starts on a bed also cancels its long-press-to-plant, and a
   // second finger turns the gesture into a pinch.
   function onViewportDown(e: React.PointerEvent) {
-    if ((e.button !== 0 && e.button !== 1) || !camera) return;
+    if ((e.button !== 0 && e.button !== 1) || isContextPress(e) || !camera) return;
     const p = localPoint(e);
     pointersRef.current.set(e.pointerId, p);
     const down = [...pointersRef.current];
@@ -357,6 +359,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
   function onViewportMove(e: React.PointerEvent) {
     const g = gestureRef.current;
     if (!g || !pointersRef.current.has(e.pointerId)) return;
+    if (isReleasedMove(e)) return onViewportUp(e); // pointerup was swallowed; don't pan
     const p = localPoint(e);
     pointersRef.current.set(e.pointerId, p);
     if (g.kind === 'pinch') {
@@ -717,6 +720,9 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
               onPointerMove={onViewportMove}
               onPointerUp={onViewportUp}
               onPointerCancel={onViewportUp}
+              // A canvas has no use for the browser's menu: right-click / Ctrl-click on the ground
+              // or just outside a bed's shape does nothing instead of popping it over the garden.
+              onContextMenu={(e) => e.preventDefault()}
               // The garden is drawn at a fixed scale inside this frame, which the camera pans and
               // zooms over; a narrow window just shows less of it instead of squashing it.
               style={{
