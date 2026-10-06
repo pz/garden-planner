@@ -197,12 +197,17 @@ describe('relocatePlants', () => {
   });
 
   it('treats a plant cut off by the new rounded corner as outside', () => {
-    const b = bed();
+    const b = bed({ cornerRadiusIn: 4 });
     const next = resizeBedTo(b, 60, 48, { sx: 1, sy: 0 });
     // On the new right edge but in the corner square, beyond the corner's curve.
     const { outsideIds } = relocatePlants(b, next, [plant('corner', 60, 0.2)]);
-    expect(BED_CORNER_RADIUS_IN).toBeGreaterThan(0.2);
     expect(outsideIds).toEqual(['corner']);
+  });
+
+  it('keeps a plant in the corner of a bed with square corners (the default)', () => {
+    const b = bed();
+    const next = resizeBedTo(b, 60, 48, { sx: 1, sy: 0 });
+    expect(relocatePlants(b, next, [plant('corner', 60, 0.2)]).outsideIds).toEqual([]);
   });
 
   it('passes other beds’ plants through untouched (same object)', () => {
@@ -345,8 +350,9 @@ describe('boxBetween', () => {
 });
 
 describe('drawnCornerRadius', () => {
-  it('uses the standard radius for a bed with none of its own', () => {
-    expect(drawnCornerRadius({ widthIn: 96, heightIn: 48 })).toBe(BED_CORNER_RADIUS_IN);
+  it('is square for a bed with no radius of its own', () => {
+    expect(BED_CORNER_RADIUS_IN).toBe(0);
+    expect(drawnCornerRadius({ widthIn: 96, heightIn: 48 })).toBe(0);
   });
 
   it('uses the bed\'s own radius, including none at all', () => {
@@ -355,7 +361,7 @@ describe('drawnCornerRadius', () => {
   });
 
   it('never curves more than half the short side', () => {
-    expect(drawnCornerRadius({ widthIn: 96, heightIn: 6 })).toBe(3);
+    expect(drawnCornerRadius({ widthIn: 96, heightIn: 6, cornerRadiusIn: 10 })).toBe(3);
     expect(drawnCornerRadius({ widthIn: 96, heightIn: 48, cornerRadiusIn: 24 })).toBe(24);
     expect(drawnCornerRadius({ widthIn: 96, heightIn: 48, cornerRadiusIn: 25 })).toBe(24);
   });
