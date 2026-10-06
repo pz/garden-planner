@@ -515,7 +515,7 @@ function ViewTab({ label, active, onClick }: { label: string; active: boolean; o
     <button
       onClick={onClick}
       className={active ? 'btn btn-primary' : 'btn btn-secondary'}
-      style={{ padding: '8px 14px', font: '600 12.5px Figtree' }}
+      style={{ padding: '8px 14px', fontSize: 13 }}
     >
       {label}
     </button>

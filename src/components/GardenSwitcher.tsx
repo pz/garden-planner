@@ -45,7 +45,8 @@ export function GardenSwitcher({
                 padding: '2px 6px',
                 margin: '-2px -6px',
                 borderRadius: 'var(--radius-sm)',
-                font: '700 22px Figtree',
+                font: 'var(--font-heading-weight) 24px var(--font-heading)',
+                letterSpacing: '-0.015em',
                 color: 'var(--color-text)',
                 transition: 'background 0.12s ease',
               }
@@ -202,11 +203,11 @@ function GardenRow({
           <button
             onClick={onConfirmRemove}
             className="btn"
-            style={{ padding: '4px 10px', font: '600 11.5px Figtree', color: 'var(--color-warning)', borderColor: 'var(--color-warning)' }}
+            style={{ padding: '4px 10px', fontSize: 12, color: 'var(--color-warning)', borderColor: 'var(--color-warning)' }}
           >
             Delete
           </button>
-          <button onClick={onCancelRemove} className="btn btn-secondary" style={{ padding: '4px 10px', font: '600 11.5px Figtree' }}>
+          <button onClick={onCancelRemove} className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: 12 }}>
             Cancel
           </button>
         </div>

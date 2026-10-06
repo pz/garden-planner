@@ -62,7 +62,7 @@ export function SetupScreen({ onDone }: { onDone: () => void }) {
       <p style={{ font: '400 17px Caveat, cursive', color: 'var(--color-text-muted)', marginBottom: 4 }}>
         Let&rsquo;s get your garden started
       </p>
-      <h1 style={{ fontSize: 30, marginBottom: 28 }}>A little about your garden</h1>
+      <h1 style={{ fontSize: 34, marginBottom: 28 }}>A little about your garden</h1>
 
       <label style={{ display: 'block', marginBottom: 22 }}>
         <span style={{ display: 'block', font: '600 13px Figtree', marginBottom: 8 }}>Bed name</span>
@@ -70,15 +70,7 @@ export function SetupScreen({ onDone }: { onDone: () => void }) {
           value={bedName}
           placeholder="e.g. The back porch bed"
           onChange={(e) => setBedNameInput(e.target.value)}
-          style={{
-            width: '100%',
-            padding: '12px 14px',
-            borderRadius: 'var(--radius-md)',
-            border: '1.5px solid var(--color-divider)',
-            font: '500 15px Figtree',
-            background: 'var(--color-surface-raised)',
-            color: 'var(--color-text)',
-          }}
+          className="input"
         />
       </label>
 
@@ -167,7 +159,7 @@ export function SetupScreen({ onDone }: { onDone: () => void }) {
         </div>
       </div>
 
-      <button onClick={handleContinue} className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '13px 18px' }}>
+      <button onClick={handleContinue} className="btn btn-primary" style={{ width: '100%', padding: '13px 18px', fontSize: 16 }}>
         Continue to your garden bed
       </button>
     </div>

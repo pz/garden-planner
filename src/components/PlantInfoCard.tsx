@@ -64,7 +64,7 @@ export function PlantInfoCard({
       >
         <PlantMark family={crop.family} color={CROP_COLORS[crop.id]} diameter={30} />
         <div style={{ flex: 1 }}>
-          <div style={{ font: '700 15px Figtree' }}>{crop.name}</div>
+          <div className="heading" style={{ fontSize: 18, lineHeight: 1.15 }}>{crop.name}</div>
           <div style={{ font: '400 11px Figtree', color: 'var(--color-text-muted)', textTransform: 'capitalize' }}>
             {crop.family}
             {groupCount > 1 ? ` · patch of ${groupCount}` : ''}
@@ -96,7 +96,7 @@ export function PlantInfoCard({
               {crop.name} wants at least {crop.spacingIn}" from the next plant or patch. Move{' '}
               {groupCount > 1 ? 'this patch' : 'one of them'} apart, or dismiss if you're fine with it.
             </p>
-            <button onClick={onDismissConflict} className="btn btn-secondary" style={{ padding: '5px 12px', font: '600 11.5px Figtree' }}>
+            <button onClick={onDismissConflict} className="btn btn-secondary" style={{ padding: '5px 12px', fontSize: 12 }}>
               Dismiss this warning
             </button>
           </div>
@@ -109,13 +109,7 @@ export function PlantInfoCard({
             placeholder="e.g. Cherokee Purple"
             onChange={(e) => setVariety(e.target.value)}
             onBlur={() => onSetVariety(variety.trim() || undefined)}
-            style={{
-              width: '100%',
-              padding: '9px 11px',
-              borderRadius: 'var(--radius-sm)',
-              border: '1.5px solid var(--color-divider)',
-              font: '400 13px Figtree',
-            }}
+            className="input input-sm"
           />
         </label>
 

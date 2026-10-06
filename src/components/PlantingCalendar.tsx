@@ -31,7 +31,7 @@ export function PlantingCalendar({ plants, zoneId }: { plants: PlantInstance[]; 
 
       {months.map(({ label, entries: monthEntries }) => (
         <div key={label}>
-          <h2 style={{ font: '700 14px Figtree', marginBottom: 10 }}>{label}</h2>
+          <h2 style={{ fontSize: 17, marginBottom: 10 }}>{label}</h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {monthEntries.map((entry) => (
               <CalendarRow key={entry.groupId} entry={entry} />

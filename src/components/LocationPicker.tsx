@@ -277,7 +277,7 @@ export function LocationPicker({
         />
         <button
           type="button"
-          className="btn"
+          className="btn btn-secondary"
           onClick={handleUseLocation}
           disabled={geoStatus === 'locating'}
           title="Use my current location"
@@ -492,15 +492,7 @@ function PlaceSearch({
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
         onKeyDown={handleKeyDown}
-        style={{
-          width: '100%',
-          padding: '10px 14px',
-          borderRadius: 999,
-          border: '1.5px solid var(--color-divider)',
-          font: '500 14px Figtree',
-          background: 'var(--color-surface-raised)',
-          color: 'var(--color-text)',
-        }}
+        className="input"
       />
       {showList && (
         <ul
