@@ -168,10 +168,10 @@ New `crops.json` fields, hand-curated and never LLM-generated, with data-integri
 5. Add the crop reference data, and the shade and companion warnings.
 6. Later: HTTP and MCP adapters, generated from the OpenAPI and JSON Schema source of truth.
 
-## 8. Open questions
+## 8. Decisions
 
-1. **Layout edits.** The UI also edits beds (`addBed`, `moveBed`, `reshapeBed`, `rotateBed`, `pasteBed`, `removeBed`, `restoreLayout`). To make *all* edits go through the API, these join the same command union, but agent tokens can't use them in v1 (planting only). Confirm?
-2. **`northDeg`** is garden-level. Per-bed orientation isn't needed unless you plan curved or terraced layouts.
+1. **Layout edits.** Bed commands (`addBed`, `moveBed`, `reshapeBed`, `rotateBed`, `pasteBed`, `removeBed`, `restoreLayout`) join the same command union so the UI's edits all go through the API, but agent tokens are limited to planting commands for now.
+2. **`northDeg`** is garden-level.
 3. **Revision token.** A content hash for now (nothing stored); a server counter later. Both are opaque to clients.
 
 ## 9. Step 2 (not yet designed): infra and auth
