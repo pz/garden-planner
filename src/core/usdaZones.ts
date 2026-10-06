@@ -1,4 +1,4 @@
-import { buildZoneIndex, type ZoneFeatureCollection, type ZoneIndex } from '../utils/zoneMap';
+import { buildZoneIndex, type ZoneFeatureCollection, type ZoneIndex } from './zoneMap';
 
 /**
  * The bundled USDA zone polygons (`usdaZones.geo.json`, ~80 KB gzipped) are only needed by the
@@ -7,7 +7,7 @@ import { buildZoneIndex, type ZoneFeatureCollection, type ZoneIndex } from '../u
 let pending: Promise<ZoneIndex> | null = null;
 
 export function loadZoneIndex(): Promise<ZoneIndex> {
-  pending ??= import('./usdaZones.geo.json').then((mod) => buildZoneIndex(mod.default as ZoneFeatureCollection));
+  pending ??= import('../data/usdaZones.geo.json').then((mod) => buildZoneIndex(mod.default as ZoneFeatureCollection));
   // Let a failed load (e.g. flaky network fetching the chunk) be retried next time.
   pending.catch(() => {
     pending = null;
@@ -17,5 +17,5 @@ export function loadZoneIndex(): Promise<ZoneIndex> {
 
 /** The raw polygons, for drawing the overlay. Shares the chunk with `loadZoneIndex`. */
 export async function loadZoneGeoJson(): Promise<ZoneFeatureCollection> {
-  return (await import('./usdaZones.geo.json')).default as ZoneFeatureCollection;
+  return (await import('../data/usdaZones.geo.json')).default as ZoneFeatureCollection;
 }

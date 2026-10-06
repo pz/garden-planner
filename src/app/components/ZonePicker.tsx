@@ -1,4 +1,4 @@
-import { ZONES } from '../data/zones';
+import { ZONES } from '../../data/zones';
 
 /**
  * One button per hardiness zone, colored to match the map overlay. Doubles as the map's legend

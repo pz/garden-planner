@@ -4,5 +4,19 @@
   "rules": {
     "react/rules-of-hooks": "error",
     "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
+  },
+  "overrides": [
+    {
+      "files": ["src/data/**"],
+      "rules": {
+        "no-restricted-imports": ["error", { "patterns": [{ "regex": "(^|/)(core|api|app)(/|$)", "message": "src/data is static reference data: it may not import from core, api or app." }] }]
+      }
+    },
+    {
+      "files": ["src/core/**"],
+      "rules": {
+        "no-restricted-imports": ["error", { "patterns": [{ "regex": "(^|/)(api|app)(/|$)", "message": "src/core is the headless engine: it may not import from api or app." }] }]
+      }
+    }
+  ]
 }

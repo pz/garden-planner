@@ -1,13 +1,13 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { getZone } from '../data/zones';
-import { loadZoneGeoJson, loadZoneIndex } from '../data/usdaZones';
-import { placeLabel, reverseGeocode, searchPlaces, shouldSearch, type PlaceResult } from '../utils/geocode';
-import { getBrowserPosition } from '../utils/geoZone';
-import { formatLatLng, normalizeLng } from '../utils/location';
-import { isZoneOverriddenAtLocation, resolveZoneForLocation, type ZoneIndex, type ZoneSource } from '../utils/zoneMap';
-import type { GardenLocation } from '../types';
+import { getZone } from '../../data/zones';
+import { loadZoneGeoJson, loadZoneIndex } from '../../core/usdaZones';
+import { placeLabel, reverseGeocode, searchPlaces, shouldSearch, type PlaceResult } from '../geocode';
+import { getBrowserPosition } from '../geolocation';
+import { formatLatLng, normalizeLng } from '../../core/location';
+import { isZoneOverriddenAtLocation, resolveZoneForLocation, type ZoneIndex, type ZoneSource } from '../../core/zoneMap';
+import type { GardenLocation } from '../../types';
 
 export interface LocationPick {
   location: GardenLocation;

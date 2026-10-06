@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useGarden } from '../state/gardenStore';
 import { useGardens, readGardenName } from '../state/gardensStore';
 import { BUILD_COMMIT } from '../state/buildInfo';
-import { gardenFileName, parseGardenFile, serializeGardenFile } from '../state/gardenFile';
+import { gardenFileName, parseGardenFile, serializeGardenFile } from '../../core/gardenFile';
 
 export function GardenSwitcher({
   variant = 'compact',

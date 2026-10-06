@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, type ReactNode } from 'react';
-import type { Bed, GardenPlan, PlantInstance, Profile } from '../types';
-import type { BedGeometry } from '../utils/layout';
-import { parsePlan, reducer } from './reducer';
+import type { Bed, GardenPlan, PlantInstance, Profile } from '../../types';
+import type { BedGeometry } from '../../core/layout';
+import { parsePlan, reducer } from '../../core/reducer';
 import { storageKey } from './storageNamespace';
 
 /** Pre-multi-garden storage key, kept only so gardensStore can migrate it into the new scheme. */

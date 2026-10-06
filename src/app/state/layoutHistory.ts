@@ -1,4 +1,4 @@
-import type { Bed, PlantInstance } from '../types';
+import type { Bed, PlantInstance } from '../../types';
 
 /** The part of a plan the layout editor can change, as it was before one edit. */
 export interface LayoutSnapshot {

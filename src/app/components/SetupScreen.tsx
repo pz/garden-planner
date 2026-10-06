@@ -1,12 +1,12 @@
 import { Suspense, lazy, useState } from 'react';
 import { useGarden } from '../state/gardenStore';
-import { getZone, zoneFirstFrostDate, zoneLastFrostDate } from '../data/zones';
-import { formatDate } from '../utils/dates';
-import type { ZoneSource } from '../utils/zoneMap';
+import { getZone, zoneFirstFrostDate, zoneLastFrostDate } from '../../data/zones';
+import { formatDate } from '../../core/dates';
+import type { ZoneSource } from '../../core/zoneMap';
 import { GardenSwitcher } from './GardenSwitcher';
 import { ZonePicker } from './ZonePicker';
 import type { LocationPick } from './LocationPicker';
-import type { GardenLocation, SunExposure } from '../types';
+import type { GardenLocation, SunExposure } from '../../types';
 
 // Leaflet + the zone polygons are only needed here, so keep them out of the main bundle.
 const LocationPicker = lazy(() => import('./LocationPicker').then((m) => ({ default: m.LocationPicker })));

@@ -1,4 +1,4 @@
-import type { CropFamily } from '../types';
+import type { CropFamily } from '../../types';
 
 /** Flat family mark colors, matching the storyboard's turn-6a key. */
 export const CROP_COLORS: Record<string, string> = {

@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useGarden } from '../state/gardenStore';
-import type { Bed, PlantInstance } from '../types';
-import { getCrop } from '../data/crops';
-import { conflictKey, findOverlapConflicts, fitsAt } from '../utils/spacing';
+import type { Bed, PlantInstance } from '../../types';
+import { getCrop } from '../../data/crops';
+import { conflictKey, findOverlapConflicts, fitsAt } from '../../core/spacing';
 import {
   boundingBox,
   clampGroupDelta,
@@ -14,28 +14,11 @@ import {
   GROUP_BOX_PAD_IN,
   AXIS_LOCK_THRESHOLD_FACTOR,
   type Point,
-} from '../utils/geometry';
-import {
-  PLANTING_PX_PER_INCH,
-  bedOutline,
-  contentTransform,
-  drawnCornerRadius,
-  fitView,
-  gardenBounds,
-  gardenToBed,
-  labelAnchor,
-  isDrag,
-  outerRadiusPx,
-  panBy,
-  pinchView,
-  screenToGarden,
-  wheelZoomFactor,
-  zoomAt,
-  zoomPercent,
-  type Bounds,
-  type View,
-} from '../utils/layout';
-import { isContextPress, isReleasedMove, polygonClipPath } from '../utils/pointer';
+} from '../../core/geometry';
+import { PLANTING_PX_PER_INCH, contentTransform, fitView, isDrag, panBy, pinchView, screenToGarden, wheelZoomFactor, zoomAt, zoomPercent, type View } from '../viewport';
+import { bedOutline, drawnCornerRadius, gardenBounds, gardenToBed, type Bounds } from '../../core/layout';
+import { labelAnchor, outerRadiusPx } from '../layoutInteraction';
+import { isContextPress, isReleasedMove, polygonClipPath } from '../pointer';
 import { PlantToken, LONG_PRESS_MS, MOVE_THRESHOLD_PX, type GestureHandlers } from './PlantToken';
 import { PlantMenu } from './PlantMenu';
 import { PlantInfoCard } from './PlantInfoCard';
