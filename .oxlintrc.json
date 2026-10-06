@@ -13,6 +13,12 @@
       }
     },
     {
+      "files": ["src/api/**"],
+      "rules": {
+        "no-restricted-imports": ["error", { "patterns": [{ "regex": "(^|/)app(/|$)", "message": "src/api is headless: it may not import from app." }] }]
+      }
+    },
+    {
       "files": ["src/core/**"],
       "rules": {
         "no-restricted-imports": ["error", { "patterns": [{ "regex": "(^|/)(api|app)(/|$)", "message": "src/core is the headless engine: it may not import from api or app." }] }]

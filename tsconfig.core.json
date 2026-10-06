@@ -1,5 +1,5 @@
 {
-  // Typechecks the headless layers (data, core, and later api) with no DOM lib and no ambient
+  // Typechecks the headless layers (data, core and api) with no DOM lib and no ambient
   // browser/Vite types, so any use of `window`, `document`, `localStorage`, etc. fails here
   // even though tsconfig.app.json (which sees the DOM) would accept it.
   "compilerOptions": {
@@ -20,5 +20,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src/types.ts", "src/data", "src/core"]
+  "include": ["src/types.ts", "src/data", "src/core", "src/api"]
 }

@@ -1,6 +1,6 @@
 import type { GardenPlan } from '../types';
-import { CROPS } from '../data/crops';
-import { isValidBed, parsePlan } from './reducer';
+import { parsePlan } from './reducer';
+import { isRecord, validatePlan } from './validatePlan';
 
 /** Identifies the build and moment an export came from, so a bug report can be matched to code. */
 export interface GardenFileMeta {
@@ -31,56 +31,10 @@ export function gardenFileName(plan: GardenPlan, exportedAt: string): string {
   return `${slug}-${exportedAt.slice(0, 10)}.json`;
 }
 
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-const isPositive = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0;
-
 function parseMeta(raw: unknown): GardenFileMeta | null {
   if (!isRecord(raw)) return null;
   const { commit, exportedAt } = raw;
   return typeof commit === 'string' && typeof exportedAt === 'string' ? { commit, exportedAt } : null;
-}
-
-/** Why a plan's beds can't be used, or null. Handles both the current multi-bed layout and legacy single-bed (v2) plans. */
-function bedsProblem(plan: Record<string, unknown>): string | null {
-  if (plan.version === 2) {
-    const bed = plan.bed;
-    if (!isRecord(bed) || !isPositive(bed.widthIn) || !isPositive(bed.heightIn) || typeof bed.name !== 'string') {
-      return 'the garden bed is missing or has an invalid size';
-    }
-    return null;
-  }
-  if (!Array.isArray(plan.beds)) return 'the garden has no beds';
-  for (const [i, b] of plan.beds.entries()) {
-    if (!isValidBed(b)) return `bed ${i + 1} is invalid`;
-  }
-  const ids = plan.beds.map((b: { id: string }) => b.id);
-  if (new Set(ids).size !== ids.length) return 'two beds share the same id';
-  return null;
-}
-
-/** Returns a description of the first problem with an untrusted plan, or null if it's usable. */
-function planProblem(plan: unknown): string | null {
-  if (!isRecord(plan)) return 'the file has no garden in it';
-  if (plan.version !== 2 && plan.version !== 3) return `unsupported garden version (${String(plan.version)})`;
-  if (!isRecord(plan.profile)) return 'the garden has no profile';
-  if (plan.version === 3 && typeof plan.name !== 'string') return 'the garden has no name';
-  const beds = bedsProblem(plan);
-  if (beds) return beds;
-  if (!Array.isArray(plan.plants)) return 'the garden has no plant list';
-  const cropIds = new Set(CROPS.map((c) => c.id));
-  const bedIds = plan.version === 3 ? new Set((plan.beds as { id: string }[]).map((b) => b.id)) : null;
-  for (const [i, p] of plan.plants.entries()) {
-    if (!isRecord(p) || typeof p.id !== 'string' || typeof p.groupId !== 'string') return `plant ${i + 1} is malformed`;
-    if (bedIds && (typeof p.bedId !== 'string' || !bedIds.has(p.bedId))) return `plant ${i + 1} is in a bed that doesn't exist`;
-    if (typeof p.cropId !== 'string' || !cropIds.has(p.cropId)) return `plant ${i + 1} has an unknown crop (${String(p.cropId)})`;
-    if (typeof p.x !== 'number' || typeof p.y !== 'number' || !Number.isFinite(p.x) || !Number.isFinite(p.y)) {
-      return `plant ${i + 1} has an invalid position`;
-    }
-  }
-  if (!Array.isArray(plan.dismissedConflictKeys) || plan.dismissedConflictKeys.some((k) => typeof k !== 'string')) {
-    return 'the dismissed-warnings list is invalid';
-  }
-  return null;
 }
 
 /**
@@ -98,8 +52,8 @@ export function parseGardenFile(text: string): ParsedGardenFile {
   }
   const wrapper = isRecord(json) && json.format === 'garden-planner-export' ? json : null;
   const candidate = wrapper ? wrapper.plan : json;
-  const problem = planProblem(candidate);
-  if (problem) return { ok: false, error: `Couldn't load garden: ${problem}.` };
+  const [problem] = validatePlan(candidate);
+  if (problem) return { ok: false, error: `Couldn't load garden: ${problem.message}.` };
   const id = isRecord(candidate) && typeof candidate.id === 'string' ? candidate.id : '';
   // parsePlan also sanitizes the optional location pin.
   return { ok: true, plan: parsePlan(JSON.stringify(candidate), id), meta: wrapper ? parseMeta(wrapper.meta) : null };

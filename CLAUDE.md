@@ -14,10 +14,10 @@ A client-only React + TypeScript (Vite) app for planning a vegetable garden bed 
 
 The code is layered; see the README for the full map. In short: `src/data` (static
 reference data) ← `src/core` (the headless engine: rules, plan state machine, file
-format) ← `src/app` (React UI and browser bindings). A planned `src/api` layer will sit
-between `core` and `app`. Dependencies only point one way, and it's enforced:
-`.oxlintrc.json` forbids `data` importing `core`/`app` and `core` importing `app`, and
-`tsconfig.core.json` typechecks `data` and `core` without the DOM lib, so browser APIs
+format) ← `src/app` (React UI and browser bindings). `src/api` sits between `core` and `app`
+(warnings, errors and revision tokens now; commands next, per `docs/api-design.md`). Dependencies only point one way, and it's enforced:
+`.oxlintrc.json` forbids `data` importing `core`/`api`/`app`, `core` importing `api`/`app`
+and `api` importing `app`, and `tsconfig.core.json` typechecks `data`, `core` and `api` without the DOM lib, so browser APIs
 fail `npx tsc -b --noEmit` there.
 
 Components (`src/app/components/`) should be thin: rendering, gesture wiring, and
