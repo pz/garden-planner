@@ -244,6 +244,47 @@ export function boxCorners(bed: BedPlacement): Point[] {
   ].map((c) => bedToGarden(bed, c));
 }
 
+/** The outline of a bed in garden coordinates: its corners, or a fine polygon around an ellipse. */
+export function outlinePoints(bed: Bed): Point[] {
+  if (bed.shape === 'polygon' && bed.points) return bed.points.map((q) => bedToGarden(bed, q));
+  if (bed.shape === 'ellipse') {
+    const n = 64; // a multiple of 4, so the extreme points of an unturned ellipse are sampled exactly
+    return Array.from({ length: n }, (_, i) => {
+      const t = (i / n) * 2 * Math.PI;
+      return bedToGarden(bed, {
+        x: bed.widthIn / 2 + (bed.widthIn / 2) * Math.cos(t),
+        y: bed.heightIn / 2 + (bed.heightIn / 2) * Math.sin(t),
+      });
+    });
+  }
+  return boxCorners(bed);
+}
+
+/** Where a bed's name goes: a point on the shape's highest edge or corner, and how the text hangs from it. */
+export interface LabelAnchor {
+  x: number;
+  y: number;
+  /** `start`: the name begins at x (a flat top edge, from its left end). `middle`: centered on x (a single highest point). */
+  align: 'start' | 'middle';
+}
+
+/**
+ * Where to put a bed's name so it sits just above the shape itself, not above its bounding
+ * box's corner (which for an ellipse, a turned bed or an odd polygon can be far from any of
+ * it). The name goes over the highest point of the outline: from the left end of the top edge
+ * if it's flat, or centered over the highest corner or curve. The caller lifts it clear of the line.
+ */
+export function labelAnchor(bed: Bed): LabelAnchor {
+  const pts = outlinePoints(bed);
+  const top = Math.min(...pts.map((p) => p.y));
+  const highest = pts.filter((p) => p.y <= top + 1e-6);
+  if (highest.length > 1) {
+    const left = highest.reduce((a, b) => (b.x < a.x ? b : a));
+    return { x: left.x, y: top, align: 'start' };
+  }
+  return { x: highest[0].x, y: top, align: 'middle' };
+}
+
 /** Axis-aligned box around a bed's four corners, in garden coordinates. */
 export function bedBounds(bed: BedPlacement): Bounds {
   const corners = boxCorners(bed);

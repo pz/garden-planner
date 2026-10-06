@@ -14,6 +14,8 @@ import {
   parseAngle,
   resizeCursor,
   rotationFromPointer,
+  labelAnchor,
+  outlinePoints,
   snapAngle,
   magneticAngle,
   stepAngle,
@@ -981,5 +983,81 @@ describe('resizeSnapped', () => {
     const r = resizeSnapped(bed(), { sx: 1, sy: 0 }, { x: 139, y: 0 }, { xs: [140], ys: [] }, { zoom: 7, free: true });
     expect(r.bed.widthIn).toBe(139);
     expect(r.guides).toEqual([]);
+  });
+});
+
+describe('labelAnchor', () => {
+  it('starts at the left end of a flat top edge: the top-left corner of an unturned rectangle', () => {
+    expect(labelAnchor(bed())).toEqual({ x: 0, y: 0, align: 'start' });
+  });
+
+  it('centers over the top corner of a rectangle turned 45°, not its far-off bounding box corner', () => {
+    const a = labelAnchor(bed({ rotationDeg: 45 }));
+    expect(a.align).toBe('middle');
+    // The highest corner of a 96×48 box turned 45° is its top-left one.
+    const topLeft = bedToGarden(bed({ rotationDeg: 45 }), { x: 0, y: 0 });
+    expect(a.x).toBeCloseTo(topLeft.x);
+    expect(a.y).toBeCloseTo(topLeft.y);
+  });
+
+  it('centers over the top of an ellipse', () => {
+    const a = labelAnchor(bed({ shape: 'ellipse' }));
+    expect(a.align).toBe('middle');
+    expect(a.x).toBeCloseTo(48);
+    expect(a.y).toBeCloseTo(0);
+  });
+
+  it('follows an ellipse that is turned a quarter, to its new highest point', () => {
+    const a = labelAnchor(bed({ shape: 'ellipse', rotationDeg: 90 }));
+    expect(a.align).toBe('middle');
+    expect(a.x).toBeCloseTo(48);
+    expect(a.y).toBeCloseTo(24 - 48); // the long axis now runs up and down: 48″ above the center
+  });
+
+  it('sits over the apex of a triangle', () => {
+    const tri = polyBed({ widthIn: 48, heightIn: 48, cx: 24, cy: 24, points: [{ x: 24, y: 0 }, { x: 48, y: 48 }, { x: 0, y: 48 }] });
+    expect(labelAnchor(tri)).toEqual({ x: 24, y: 0, align: 'middle' });
+  });
+
+  it('skips an empty top-left corner: an L-shape missing it is labeled over its actual top edge', () => {
+    const l = polyBed({
+      widthIn: 48,
+      heightIn: 48,
+      cx: 24,
+      cy: 24,
+      points: [{ x: 24, y: 0 }, { x: 48, y: 0 }, { x: 48, y: 48 }, { x: 0, y: 48 }, { x: 0, y: 24 }, { x: 24, y: 24 }],
+    });
+    expect(labelAnchor(l)).toEqual({ x: 24, y: 0, align: 'start' });
+  });
+
+  it('picks the higher peak when a notch splits the top', () => {
+    const u = polyBed({
+      widthIn: 60,
+      heightIn: 48,
+      cx: 30,
+      cy: 24,
+      points: [{ x: 0, y: 6 }, { x: 12, y: 6 }, { x: 12, y: 24 }, { x: 36, y: 24 }, { x: 36, y: 0 }, { x: 60, y: 0 }, { x: 60, y: 48 }, { x: 0, y: 48 }],
+    });
+    expect(labelAnchor(u)).toEqual({ x: 36, y: 0, align: 'start' });
+  });
+
+  it('works in garden coordinates for a bed that is not at the origin', () => {
+    expect(labelAnchor(bed({ cx: 300, cy: 200 }))).toEqual({ x: 252, y: 176, align: 'start' });
+  });
+});
+
+describe('outlinePoints', () => {
+  it('is the box for a rectangle and the turned corners for a polygon', () => {
+    expect(outlinePoints(bed())).toHaveLength(4);
+    const p = polyBed();
+    expect(outlinePoints(p)).toHaveLength(p.points!.length);
+  });
+  it('stays on the ellipse', () => {
+    const e = bed({ shape: 'ellipse' });
+    for (const q of outlinePoints(e)) {
+      const nx = (q.x - 48) / 48;
+      const ny = (q.y - 24) / 24;
+      expect(nx * nx + ny * ny).toBeCloseTo(1, 9);
+    }
   });
 });

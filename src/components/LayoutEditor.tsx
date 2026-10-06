@@ -7,7 +7,6 @@ import type { Point } from '../utils/geometry';
 import {
   LAYOUT_SNAP_IN,
   ROTATION_STEP_DEG,
-  bedBounds,
   bedToGarden,
   boxCorners,
   cloneBed,
@@ -21,6 +20,7 @@ import {
   gardenBounds,
   geometryOf,
   isDrag,
+  labelAnchor,
   labelOffset,
   moveCorner,
   nextBedName,
@@ -819,12 +819,13 @@ export function LayoutEditor() {
 
           {beds.map((bed) => {
             if (bed.id === editingNameId) return null;
-            const box = bedBounds(displayed(bed));
+            const at = labelAnchor(displayed(bed));
             return (
               <text
                 key={`name-${bed.id}`}
-                x={box.x0}
-                y={box.y0 - px(7)}
+                x={at.x}
+                y={at.y - px(7)}
+                textAnchor={at.align}
                 data-bed-name={bed.id}
                 // Stop the press here so it doesn't pan the canvas or deselect the bed.
                 onPointerDown={(e) => nameEditable && e.button === 0 && e.stopPropagation()}
@@ -1019,9 +1020,19 @@ export function LayoutEditor() {
         (() => {
           const bed = beds.find((b) => b.id === editingNameId);
           if (!bed) return null;
-          const box = bedBounds(displayed(bed));
-          const at = gardenToScreen(view, { x: box.x0, y: box.y0 });
-          return <BedNameInput key={bed.id} name={bed.name} left={at.x - 6} bottom={at.y - 2} onDone={(name) => finishNameEdit(bed, name)} />;
+          const anchor = labelAnchor(displayed(bed));
+          const at = gardenToScreen(view, anchor);
+          const centered = anchor.align === 'middle';
+          return (
+            <BedNameInput
+              key={bed.id}
+              name={bed.name}
+              left={centered ? at.x : at.x - 6}
+              centered={centered}
+              bottom={at.y - 2}
+              onDone={(name) => finishNameEdit(bed, name)}
+            />
+          );
         })()}
 
       {/* Tool rail */}
@@ -1242,11 +1253,14 @@ function BedShape({ bed, ...rest }: { bed: Bed } & React.SVGProps<SVGRectElement
 function BedNameInput({
   name,
   left,
+  centered,
   bottom,
   onDone,
 }: {
   name: string;
   left: number;
+  /** Whether `left` is the input's middle rather than its left edge. */
+  centered: boolean;
   bottom: number;
   /** The typed name, or null if editing was cancelled. */
   onDone: (name: string | null) => void;
@@ -1276,6 +1290,7 @@ function BedNameInput({
       style={{
         position: 'absolute',
         left,
+        transform: centered ? 'translateX(-50%)' : undefined,
         // Anchored by its bottom edge so it sits where the name's text does at any zoom.
         bottom: `calc(100% - ${bottom}px)`,
         width: 180,
