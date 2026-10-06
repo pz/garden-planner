@@ -5,7 +5,7 @@ import { isInsideOutline, type Outline, type Point } from './geometry';
 /** Bed edges and sizes snap to this step, in inches. */
 export const LAYOUT_SNAP_IN = 6;
 /** No bed side may be shorter than this, in inches. */
-export const MIN_BED_SIDE_IN = 12;
+export const MIN_BED_SIDE_IN = 2;
 /** Rectangular beds are square-cornered unless given a radius; plant centers stay inside any curve. */
 export const BED_CORNER_RADIUS_IN = 0;
 /** The planting view's fixed scale, and the layout editor's 100% zoom. */

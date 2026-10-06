@@ -133,13 +133,13 @@ describe('rectFromCorners', () => {
     expect(rectFromCorners({ x: 25, y: 13 }, { x: 1, y: -1 })).toEqual({ cx: 12, cy: 6, widthIn: 24, heightIn: 12 });
   });
 
-  it('accepts a rectangle exactly at the minimum side length', () => {
-    expect(rectFromCorners({ x: 0, y: 0 }, { x: MIN_BED_SIDE_IN, y: MIN_BED_SIDE_IN })).not.toBeNull();
+  it('accepts a rectangle as small as one snap step (6″), under a foot', () => {
+    expect(rectFromCorners({ x: 0, y: 0 }, { x: 6, y: 6 })).toEqual({ cx: 3, cy: 3, widthIn: 6, heightIn: 6 });
   });
 
-  it('rejects one a snap step under the minimum on either side', () => {
-    expect(rectFromCorners({ x: 0, y: 0 }, { x: MIN_BED_SIDE_IN - 6, y: 48 })).toBeNull();
-    expect(rectFromCorners({ x: 0, y: 0 }, { x: 48, y: MIN_BED_SIDE_IN - 6 })).toBeNull();
+  it('rejects one that snaps to nothing on either side', () => {
+    expect(rectFromCorners({ x: 0, y: 0 }, { x: 2, y: 48 })).toBeNull(); // snaps to zero width
+    expect(rectFromCorners({ x: 0, y: 0 }, { x: 48, y: 2 })).toBeNull();
   });
 
   it('rejects a click with no drag', () => {
@@ -352,6 +352,20 @@ describe('view math', () => {
   });
 });
 
+describe('small beds', () => {
+  it('lets a side be typed or stepped to well under a foot', () => {
+    expect(normalizeSide(6)).toBe(6);
+    expect(normalizeSide(3)).toBe(3);
+  });
+  it('can be dragged down to a few inches, not just a foot', () => {
+    expect(resizeFromPointer(bed(), { sx: 1, sy: 0 }, { x: 6, y: 0 }).widthIn).toBe(6);
+  });
+  it('has a floor of a couple of inches so a bed never vanishes', () => {
+    expect(MIN_BED_SIDE_IN).toBe(2);
+    expect(normalizeSide(0)).toBe(MIN_BED_SIDE_IN);
+  });
+});
+
 describe('normalizeSide', () => {
   it('rounds to whole inches', () => {
     expect(normalizeSide(50)).toBe(50);
@@ -536,7 +550,7 @@ describe('polygonFromCorners', () => {
   it('rejects two corners, corners all in a line, and a box under the minimum side', () => {
     expect(polygonFromCorners([{ x: 0, y: 0 }, { x: 48, y: 48 }])).toBeNull();
     expect(polygonFromCorners([{ x: 0, y: 0 }, { x: 24, y: 24 }, { x: 48, y: 48 }])).toBeNull();
-    expect(polygonFromCorners([{ x: 0, y: 0 }, { x: 48, y: 0 }, { x: 48, y: MIN_BED_SIDE_IN - 6 }])).toBeNull();
+    expect(polygonFromCorners([{ x: 0, y: 0 }, { x: 48, y: 0 }, { x: 48, y: MIN_BED_SIDE_IN - 1 }])).toBeNull();
   });
 
   it('accepts a box exactly at the minimum side', () => {
@@ -973,7 +987,7 @@ describe('resizeSnapped', () => {
     expect(r.guides).toEqual([]);
   });
   it('still never shrinks below the minimum, even next to an aligned edge', () => {
-    const r = resizeSnapped(bed(), { sx: 1, sy: 0 }, { x: 5, y: 0 }, { xs: [5], ys: [] });
+    const r = resizeSnapped(bed(), { sx: 1, sy: 0 }, { x: 1, y: 0 }, { xs: [1], ys: [] });
     expect(r.bed.widthIn).toBe(MIN_BED_SIDE_IN);
     expect(r.guides).toEqual([]);
   });

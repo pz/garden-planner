@@ -66,6 +66,48 @@ describe('bedsOverlap', () => {
     });
   });
 
+  describe('rounded corners', () => {
+    const rounded = (id: string, x: number, y: number, w: number, h: number, r: number): Bed => rect(id, x, y, w, h, { cornerRadiusIn: r });
+
+    it('lets a bed sit in the empty corner a rounded bed leaves, where a square one would be hit', () => {
+      const a = rounded('a', 0, 0, 96, 96, 40);
+      const inCorner = rect('n', 0, 0, 8, 8);
+      expect(bedsOverlap(a, inCorner)).toBe(false);
+      expect(bedsOverlap(rounded('a', 0, 0, 96, 96, 0), inCorner)).toBe(true);
+    });
+
+    it('is true as soon as the neighbor reaches the curve', () => {
+      // The arc of radius 40 about (40, 40) passes (40 − 40·cos 45°) ≈ 11.7″ in from each side along the diagonal.
+      const a = rounded('a', 0, 0, 96, 96, 40);
+      expect(bedsOverlap(a, rect('n', 0, 0, 11, 11))).toBe(false);
+      expect(bedsOverlap(a, rect('n', 0, 0, 13, 13))).toBe(true);
+    });
+
+    it('still lets two rounded beds sit flush along their straight sides', () => {
+      expect(bedsOverlap(rounded('a', 0, 0, 96, 96, 20), rounded('b', 96, 0, 96, 96, 20))).toBe(false);
+      expect(bedsOverlap(rounded('a', 0, 0, 96, 96, 20), rounded('b', 95, 0, 96, 96, 20))).toBe(true);
+    });
+
+    it('fits two rounded beds together corner to corner closer than their boxes allow', () => {
+      const a = rounded('a', 0, 0, 96, 96, 40);
+      const b = rounded('b', 0, 0, 96, 96, 40);
+      // b moved diagonally so its top-left corner nestles against a's bottom-right one.
+      expect(bedsOverlap(a, { ...b, cx: b.cx + 85, cy: b.cy + 85 })).toBe(false);
+      expect(bedsOverlap(a, { ...b, cx: b.cx + 70, cy: b.cy + 70 })).toBe(true);
+    });
+
+    it('uses the drawn radius, which never exceeds half the short side', () => {
+      const pill = rounded('p', 0, 0, 96, 24, 500);
+      // Fully rounded ends: the corner box of the pill is empty.
+      expect(bedsOverlap(pill, rect('n', 0, 0, 3, 3))).toBe(false); // the arc of radius 12 clears a 3″ corner
+    });
+
+    it('turns with the bed', () => {
+      const a = rect('a', 0, 0, 96, 96, { cornerRadiusIn: 40, rotationDeg: 90 });
+      expect(bedsOverlap(a, rect('n', 0, 0, 8, 8))).toBe(false);
+    });
+  });
+
   describe('ellipses', () => {
     const ellipse = (id: string, x: number, y: number, w: number, h: number): Bed => rect(id, x, y, w, h, { shape: 'ellipse' });
 

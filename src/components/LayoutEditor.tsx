@@ -266,33 +266,35 @@ export function LayoutEditor() {
     return introducesOverlap(beds, bed, next);
   }
 
-  function applyGeometry(bed: Bed, draft: Bed, change: 'size' | 'corner' | 'radius' = 'size') {
+  function applyGeometry(bed: Bed, draft: Bed, change: 'size' | 'corner' | 'radius' = 'size'): boolean {
     if (blocked(bed, draft)) {
       notify('That would overlap another bed.');
-      return;
+      return false;
     }
     const { outsideIds } = relocatePlants(bed, draft, plants);
     if (outsideIds.length) {
       setPending({ kind: 'resize', bedId: bed.id, draft, plantIds: outsideIds, change });
-      return;
+      return true;
     }
     commit(() => reshapeBed(bed.id, geometryOf(draft)));
+    return true;
   }
 
-  function setSizeFromPanel(bed: Bed, widthIn: number, heightIn: number) {
-    if (pending) return;
+  /** The panel's edits return whether they were taken, so a refused one (it would overlap) can flash its field. */
+  function setSizeFromPanel(bed: Bed, widthIn: number, heightIn: number): boolean {
+    if (pending) return true;
     const w = normalizeSide(widthIn);
     const h = normalizeSide(heightIn);
-    if (w === bed.widthIn && h === bed.heightIn) return;
+    if (w === bed.widthIn && h === bed.heightIn) return true;
     // The panel grows and shrinks a bed from its top-left corner.
-    applyGeometry(bed, resizeBedTo(bed, w, h, { sx: 1, sy: 1 }));
+    return applyGeometry(bed, resizeBedTo(bed, w, h, { sx: 1, sy: 1 }));
   }
 
-  function setRadiusFromPanel(bed: Bed, inches: number) {
-    if (pending) return;
+  function setRadiusFromPanel(bed: Bed, inches: number): boolean {
+    if (pending) return true;
     const r = normalizeCornerRadius(inches, bed);
-    if (r === drawnCornerRadius(bed)) return;
-    applyGeometry(bed, { ...bed, cornerRadiusIn: r }, 'radius');
+    if (r === drawnCornerRadius(bed)) return true;
+    return applyGeometry(bed, { ...bed, cornerRadiusIn: r }, 'radius');
   }
 
   function requestDelete(bed: Bed) {
@@ -341,16 +343,17 @@ export function LayoutEditor() {
     setCursor(null);
   }
 
-  function setRotation(bed: Bed, deg: number) {
-    if (pending) return;
+  function setRotation(bed: Bed, deg: number): boolean {
+    if (pending) return true;
     // Typed and stepped angles are taken to the degree; only the drag handle has marks to stick to.
     const rotationDeg = magneticAngle(deg, true);
-    if (rotationDeg === bed.rotationDeg) return;
+    if (rotationDeg === bed.rotationDeg) return true;
     if (blocked(bed, { ...bed, rotationDeg })) {
       notify('Turning it there would overlap another bed.');
-      return;
+      return false;
     }
     commit(() => rotateBed(bed.id, rotationDeg));
+    return true;
   }
 
   function copySelected() {
@@ -1421,11 +1424,17 @@ function BedPanel({
   plantCount: number;
   onBack: () => void;
   onRename: (name: string) => void;
-  onSize: (widthIn: number, heightIn: number) => void;
-  onRadius: (inches: number) => void;
-  onRotate: (deg: number) => void;
+  /** Each returns false if the edit was refused (it would overlap another bed). */
+  onSize: (widthIn: number, heightIn: number) => boolean;
+  onRadius: (inches: number) => boolean;
+  onRotate: (deg: number) => boolean;
   onDelete: () => void;
 }) {
+  /** Counts of refused edits per field; each bump flashes that field red. */
+  const [flash, setFlash] = useState({ width: 0, length: 0, corners: 0, angle: 0 });
+  const refuse = (row: keyof typeof flash, accepted: boolean) => {
+    if (!accepted) setFlash((f) => ({ ...f, [row]: f[row] + 1 }));
+  };
   const nameRef = useRef<HTMLInputElement>(null);
   /** The name as it was when editing started, restored on Esc or if the field is left blank. */
   const [nameBefore, setNameBefore] = useState<string | null>(null);
@@ -1508,28 +1517,31 @@ function BedPanel({
           </span>
           <StepperRow
             label="Width"
+            flash={flash.width}
             display={formatLength(bed.widthIn)}
             parse={parseLength}
-            onCommit={(v) => onSize(v, bed.heightIn)}
-            down={{ icon: 'minus', title: 'Shrink width', onClick: () => onSize(bed.widthIn - LAYOUT_SNAP_IN, bed.heightIn) }}
-            up={{ icon: 'plus', title: 'Grow width', onClick: () => onSize(bed.widthIn + LAYOUT_SNAP_IN, bed.heightIn) }}
+            onCommit={(v) => refuse('width', onSize(v, bed.heightIn))}
+            down={{ icon: 'minus', title: 'Shrink width', onClick: () => refuse('width', onSize(bed.widthIn - LAYOUT_SNAP_IN, bed.heightIn)) }}
+            up={{ icon: 'plus', title: 'Grow width', onClick: () => refuse('width', onSize(bed.widthIn + LAYOUT_SNAP_IN, bed.heightIn)) }}
           />
           <StepperRow
             label="Length"
+            flash={flash.length}
             display={formatLength(bed.heightIn)}
             parse={parseLength}
-            onCommit={(v) => onSize(bed.widthIn, v)}
-            down={{ icon: 'minus', title: 'Shrink length', onClick: () => onSize(bed.widthIn, bed.heightIn - LAYOUT_SNAP_IN) }}
-            up={{ icon: 'plus', title: 'Grow length', onClick: () => onSize(bed.widthIn, bed.heightIn + LAYOUT_SNAP_IN) }}
+            onCommit={(v) => refuse('length', onSize(bed.widthIn, v))}
+            down={{ icon: 'minus', title: 'Shrink length', onClick: () => refuse('length', onSize(bed.widthIn, bed.heightIn - LAYOUT_SNAP_IN)) }}
+            up={{ icon: 'plus', title: 'Grow length', onClick: () => refuse('length', onSize(bed.widthIn, bed.heightIn + LAYOUT_SNAP_IN)) }}
           />
           {bed.shape === 'rect' && (
             <StepperRow
               label="Corners"
+            flash={flash.corners}
               display={formatLength(drawnCornerRadius(bed))}
               parse={(t) => parseLength(t, { bareUnit: 'in', allowZero: true })}
-              onCommit={onRadius}
-              down={{ icon: 'minus', title: 'Square the corners more', onClick: () => onRadius(drawnCornerRadius(bed) - 1) }}
-              up={{ icon: 'plus', title: 'Round the corners more', onClick: () => onRadius(drawnCornerRadius(bed) + 1) }}
+              onCommit={(v) => refuse('corners', onRadius(v))}
+              down={{ icon: 'minus', title: 'Square the corners more', onClick: () => refuse('corners', onRadius(drawnCornerRadius(bed) - 1)) }}
+              up={{ icon: 'plus', title: 'Round the corners more', onClick: () => refuse('corners', onRadius(drawnCornerRadius(bed) + 1)) }}
             />
           )}
         </div>
@@ -1539,11 +1551,12 @@ function BedPanel({
           </span>
           <StepperRow
             label="Angle"
+            flash={flash.angle}
             display={`${bed.rotationDeg}°`}
             parse={parseAngle}
-            onCommit={onRotate}
-            down={{ icon: 'ccw', title: `Rotate left ${ROTATION_STEP_DEG}°`, onClick: () => onRotate(stepAngle(bed.rotationDeg, -1)) }}
-            up={{ icon: 'cw', title: `Rotate right ${ROTATION_STEP_DEG}°`, onClick: () => onRotate(stepAngle(bed.rotationDeg, 1)) }}
+            onCommit={(v) => refuse('angle', onRotate(v))}
+            down={{ icon: 'ccw', title: `Rotate left ${ROTATION_STEP_DEG}°`, onClick: () => refuse('angle', onRotate(stepAngle(bed.rotationDeg, -1))) }}
+            up={{ icon: 'cw', title: `Rotate right ${ROTATION_STEP_DEG}°`, onClick: () => refuse('angle', onRotate(stepAngle(bed.rotationDeg, 1))) }}
           />
         </div>
         <p style={{ font: '400 13px Figtree', color: C.muted }}>
@@ -1576,6 +1589,7 @@ function StepperRow({
   onCommit,
   down,
   up,
+  flash = 0,
 }: {
   label: string;
   display: string;
@@ -1583,14 +1597,34 @@ function StepperRow({
   onCommit: (value: number) => void;
   down: { icon: IconName; title: string; onClick: () => void };
   up: { icon: IconName; title: string; onClick: () => void };
+  /** Bumped each time an edit to this row is refused; every bump flashes the row red and shakes it. */
+  flash?: number;
 }) {
+  const rowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!flash) return;
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const shake = [0, -5, 5, -4, 3, 0].map((x) => (still ? 'none' : `translateX(${x}px)`));
+    rowRef.current?.querySelectorAll('input, button').forEach((el) => {
+      // The control reddens at once and eases back, shaking as it goes.
+      el.animate(
+        [0, 0.15, 0.4, 0.7, 1].map((offset, i) => ({
+          offset,
+          transform: shake[Math.min(i, shake.length - 1)],
+          borderColor: i < 4 ? C.warn : undefined,
+          backgroundColor: i < 4 ? 'color-mix(in srgb, oklch(0.55 0.19 28) 22%, white)' : undefined,
+        })),
+        { duration: 600, easing: 'ease-out' },
+      );
+    });
+  }, [flash]);
   /** What's typed while the field has focus; null when it just shows `display`. */
   const [text, setText] = useState<string | null>(null);
   const cancelled = useRef(false);
   const stepBtn = { width: 32, height: 32, padding: 0, justifyContent: 'center', borderRadius: 999 } as const;
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+    <div ref={rowRef} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <span style={{ flex: 1, font: '400 14px Figtree' }}>{label}</span>
       <button className="btn btn-secondary" title={down.title} aria-label={down.title} onClick={down.onClick} style={stepBtn}>
         <Icon name={down.icon} size={15} />

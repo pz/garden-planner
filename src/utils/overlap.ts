@@ -1,6 +1,6 @@
 import type { Bed } from '../types';
 import type { Point } from './geometry';
-import { bedToGarden, boxCorners, signedArea2, type Handle, resizeBedTo } from './layout';
+import { bedToGarden, drawnCornerRadius, signedArea2, type Handle, resizeBedTo } from './layout';
 
 /** Cross products smaller than this are zero: noise from turning a bed by an angle, not geometry. */
 const EPS = 1e-9;
@@ -8,7 +8,7 @@ const EPS = 1e-9;
 const PROBE_IN = 1e-3;
 const ON_EDGE_IN = 1e-4;
 
-/** A bed's outline in garden coordinates: its corners, or a fine polygon around an ellipse. */
+/** A bed's outline in garden coordinates: its corners, or a fine polygon around an ellipse or a rounded corner. */
 export function bedPolygon(bed: Bed): Point[] {
   if (bed.shape === 'polygon' && bed.points) return bed.points.map((q) => bedToGarden(bed, q));
   if (bed.shape === 'ellipse') {
@@ -21,7 +21,24 @@ export function bedPolygon(bed: Bed): Point[] {
       });
     });
   }
-  return boxCorners(bed);
+  const r = drawnCornerRadius(bed);
+  const { widthIn: w, heightIn: h } = bed;
+  if (r <= 0) return [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }].map((q) => bedToGarden(bed, q));
+  // Each corner is a quarter circle of radius r about a point r in from the corner, walked
+  // clockwise from the top-left; the straight sides run between the arcs.
+  const arcs = 16;
+  const centers = [
+    { x: r, y: r, from: Math.PI },
+    { x: w - r, y: r, from: -Math.PI / 2 },
+    { x: w - r, y: h - r, from: 0 },
+    { x: r, y: h - r, from: Math.PI / 2 },
+  ];
+  return centers.flatMap(({ x, y, from }) =>
+    Array.from({ length: arcs + 1 }, (_, i) => {
+      const t = from + (i / arcs) * (Math.PI / 2);
+      return bedToGarden(bed, { x: x + r * Math.cos(t), y: y + r * Math.sin(t) });
+    }),
+  );
 }
 
 function cross(o: Point, a: Point, b: Point): number {
