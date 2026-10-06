@@ -17,13 +17,13 @@ import {
 } from '../utils/geometry';
 import {
   PLANTING_PX_PER_INCH,
-  bedBounds,
   bedOutline,
   contentTransform,
   drawnCornerRadius,
   fitView,
   gardenBounds,
   gardenToBed,
+  labelAnchor,
   isDrag,
   outerRadiusPx,
   panBy,
@@ -486,7 +486,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
 
   function renderBed(bed: Bed) {
     if (!bounds) return null;
-    const box = bedBounds(bed);
+    const label = labelAnchor(bed);
     const bedMultiply = multiply?.bedId === bed.id ? multiply : null;
     const bedPlants = effectivePlants.filter((p) => p.bedId === bed.id);
     const isPolygon = bed.shape === 'polygon' && !!bed.points;
@@ -497,10 +497,11 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
         <div
           style={{
             position: 'absolute',
-            // Above the top-left of the bed's footprint, which for a turned bed is its bounding box.
-            left: (box.x0 - bounds.x0) * PX_PER_INCH + 4,
-            top: (box.y0 - bounds.y0) * PX_PER_INCH + BED_LABEL_PX - 6,
-            transform: 'translateY(-100%)',
+            // Above the highest point of the bed's outline (from the left end of a flat top edge, or
+            // centered over a single highest point), so it's never far from the shape itself.
+            left: (label.x - bounds.x0) * PX_PER_INCH + (label.align === 'start' ? 4 : 0),
+            top: (label.y - bounds.y0) * PX_PER_INCH + BED_LABEL_PX - 6,
+            transform: label.align === 'middle' ? 'translate(-50%, -100%)' : 'translateY(-100%)',
             font: '600 13px Figtree',
             color: 'var(--color-text-muted)',
             whiteSpace: 'nowrap',
