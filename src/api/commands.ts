@@ -1,4 +1,4 @@
-import type { Point } from '../types';
+import type { PlantInstance, Point } from '../types';
 import type { ApiError } from './types';
 
 /** `$name` in an id field refers to the object an earlier command in the same batch created with `ref: "name"`. */
@@ -81,6 +81,13 @@ export type Command =
   | RestoreWarningCommand;
 
 export type CommandType = Command['type'];
+
+/** The `addPlant` that puts a plant back exactly as it was (same ids, position and variety), e.g. to undo removing it. */
+export function restorePlantCommand(plant: PlantInstance): AddPlantCommand {
+  const c: AddPlantCommand = { type: 'addPlant', id: plant.id, groupId: plant.groupId, bedId: plant.bedId, cropId: plant.cropId, x: plant.x, y: plant.y };
+  if (plant.variety !== undefined) c.variety = plant.variety;
+  return c;
+}
 
 /** The body of a write request. */
 export interface CommandRequest {

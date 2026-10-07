@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { addGardenId, parseGardenIndex, removeGardenId, setActiveGardenId, type GardenIndex } from '../../core/gardenIndex';
 import type { GardenPlan } from '../../types';
-import { LEGACY_PLAN_KEY, planStorageKey } from './gardenStore';
+import { LEGACY_PLAN_KEY, planStorageKey } from './planStorage';
 import { resolveMigration } from '../../core/migration';
 import { createPlan, parsePlan } from '../../core/reducer';
 import { storageKey } from './storageNamespace';
