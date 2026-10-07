@@ -1,4 +1,7 @@
 import { expect, test as base, type Page } from '@playwright/test';
+import type { Command } from '../src/api/commands';
+import type { MockGardenApi, RecordedCall } from '../src/api/mockGardenApi';
+import type { ApiError, Warning } from '../src/api/types';
 import type { GardenPlan, PlantInstance } from '../src/types';
 
 export const GARDEN_ID = 'g1';
@@ -87,7 +90,43 @@ function garden(page: Page): Garden {
  * `page` here is hermetic and strict: requests to anything but the dev server (map tiles,
  * geocoding) are aborted, and an uncaught page error or console error fails the test.
  */
-export const test = base.extend<{ garden: Garden }>({
+declare global {
+  interface Window {
+    __mockGardenApi?: MockGardenApi;
+  }
+}
+
+/** Scripting for the app's mock `GardenApi` (see mockApiFlagKey in the app): call `enable()` before `goto`. */
+interface Mock {
+  enable(): Promise<void>;
+  /** Every `apply` the client has made so far. */
+  calls(): Promise<RecordedCall[]>;
+  /** The commands of every call, flattened. */
+  commands(): Promise<Command[]>;
+  failNext(errors: Omit<ApiError, 'commandIndex'>[]): Promise<void>;
+  setWarnings(warnings: Warning[] | null): Promise<void>;
+  /** Change the garden behind the client's back. */
+  replacePlan(plan: GardenPlan): Promise<void>;
+  /** The garden as the mock holds it (the mock doesn't save to localStorage). */
+  plan(): Promise<GardenPlan>;
+}
+
+function mock(page: Page): Mock {
+  const api = <T,>(fn: (m: NonNullable<Window['__mockGardenApi']>) => T) =>
+    page.evaluate(`(${fn.toString()})(window.__mockGardenApi)`) as Promise<T>;
+  const call = <A,>(name: string, arg: A) => page.evaluate(([n, a]) => (window.__mockGardenApi as any)[n](a), [name, arg] as const) as Promise<void>;
+  return {
+    enable: () => page.addInitScript(() => localStorage.setItem('garden-planner-mock-api', '1')),
+    calls: () => api((m) => JSON.parse(JSON.stringify(m.calls))),
+    commands: async () => (await api((m) => JSON.parse(JSON.stringify(m.calls)) as RecordedCall[])).flatMap((c) => c.commands),
+    failNext: (errors) => call('failNext', errors),
+    setWarnings: (warnings) => call('setWarnings', warnings),
+    replacePlan: (plan) => call('replacePlan', plan),
+    plan: () => api((m) => JSON.parse(JSON.stringify(m.getSnapshot().plan))),
+  };
+}
+
+export const test = base.extend<{ garden: Garden; mock: Mock }>({
   page: async ({ page }, provide) => {
     const problems: string[] = [];
     await page.route(/^(?!http:\/\/localhost)/, (route) => (route.request().url().startsWith('data:') ? route.continue() : route.abort()));
@@ -100,6 +139,7 @@ export const test = base.extend<{ garden: Garden }>({
     expect(problems).toEqual([]);
   },
   garden: async ({ page }, provide) => provide(garden(page)),
+  mock: async ({ page }, provide) => provide(mock(page)),
 });
 
 export { expect };

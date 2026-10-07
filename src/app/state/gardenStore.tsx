@@ -1,18 +1,21 @@
-import { createContext, useContext, useEffect, useMemo, useReducer, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
+import type { ApplyResult } from '../../api/apply';
+import type { Command } from '../../api/commands';
+import type { ApplyOptions, GardenApi } from '../../api/gardenApi';
+import type { Warning } from '../../api/types';
 import type { Bed, GardenPlan, PlantInstance, Profile } from '../../types';
 import type { BedGeometry } from '../../core/layout';
-import { parsePlan, reducer } from '../../core/reducer';
-import { storageKey } from './storageNamespace';
-
-/** Pre-multi-garden storage key, kept only so gardensStore can migrate it into the new scheme. */
-export const LEGACY_PLAN_KEY = storageKey('garden-planner-plan/v1');
-
-export function planStorageKey(gardenId: string): string {
-  return storageKey(`garden-planner-plan:${gardenId}`);
-}
+import { createGardenApi, isMock } from './gardenApiFactory';
 
 interface GardenContextValue {
   plan: GardenPlan;
+  /** The garden's current revision. */
+  rev: string;
+  /** Every warning on the garden, dismissed ones included (flagged). */
+  warnings: Warning[];
+  /** Runs planting commands; see `GardenApi.apply`. Nothing changes if the result is not `ok`. */
+  apply: (commands: Command[], options?: ApplyOptions) => ApplyResult;
+  // Not planting commands yet: each becomes one as the API grows (see GardenApi.dispatch).
   setProfile: (profile: Profile) => void;
   setGardenName: (name: string) => void;
   addBed: (bed: Bed) => void;
@@ -23,49 +26,47 @@ interface GardenContextValue {
   pasteBed: (bed: Bed, plants: PlantInstance[]) => void;
   removeBed: (id: string) => void;
   restoreLayout: (beds: Bed[], plants: PlantInstance[]) => void;
-  addPlants: (plants: PlantInstance[]) => void;
-  moveGroup: (groupId: string, dx: number, dy: number) => void;
-  removePlant: (id: string) => void;
-  removeGroup: (groupId: string) => void;
-  setVariety: (id: string, variety: string | undefined) => void;
-  dismissConflictsForGroup: (groupId: string) => void;
 }
 
 const GardenContext = createContext<GardenContextValue | null>(null);
 
 /**
- * Loads, holds, and persists a single garden's plan. `gardenId` selects which one — mount
- * this with `key={gardenId}` at the call site so switching gardens gets a clean remount
- * (fresh reducer state, fresh load) instead of trying to rehydrate reducer state in place.
+ * Holds one garden for the UI, through its `GardenApi`. `gardenId` selects which saved garden — mount
+ * this with `key={gardenId}` at the call site so switching gardens gets a clean remount (a fresh
+ * API, a fresh load). `api` replaces the real, localStorage-backed one; tests pass a mock.
  */
-export function GardenProvider({ gardenId, children }: { gardenId: string; children: ReactNode }) {
-  const [plan, dispatch] = useReducer(reducer, gardenId, (id) => parsePlan(localStorage.getItem(planStorageKey(id)), id));
+export function GardenProvider({ gardenId, api: injected, children }: { gardenId: string; api?: GardenApi; children: ReactNode }) {
+  const [api] = useState(() => injected ?? createGardenApi(gardenId));
+  const snapshot = useSyncExternalStore(api.subscribe, api.getSnapshot);
 
+  // Let browser tests reach a mock API (development builds only; see mockApiFlagKey).
   useEffect(() => {
-    localStorage.setItem(planStorageKey(gardenId), JSON.stringify(plan));
-  }, [gardenId, plan]);
+    if (!import.meta.env.DEV || !isMock(api)) return;
+    window.__mockGardenApi = api;
+    return () => {
+      if (window.__mockGardenApi === api) delete window.__mockGardenApi;
+    };
+  }, [api]);
 
   const value = useMemo<GardenContextValue>(
     () => ({
-      plan,
-      setProfile: (profile) => dispatch({ type: 'setProfile', profile }),
-      setGardenName: (name) => dispatch({ type: 'setGardenName', name }),
-      addBed: (bed) => dispatch({ type: 'addBed', bed }),
-      renameBed: (id, name) => dispatch({ type: 'renameBed', id, name }),
-      moveBed: (id, dx, dy) => dispatch({ type: 'moveBed', id, dx, dy }),
-      reshapeBed: (id, geometry) => dispatch({ type: 'reshapeBed', id, geometry }),
-      rotateBed: (id, rotationDeg) => dispatch({ type: 'rotateBed', id, rotationDeg }),
-      pasteBed: (bed, plants) => dispatch({ type: 'pasteBed', bed, plants }),
-      removeBed: (id) => dispatch({ type: 'removeBed', id }),
-      restoreLayout: (beds, plants) => dispatch({ type: 'restoreLayout', beds, plants }),
-      addPlants: (plants) => dispatch({ type: 'addPlants', plants }),
-      moveGroup: (groupId, dx, dy) => dispatch({ type: 'moveGroup', groupId, dx, dy }),
-      removePlant: (id) => dispatch({ type: 'removePlant', id }),
-      removeGroup: (groupId) => dispatch({ type: 'removeGroup', groupId }),
-      setVariety: (id, variety) => dispatch({ type: 'setVariety', id, variety }),
-      dismissConflictsForGroup: (groupId) => dispatch({ type: 'dismissConflictsForGroup', groupId }),
+      plan: snapshot.plan,
+      rev: snapshot.rev,
+      // `snapshot` is a new object whenever the garden (or a mock's warnings) change.
+      warnings: api.warnings(),
+      apply: api.apply,
+      setProfile: (profile) => api.dispatch({ type: 'setProfile', profile }),
+      setGardenName: (name) => api.dispatch({ type: 'setGardenName', name }),
+      addBed: (bed) => api.dispatch({ type: 'addBed', bed }),
+      renameBed: (id, name) => api.dispatch({ type: 'renameBed', id, name }),
+      moveBed: (id, dx, dy) => api.dispatch({ type: 'moveBed', id, dx, dy }),
+      reshapeBed: (id, geometry) => api.dispatch({ type: 'reshapeBed', id, geometry }),
+      rotateBed: (id, rotationDeg) => api.dispatch({ type: 'rotateBed', id, rotationDeg }),
+      pasteBed: (bed, plants) => api.dispatch({ type: 'pasteBed', bed, plants }),
+      removeBed: (id) => api.dispatch({ type: 'removeBed', id }),
+      restoreLayout: (beds, plants) => api.dispatch({ type: 'restoreLayout', beds, plants }),
     }),
-    [plan],
+    [api, snapshot],
   );
 
   return <GardenContext.Provider value={value}>{children}</GardenContext.Provider>;

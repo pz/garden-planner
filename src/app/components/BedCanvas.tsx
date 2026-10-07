@@ -1,8 +1,9 @@
-import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useGarden } from '../state/gardenStore';
 import type { Bed, PlantInstance } from '../../types';
 import { getCrop } from '../../data/crops';
-import { conflictKey, findOverlapConflicts, fitsAt } from '../../core/spacing';
+import { duplicateSpot } from '../../core/spacing';
+import { restorePlantCommand, type Command } from '../../api/commands';
 import {
   boundingBox,
   clampGroupDelta,
@@ -43,7 +44,7 @@ function uid(): string {
 }
 
 export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
-  const { plan, addPlants, moveGroup, removePlant, removeGroup, setVariety, dismissConflictsForGroup } = useGarden();
+  const { plan, warnings, apply } = useGarden();
   const { beds, plants, profile } = plan;
 
   const bedRefs = useRef(new Map<string, HTMLDivElement>());
@@ -99,18 +100,8 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
     ghosts: Point[];
   } | null>(null);
 
-  const conflicts = useMemo(() => findOverlapConflicts(plants), [plants]);
-  const dismissedKeys = useMemo(() => new Set(plan.dismissedConflictKeys), [plan.dismissedConflictKeys]);
-  const warnedGroupIds = useMemo(() => {
-    const s = new Set<string>();
-    for (const c of conflicts) {
-      if (!dismissedKeys.has(conflictKey(c.a, c.b))) {
-        s.add(c.a);
-        s.add(c.b);
-      }
-    }
-    return s;
-  }, [conflicts, dismissedKeys]);
+  // Patches and plants with a warning the user hasn't dismissed get the warning badge.
+  const warnedGroupIds = useMemo(() => new Set(warnings.filter((w) => !w.dismissed).flatMap((w) => w.subjects)), [warnings]);
   const groupSizes = useMemo(() => {
     const m = new Map<string, number>();
     for (const p of plants) m.set(p.groupId, (m.get(p.groupId) ?? 0) + 1);
@@ -141,6 +132,16 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }
 
+  /** Runs commands; if the API refuses them, nothing changed and the reason is shown. */
+  const run = useCallback(
+    (commands: Command[]): boolean => {
+      const result = apply(commands);
+      if (!result.ok) setToasts((prev) => [...prev, { id: uid(), message: result.errors[0].message }]);
+      return result.ok;
+    },
+    [apply],
+  );
+
   // Backspace/Delete removes the selected plant, with an undo toast — but only when
   // focus isn't in a text field (e.g. the variety input), where the key should type normally.
   useEffect(() => {
@@ -153,16 +154,16 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
       const plant = plants.find((p) => p.id === selectedId);
       if (!plant) return;
       e.preventDefault();
-      removePlant(plant.id);
+      if (!run([{ type: 'removePlant', id: plant.id }])) return;
       setSelectedId(null);
       setToasts((prev) => [
         ...prev,
-        { id: uid(), message: `Removed ${getCrop(plant.cropId).name}`, onUndo: () => addPlants([plant]) },
+        { id: uid(), message: `Removed ${getCrop(plant.cropId).name}`, onUndo: () => void run([restorePlantCommand(plant)]) },
       ]);
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [mode, selectedId, plants, removePlant, addPlants]);
+  }, [mode, selectedId, plants, run]);
 
   function toggleLayout() {
     setMode((m) => (m === 'plant' ? 'layout' : 'plant'));
@@ -404,7 +405,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
     },
     onMoveEnd: (_id, committed) => {
       if (committed && moveState && (moveState.dx !== 0 || moveState.dy !== 0)) {
-        moveGroup(moveState.groupId, moveState.dx, moveState.dy);
+        run([{ type: 'movePatch', groupId: moveState.groupId, dx: moveState.dx, dy: moveState.dy }]);
       }
       setMoveState(null);
     },
@@ -435,9 +436,10 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
       if (committed && multiply && multiply.id === id && multiply.ghosts.length > 0) {
         const origin = plants.find((pl) => pl.id === id);
         if (origin) {
-          addPlants(
+          // The new plants join the dragged plant's patch.
+          run(
             multiply.ghosts.map((g) => ({
-              id: uid(),
+              type: 'addPlant' as const,
               bedId: origin.bedId,
               cropId: origin.cropId,
               x: g.x,
@@ -766,9 +768,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
               outline={bedOutline(menuBed)}
               existingPlants={plantsIn(menuBed.id)}
               onPick={(cropId) => {
-                addPlants([
-                  { id: uid(), bedId: menuBed.id, cropId, x: menuState.xIn, y: menuState.yIn, groupId: uid() },
-                ]);
+                run([{ type: 'addPlant', bedId: menuBed.id, cropId, x: menuState.xIn, y: menuState.yIn }]);
                 setMenuState(null);
               }}
               onClose={() => setMenuState(null)}
@@ -781,23 +781,14 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
               clientY={quickActions.clientY}
               onClose={() => setQuickActions(null)}
               onRemove={() => {
-                removePlant(quickActionsPlant.id);
+                run([{ type: 'removePlant', id: quickActionsPlant.id }]);
                 setQuickActions(null);
               }}
               onDuplicate={() => {
                 const bed = bedById.get(quickActionsPlant.bedId);
                 if (bed) {
-                  const spacing = getCrop(quickActionsPlant.cropId).spacingIn;
-                  const outline = bedOutline(bed);
-                  const { x: nx, y: ny } = clampToOutline(
-                    { x: quickActionsPlant.x + spacing * 0.8, y: quickActionsPlant.y },
-                    outline,
-                  );
-                  if (fitsAt(nx, ny, spacing, outline, plantsIn(bed.id))) {
-                    addPlants([
-                      { id: uid(), bedId: bed.id, cropId: quickActionsPlant.cropId, x: nx, y: ny, groupId: uid() },
-                    ]);
-                  }
+                  const spot = duplicateSpot(quickActionsPlant, bedOutline(bed), plantsIn(bed.id));
+                  if (spot) run([{ type: 'addPlant', bedId: bed.id, cropId: quickActionsPlant.cropId, x: spot.x, y: spot.y }]);
                 }
                 setQuickActions(null);
               }}
@@ -811,16 +802,22 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
               warned={warnedGroupIds.has(selectedPlant.groupId)}
               groupCount={groupCount}
               onClose={() => setSelectedId(null)}
-              onSetVariety={(variety) => setVariety(selectedPlant.id, variety)}
+              onSetVariety={(variety) => run([{ type: 'setVariety', id: selectedPlant.id, variety: variety ?? null }])}
               onRemove={() => {
-                removePlant(selectedPlant.id);
+                run([{ type: 'removePlant', id: selectedPlant.id }]);
                 setSelectedId(null);
               }}
               onRemoveGroup={() => {
-                removeGroup(selectedPlant.groupId);
+                run([{ type: 'removePatch', groupId: selectedPlant.groupId }]);
                 setSelectedId(null);
               }}
-              onDismissConflict={() => dismissConflictsForGroup(selectedPlant.groupId)}
+              onDismissConflict={() =>
+                run(
+                  warnings
+                    .filter((w) => !w.dismissed && w.subjects.includes(selectedPlant.groupId))
+                    .map((w) => ({ type: 'dismissWarning' as const, id: w.id })),
+                )
+              }
             />
           )}
         </>

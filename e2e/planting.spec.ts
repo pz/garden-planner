@@ -86,6 +86,26 @@ test.describe('planting', () => {
     ]);
   });
 
+  test('press and drag from a plant to grow a patch from it', async ({ page, garden }) => {
+    await garden.seed(gardenWith([{ id: 'c1', cropId: 'carrot', x: 20, y: 24 }]));
+    await page.goto('/');
+    const from = await garden.plantPoint('c1');
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.waitForTimeout(600); // long enough to count as a press-and-hold
+    // Carrots are 3 in apart and the bed is drawn at 7 px/in: sweep out about four more of them to the right.
+    await page.mouse.move(from.x + 40, from.y, { steps: 4 });
+    await page.mouse.move(from.x + 90, from.y, { steps: 6 });
+    await page.mouse.up();
+
+    const { plants } = await garden.plan();
+    expect(plants.length).toBeGreaterThanOrEqual(4);
+    expect(new Set(plants.map((p) => p.groupId))).toEqual(new Set(['c1'])); // all in the dragged plant's patch
+    expect(new Set(plants.map((p) => p.id)).size).toBe(plants.length);
+    const xs = plants.map((p) => p.x).sort((a, b) => a - b);
+    for (let i = 1; i < xs.length; i++) expect(xs[i] - xs[i - 1]).toBeCloseTo(3, 6);
+  });
+
   test('Remove patch deletes every member of the patch and nothing else', async ({ page, garden }) => {
     await garden.seed(
       gardenWith([
