@@ -6,6 +6,7 @@ import {
   clampToOutline,
   computeGhosts,
   computeGroupBoxes,
+  gridPoints,
   isInsideBed,
   isInsideOutline,
   lockedAxis,
@@ -321,5 +322,41 @@ describe('outline-aware placement', () => {
     // It stops at the notch's left wall or slides down onto its floor — never into the notch.
     const b = { x: 14 + d.x, y: 10 + d.y };
     expect(b.x <= 24 + 1e-6 || b.y >= 24 - 1e-6).toBe(true);
+  });
+});
+
+describe('gridPoints', () => {
+  it('is just the origin for a 1×1 grid', () => {
+    expect(gridPoints({ x: 5, y: 7 }, 'x', 1, 1, 3)).toEqual([{ x: 5, y: 7 }]);
+  });
+
+  it('runs columns along x and rows downward, row by row, spacing apart', () => {
+    expect(gridPoints({ x: 0, y: 0 }, 'x', 3, 2, 4)).toEqual([
+      { x: 0, y: 0 },
+      { x: 4, y: 0 },
+      { x: 8, y: 0 },
+      { x: 0, y: 4 },
+      { x: 4, y: 4 },
+      { x: 8, y: 4 },
+    ]);
+  });
+
+  it('with axis y, columns run downward and rows step rightward', () => {
+    expect(gridPoints({ x: 10, y: 10 }, 'y', 2, 2, 3)).toEqual([
+      { x: 10, y: 10 },
+      { x: 10, y: 13 },
+      { x: 13, y: 10 },
+      { x: 13, y: 13 },
+    ]);
+  });
+
+  it('is empty when either count is zero', () => {
+    expect(gridPoints({ x: 0, y: 0 }, 'x', 0, 3, 4)).toEqual([]);
+    expect(gridPoints({ x: 0, y: 0 }, 'x', 3, 0, 4)).toEqual([]);
+  });
+
+  it('keeps neighbors exactly one spacing apart (no drift across a long row)', () => {
+    const pts = gridPoints({ x: 0.1, y: 0 }, 'x', 50, 1, 3);
+    for (let i = 1; i < pts.length; i++) expect(pts[i].x - pts[i - 1].x).toBeCloseTo(3, 9);
   });
 });

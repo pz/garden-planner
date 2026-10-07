@@ -121,6 +121,7 @@ export type Action =
   | { type: 'removeGroup'; groupId: string }
   | { type: 'setVariety'; id: string; variety: string | undefined }
   | { type: 'dismissConflictsForGroup'; groupId: string }
+  | { type: 'setConflictDismissed'; key: string; dismissed: boolean }
   | { type: 'reset' };
 
 export function reducer(state: GardenPlan, action: Action): GardenPlan {
@@ -202,6 +203,16 @@ export function reducer(state: GardenPlan, action: Action): GardenPlan {
       const merged = new Set(state.dismissedConflictKeys);
       for (const c of touching) merged.add(conflictKey(c.a, c.b));
       return { ...state, dismissedConflictKeys: [...merged] };
+    }
+    case 'setConflictDismissed': {
+      const has = state.dismissedConflictKeys.includes(action.key);
+      if (action.dismissed === has) return state;
+      return {
+        ...state,
+        dismissedConflictKeys: action.dismissed
+          ? [...state.dismissedConflictKeys, action.key]
+          : state.dismissedConflictKeys.filter((k) => k !== action.key),
+      };
     }
     case 'reset':
       return createPlan(state.id);

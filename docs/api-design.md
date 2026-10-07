@@ -67,10 +67,10 @@ GET /v1/crops    GET /v1/crops/{id}
 
 - its garden placement and outline;
 - bounds and a legend per patch;
-- a coarse text grid in the bed's local frame, at `cellIn` resolution (default `LAYOUT_SNAP_IN`, 6 in): `#` outside the outline, `.` free, a letter per crop;
-- a free-space fraction.
+- a coarse text grid in the bed's own (unrotated) frame, at `cellIn` resolution (default 6 in; a `cellIn` that makes more than 10,000 cells is rejected): `#` where the middle of the cell is outside the bed's shape, `.` free, a capital letter where a plant's center is, a lowercase letter where a plant's growing room (radius of half its spacing) covers the cell; the response carries a legend from letter to crop id;
+- a free-space fraction (free cells over cells inside the shape).
 
-Free-rectangle extraction is decided at implementation. `placements:suggest` is deferred.
+Free-rectangle extraction was left out: the grid and fraction carry the same information for now. `placements:suggest` is deferred. Implemented as `readLayout` in `src/api/layoutView.ts`.
 
 ## 5. Writes
 
@@ -81,22 +81,23 @@ POST /v1/gardens/{g}/commands
 
 | Command | Fields | Notes |
 |---|---|---|
-| `addPlant` | `ref?, bedId, cropId, x, y, variety?` | |
-| `addPatch` | `ref?, bedId, cropId, (points[] \| grid), variety?, clip?` | `grid` is `{origin, axis:"x"\|"y", cols, rows}` with `computeGhosts` semantics. `clip: true` silently drops points outside the bed and reports them as `skipped`; the default is an error. |
+| `addPlant` | `ref?, id?, groupId?, bedId, cropId, x, y, variety?` | `id` and `groupId` are normally generated; supply them to restore a removed plant under its old identity. A supplied `groupId` that already exists joins that patch, if it has the same bed and crop. |
+| `addPatch` | `ref?, groupId?, bedId, cropId, (points[] \| grid), variety?, clip?` | Exactly one of `points` and `grid`. `grid` is `{origin, axis:"x"\|"y", columns, rows}`: a block of `columns × rows` plants at the crop's spacing, including the origin, growing in the positive directions (axis `x`: columns run right, rows step down; axis `y`: columns run down, rows step right); at most 1000 plants. `clip: true` drops points outside the bed and reports them as `skipped`; the default is an error. |
 | `removePlant` | `id` | |
 | `removePatch` | `groupId` | |
 | `movePatch` | `groupId, dx, dy` | Rigid translation within the same bed. Cross-bed moves are remove plus add for now. |
-| `setVariety` | `id, variety` | |
+| `setVariety` | `id, variety` | `variety: null` clears it. |
 | `dismissWarning` / `restoreWarning` | `id` | |
 
 Rules:
 
-- **Atomic.** All commands in a batch apply or none do. Later commands see earlier ones, and `ref` names objects created earlier in the batch.
+- **Atomic.** All commands in a batch apply or none do. Later commands see earlier ones. `ref` names an object a command creates; later commands refer to it as `"$name"` in an id field (`id`, `groupId`). A `$ref` to a plant works wherever a plant id does; a `$ref` to a patch works wherever a `groupId` does. A command that fails keeps its ref claimed, so commands that depend on it are skipped without piling on extra errors.
+- **Unknown or misspelt fields are rejected** (`invalid_command`), not ignored, so an agent's typo is reported instead of silently changing nothing.
 - **All errors reported, not just the first.** Each has a `commandIndex`.
 - **`dryRun`** returns exactly what would happen (results, introduced warnings, errors) without committing.
 - **Concurrency and retries.** `ifRev` mismatch returns 409 `stale_revision`. Replaying an `idempotencyKey` returns the original result.
 - **Convenience routes** (`POST /plants`, `DELETE /plants/{id}`, `POST /patches`) are one-command wrappers over the same path.
-- **Ids** are server-assigned UUIDs, the same scheme the UI uses today.
+- **Ids** are generated (UUIDs, the same scheme the UI uses today) unless the command supplies one; a supplied id that is already taken is a `duplicate_id` error. The generator is injected into `applyCommands`, so tests and simulations are deterministic.
 
 ### Response
 
@@ -134,12 +135,15 @@ Commands are the public, validated layer. The existing reducer actions stay as t
 
 Codes:
 
+- `invalid_command`: the request isn't a well-formed batch (checked by `parseRequest` before any garden is consulted).
 - `unknown_crop`
 - `unknown_bed`
-- `unknown_id`
-- `outside_bed`: the center is not inside the bed's outline, which covers rect, rounded corners, ellipse and polygon, via `isInsideOutline`.
+- `unknown_id`: also for a `$ref` no earlier command defined, a `$ref` to a patch where a plant is needed, and a warning id that doesn't exist.
+- `outside_bed`: the center is not inside the bed's outline, which covers rect, rounded corners, ellipse and polygon, via `isInsideOutline`. For `movePatch` the error carries the furthest valid move as `suggestion: {dx, dy}`. At most 20 points are listed per command, then one more error counts the rest.
 - `duplicate_ref`
-- `invalid_grid`
+- `duplicate_id`
+- `invalid_grid`: columns or rows not a whole number of at least 1, or more than 1000 plants.
+- `empty_patch`: no points, or `clip` dropped them all.
 - `stale_revision`
 - `invalid_garden_file`
 

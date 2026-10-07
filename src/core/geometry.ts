@@ -109,6 +109,28 @@ export function computeGhosts(
   return pts;
 }
 
+/** Most plants one patch may hold; a grid asking for more is rejected rather than built. */
+export const MAX_PATCH_PLANTS = 1000;
+
+/**
+ * A `columns` × `rows` block of points `spacingIn` apart, starting at `origin` (which is one of
+ * the points). With axis `x`, columns run left to right and rows step downward from the origin;
+ * with axis `y`, columns run top to bottom and rows step rightward. Points come out row by row.
+ * Unlike `computeGhosts`, this includes the origin and only grows in the positive directions —
+ * choose the origin at the block's top-left to place a block that way.
+ */
+export function gridPoints(origin: Point, axis: 'x' | 'y', columns: number, rows: number, spacingIn: number): Point[] {
+  const pts: Point[] = [];
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < columns; col++) {
+      const along = col * spacingIn;
+      const across = row * spacingIn;
+      pts.push(axis === 'x' ? { x: origin.x + along, y: origin.y + across } : { x: origin.x + across, y: origin.y + along });
+    }
+  }
+  return pts;
+}
+
 /** Slack for floating-point error when checking a point that was just projected onto an arc. */
 const EPSILON_IN = 1e-6;
 

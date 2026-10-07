@@ -31,7 +31,7 @@ src/
   types.ts        Shared type definitions (GardenPlan, Bed, PlantInstance, CropDef, …)
   data/           Static reference data
   core/           The headless engine
-  api/            Formal API over core (warnings, rev tokens, errors; commands to come) — see docs/api-design.md
+  api/            Formal API over core: commands, errors, warnings, layout view — see docs/api-design.md
   app/            The React app and everything browser-specific
 ```
 
@@ -57,10 +57,18 @@ Pure functions and types with no React, DOM or storage. This is where the rules 
 ### `src/api/` — the API layer
 
 Pure, headless, and the only way the app (and later an agent) is meant to read a plan's
-problems and change it. So far: `types.ts` (the `Warning` and `ApiError` shapes),
-`warnings.ts` (`computeWarnings` / `diffWarnings`) and `rev.ts` (content-hash revision
-tokens). Commands, validation and `applyCommands` follow; the design is in
-[`docs/api-design.md`](docs/api-design.md).
+problems and change it:
+
+- `commands.ts`: the command types and `parseRequest`, which validates untrusted JSON.
+- `apply.ts`: `applyCommands(plan, commands, {newId, ifRev?, dryRun?})`. Atomic; returns the
+  new plan, its revision, what each command did, and the warnings it introduced and resolved,
+  or every error with its command index.
+- `warnings.ts` (`computeWarnings` / `diffWarnings`), `rev.ts` (content-hash revision
+  tokens), `layoutView.ts` (`readLayout`, a text-grid picture of each bed), `types.ts`
+  (`Warning`, `ApiError`).
+
+The UI doesn't use it yet. The design, and what's still to come (bed commands, UI wiring,
+shade and companion warnings), is in [`docs/api-design.md`](docs/api-design.md).
 
 ### `src/app/` — the app
 
