@@ -187,6 +187,29 @@ describe('reducer', () => {
     });
   });
 
+  describe('setConflictDismissed', () => {
+    const base = (keys: string[]): GardenPlan => ({ ...basePlan([]), dismissedConflictKeys: keys });
+
+    it('adds a key, and only that key, when dismissing', () => {
+      const state = base(['a::b']);
+      const next = reducer(state, { type: 'setConflictDismissed', key: 'c::d', dismissed: true });
+      expect(next.dismissedConflictKeys).toEqual(['a::b', 'c::d']);
+      expect(state.dismissedConflictKeys).toEqual(['a::b']);
+      expect({ ...next, dismissedConflictKeys: [] }).toEqual({ ...state, dismissedConflictKeys: [] });
+    });
+
+    it('removes a key when restoring', () => {
+      const next = reducer(base(['a::b', 'c::d']), { type: 'setConflictDismissed', key: 'a::b', dismissed: false });
+      expect(next.dismissedConflictKeys).toEqual(['c::d']);
+    });
+
+    it('is a no-op (same state object) when the key is already in the requested state', () => {
+      const state = base(['a::b']);
+      expect(reducer(state, { type: 'setConflictDismissed', key: 'a::b', dismissed: true })).toBe(state);
+      expect(reducer(state, { type: 'setConflictDismissed', key: 'x::y', dismissed: false })).toBe(state);
+    });
+  });
+
   it('reset returns a fresh plan for the same garden id, discarding all prior state', () => {
     const state = basePlan([{ id: 'a', bedId: 'bed-1', cropId: 'tomato', x: 0, y: 0, groupId: 'g1' }]);
     expect(reducer(state, { type: 'reset' })).toEqual(createPlan(TEST_ID));

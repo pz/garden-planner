@@ -30,7 +30,21 @@ export interface WarningDiff {
   unchanged: number;
 }
 
-export type ApiErrorCode = PlanProblemCode;
+export type ApiErrorCode =
+  | PlanProblemCode
+  /** The request isn't a well-formed command batch (wrong shape, unknown command or field). */
+  | 'invalid_command'
+  /** An id, groupId, `$ref` or warning id names nothing. */
+  | 'unknown_id'
+  /** A plant center would be outside its bed's shape. */
+  | 'outside_bed'
+  | 'duplicate_ref'
+  /** A client-supplied id or groupId is already taken (or a groupId belongs to a different bed or crop). */
+  | 'duplicate_id'
+  | 'invalid_grid'
+  /** A patch would have no plants (no points, or `clip` dropped them all). */
+  | 'empty_patch'
+  | 'stale_revision';
 
 /** Why a request was rejected. Stable `code`s are for programs, `message` is for people. */
 export interface ApiError {
