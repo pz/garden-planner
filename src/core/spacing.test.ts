@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PlantInstance } from '../types';
-import { conflictKey, findOverlapConflicts, fitsAt } from './spacing';
+import { HARD_SPACING_FACTOR, conflictKey, findOverlapConflicts, findSpacingConflicts, fitsAt } from './spacing';
 import { rectOutline } from './geometry';
 
 function plant(overrides: Partial<PlantInstance> & Pick<PlantInstance, 'id' | 'cropId' | 'x' | 'y'>): PlantInstance {
@@ -119,5 +119,61 @@ describe('fitsAt with a non-rectangular outline', () => {
     const ellipse = { shape: 'ellipse' as const, widthIn: 96, heightIn: 48 };
     expect(fitsAt(48, 24, 12, ellipse, [])).toBe(true);
     expect(fitsAt(2, 2, 12, ellipse, [])).toBe(false);
+  });
+});
+
+describe('findSpacingConflicts', () => {
+  // tomato 24in + basil 12in -> required gap 18in; 0.7 × 18 = 12.6in
+  const pair = (distance: number) => [
+    plant({ id: 'a', cropId: 'tomato', x: 0, y: 0, groupId: 'g1' }),
+    plant({ id: 'b', cropId: 'basil', x: distance, y: 0, groupId: 'g2' }),
+  ];
+
+  it('reports distance, required gap, bed and crops for a conflict', () => {
+    expect(findSpacingConflicts(pair(10))).toEqual([
+      { a: 'g1', b: 'g2', bedId: 'b1', distanceIn: 10, requiredGapIn: 18, cropIds: ['tomato', 'basil'] },
+    ]);
+  });
+
+  it('is not a conflict exactly at the required gap, and is one just inside it', () => {
+    expect(findSpacingConflicts(pair(18))).toEqual([]);
+    expect(findSpacingConflicts(pair(17.99))).toHaveLength(1);
+  });
+
+  it('keeps the closest approach of a patch to a neighbor as the representative', () => {
+    const plants = [
+      plant({ id: 'a', cropId: 'tomato', x: 0, y: 0, groupId: 'g1' }),
+      plant({ id: 'c1', cropId: 'basil', x: 16, y: 0, groupId: 'g2' }),
+      plant({ id: 'c2', cropId: 'basil', x: 6, y: 0, groupId: 'g2' }),
+      plant({ id: 'c3', cropId: 'basil', x: 17, y: 0, groupId: 'g2' }),
+    ];
+    const [conflict, ...rest] = findSpacingConflicts(plants);
+    expect(rest).toEqual([]);
+    expect(conflict.distanceIn).toBe(6);
+  });
+
+  it('orders a and b canonically and keeps crop ids aligned with them', () => {
+    const plants = [
+      plant({ id: 'a', cropId: 'basil', x: 0, y: 0, groupId: 'z' }),
+      plant({ id: 'b', cropId: 'tomato', x: 5, y: 0, groupId: 'm' }),
+    ];
+    expect(findSpacingConflicts(plants)[0]).toMatchObject({ a: 'm', b: 'z', cropIds: ['tomato', 'basil'] });
+  });
+
+  it('ignores plants in different beds and members of one patch', () => {
+    const plants = [
+      plant({ id: 'a', cropId: 'tomato', x: 0, y: 0, groupId: 'g1', bedId: 'b1' }),
+      plant({ id: 'b', cropId: 'tomato', x: 1, y: 0, groupId: 'g2', bedId: 'b2' }),
+      plant({ id: 'c', cropId: 'tomato', x: 1, y: 1, groupId: 'g1', bedId: 'b1' }),
+    ];
+    expect(findSpacingConflicts(plants)).toEqual([]);
+  });
+
+  it('agrees with fitsAt: the planting UI refuses exactly the placements below HARD_SPACING_FACTOR of the gap', () => {
+    const outline = rectOutline(96, 48);
+    const existing = [plant({ id: 'a', cropId: 'tomato', x: 40, y: 24 })];
+    const refusedAt = (d: number) => !fitsAt(40 + d, 24, 12, outline, existing); // basil is 12in
+    expect(refusedAt(18 * HARD_SPACING_FACTOR - 0.01)).toBe(true);
+    expect(refusedAt(18 * HARD_SPACING_FACTOR)).toBe(false);
   });
 });

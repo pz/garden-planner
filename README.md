@@ -31,7 +31,7 @@ src/
   types.ts        Shared type definitions (GardenPlan, Bed, PlantInstance, CropDef, …)
   data/           Static reference data
   core/           The headless engine
-  api/            (planned) Formal command API over core — see docs/api-design.md
+  api/            Formal API over core (warnings, rev tokens, errors; commands to come) — see docs/api-design.md
   app/            The React app and everything browser-specific
 ```
 
@@ -54,6 +54,14 @@ Pure functions and types with no React, DOM or storage. This is where the rules 
 - **Scheduling.** `dates.ts`, `calendar.ts`.
 - **Location and zones.** `location.ts`, `geoZone.ts`, `zoneMap.ts`, `usdaZones.ts`.
 
+### `src/api/` — the API layer
+
+Pure, headless, and the only way the app (and later an agent) is meant to read a plan's
+problems and change it. So far: `types.ts` (the `Warning` and `ApiError` shapes),
+`warnings.ts` (`computeWarnings` / `diffWarnings`) and `rev.ts` (content-hash revision
+tokens). Commands, validation and `applyCommands` follow; the design is in
+[`docs/api-design.md`](docs/api-design.md).
+
 ### `src/app/` — the app
 
 Everything that needs a browser or React:
@@ -70,17 +78,19 @@ Everything that needs a browser or React:
 ### Dependency rules
 
 ```
-data  ←  core  ←  api (planned)  ←  app
+data  ←  core  ←  api  ←  app
 ```
 
 - `data` imports nothing from `core`, `api` or `app`.
 - `core` imports only `data` and `types`.
+- `api` imports `core`, `data` and `types`, never `app`.
 - `app` may import `core` for pure read-only helpers (e.g. computing a patch's
-  bounding box to draw it). Once `api` exists, every change to a garden goes through it.
+  bounding box to draw it). Changes to a garden are meant to go through `api` once its
+  commands exist.
 
 These are enforced, not conventions: `.oxlintrc.json` has `no-restricted-imports`
-overrides, and `tsconfig.core.json` typechecks `data` and `core` with no DOM lib, so
-using `window`, `document` or `localStorage` there fails `npx tsc -b --noEmit`.
+overrides, and `tsconfig.core.json` typechecks `data`, `core` and `api` with no DOM lib, so
+using `window`, `document` or `localStorage` in those layers fails `npx tsc -b --noEmit`.
 
 ### Tests
 
@@ -97,5 +107,5 @@ state layer can be refactored (e.g. onto `api`) without silently changing how th
 
 ## Docs
 
-- [`docs/api-design.md`](docs/api-design.md) — design of the planting API (planned).
+- [`docs/api-design.md`](docs/api-design.md) — design of the planting API (in progress).
 - `docs/screenshots/` — per-PR screenshots.
