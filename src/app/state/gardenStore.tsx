@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { ApplyResult } from '../../api/apply';
-import type { Command } from '../../api/commands';
+import { addBedCommand, type Command } from '../../api/commands';
 import type { ApplyOptions, GardenApi } from '../../api/gardenApi';
 import type { Warning } from '../../api/types';
 import type { Bed, GardenPlan, PlantInstance, Profile } from '../../types';
@@ -15,7 +15,7 @@ interface GardenContextValue {
   warnings: Warning[];
   /** Runs planting commands; see `GardenApi.apply`. Nothing changes if the result is not `ok`. */
   apply: (commands: Command[], options?: ApplyOptions) => ApplyResult;
-  // Not planting commands yet: each becomes one as the API grows (see GardenApi.dispatch).
+  // Layout and profile edits: thin wrappers that send one command each.
   setProfile: (profile: Profile) => void;
   setGardenName: (name: string) => void;
   addBed: (bed: Bed) => void;
@@ -26,6 +26,16 @@ interface GardenContextValue {
   pasteBed: (bed: Bed, plants: PlantInstance[]) => void;
   removeBed: (id: string) => void;
   restoreLayout: (beds: Bed[], plants: PlantInstance[]) => void;
+}
+
+/**
+ * Sends commands the caller has already checked (the layout editor snaps and confirms before it
+ * commits). If the API refuses them anyway nothing changed, so there's nothing to undo; the reason
+ * goes to the console rather than being swallowed.
+ */
+function run(api: GardenApi, commands: Command[]): void {
+  const result = api.apply(commands);
+  if (!result.ok) console.error('The garden API refused an edit:', result.errors);
 }
 
 const GardenContext = createContext<GardenContextValue | null>(null);
@@ -55,16 +65,16 @@ export function GardenProvider({ gardenId, api: injected, children }: { gardenId
       // `snapshot` is a new object whenever the garden (or a mock's warnings) change.
       warnings: api.warnings(),
       apply: api.apply,
-      setProfile: (profile) => api.dispatch({ type: 'setProfile', profile }),
-      setGardenName: (name) => api.dispatch({ type: 'setGardenName', name }),
-      addBed: (bed) => api.dispatch({ type: 'addBed', bed }),
-      renameBed: (id, name) => api.dispatch({ type: 'renameBed', id, name }),
-      moveBed: (id, dx, dy) => api.dispatch({ type: 'moveBed', id, dx, dy }),
-      reshapeBed: (id, geometry) => api.dispatch({ type: 'reshapeBed', id, geometry }),
-      rotateBed: (id, rotationDeg) => api.dispatch({ type: 'rotateBed', id, rotationDeg }),
-      pasteBed: (bed, plants) => api.dispatch({ type: 'pasteBed', bed, plants }),
-      removeBed: (id) => api.dispatch({ type: 'removeBed', id }),
-      restoreLayout: (beds, plants) => api.dispatch({ type: 'restoreLayout', beds, plants }),
+      setProfile: (profile) => run(api, [{ type: 'setProfile', profile }]),
+      setGardenName: (name) => run(api, [{ type: 'setGardenName', name }]),
+      addBed: (bed) => run(api, [addBedCommand(bed)]),
+      renameBed: (id, name) => run(api, [{ type: 'renameBed', id, name }]),
+      moveBed: (id, dx, dy) => run(api, [{ type: 'moveBed', id, dx, dy }]),
+      reshapeBed: (id, geometry) => run(api, [{ type: 'reshapeBed', id, ...geometry }]),
+      rotateBed: (id, rotationDeg) => run(api, [{ type: 'rotateBed', id, rotationDeg }]),
+      pasteBed: (bed, plants) => run(api, [{ type: 'pasteBed', bed, plants }]),
+      removeBed: (id) => run(api, [{ type: 'removeBed', id }]),
+      restoreLayout: (beds, plants) => run(api, [{ type: 'restoreLayout', beds, plants }]),
     }),
     [api, snapshot],
   );

@@ -21,7 +21,7 @@ format) ← `src/app` (React UI and browser bindings). `src/api` sits between `c
 and `api` importing `app`, and `tsconfig.core.json` typechecks `data`, `core` and `api` without the DOM lib, so browser APIs
 fail `npx tsc -b --noEmit` there.
 
-Edits to a garden's plants go through `GardenApi.apply` (commands), never straight to the reducer; components get it from `useGarden().apply`. Test client behavior in isolation with the mock (`e2e/mock-api.spec.ts`).
+Every edit to a garden (plants, beds, profile, name) is a command sent through `GardenApi.apply`, never a call straight to the reducer; components get it from `useGarden()` (`apply`, or the thin wrappers like `moveBed` that send one command). A new kind of edit is a new command in `src/api/commands.ts` with its validation in `src/api/apply*.ts` and tests. Test client behavior in isolation with the mock (`e2e/mock-api.spec.ts`).
 
 Components (`src/app/components/`) should be thin: rendering, gesture wiring, and
 calling into pure functions. They should not contain the actual rules — spacing math,
@@ -34,8 +34,8 @@ Concretely:
 - **`src/core/reducer.ts`** — the `GardenPlan` state machine (`reducer`) and plan
   (de)serialization (`parsePlan`). This is the app's "controller": every rule about
   how an action changes the plan lives here, not in `src/app/state/gardenStore.tsx`
-  (which is only the React binding — context, `useReducer`, and the `localStorage`
-  side effect) or in the components that call `dispatch`. `gardenFile.ts` is the
+  (which only binds a `GardenApi` to React) or in the components. The reducer is internal:
+  `src/api` runs it for each validated command, and the app never calls it directly. `gardenFile.ts` is the
   export/load file format.
 - **`src/core/`** (the rest) — pure computations: `spacing.ts` (overlap/fit rules),
   `dates.ts`/`calendar.ts` (planting/harvest scheduling), `geometry.ts` (patch bounding

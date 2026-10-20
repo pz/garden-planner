@@ -2,10 +2,14 @@ import { CROPS } from '../data/crops';
 import type { Bed, GardenPlan, PlantInstance, Point } from '../types';
 import { MAX_PATCH_PLANTS, clampGroupDelta, clampToOutline, gridPoints, isInsideOutline } from '../core/geometry';
 import { bedOutline } from '../core/layout';
-import { reducer, type Action } from '../core/reducer';
-import { REF_PREFIX, type AddPatchCommand, type AddPlantCommand, type Command, type CommandType } from './commands';
+import { reducer } from '../core/reducer';
+import { REF_PREFIX, isPlantingCommand, type AddPatchCommand, type AddPlantCommand, type Command } from './commands';
 import { revOf } from './rev';
 import type { ApiError, WarningDiff } from './types';
+import { applyLayoutCommand } from './applyLayout';
+import { round, fmt, type CommandResult, type Ctx, type Outcome, type Ref } from './applyShared';
+
+export type { CommandResult } from './applyShared';
 import { computeWarnings, diffWarnings } from './warnings';
 
 export interface ApplyOptions {
@@ -15,20 +19,11 @@ export interface ApplyOptions {
   ifRev?: string;
   /** Compute and report everything but tell the caller not to commit. */
   dryRun?: boolean;
-}
-
-/** What one command did, in the order the commands were given. */
-export interface CommandResult {
-  type: CommandType;
-  ref?: string;
-  /** Plants the command created. */
-  plantIds?: string[];
-  /** The patch it created or acted on. */
-  groupId?: string;
-  /** Plants it removed. */
-  removed?: string[];
-  /** Points `clip` dropped for being outside the bed. */
-  skipped?: Point[];
+  /**
+   * What kinds of command are allowed: `all` (default), or `planting` to refuse anything that
+   * changes beds or the profile with a `forbidden` error (what an agent gets).
+   */
+  scope?: 'all' | 'planting';
 }
 
 export type ApplyResult =
@@ -47,23 +42,6 @@ export type ApplyResult =
 
 /** Most "outside the bed" errors reported for one command; the rest are summarized in one more. */
 const MAX_POINT_ERRORS = 20;
-
-type Ref = { kind: 'plant' | 'patch'; plantIds: string[]; groupId: string } | 'failed';
-
-/** Everything a handler needs, and the one way it reports a problem. */
-interface Ctx {
-  plan: GardenPlan;
-  at: string;
-  newId: () => string;
-  refs: Map<string, Ref>;
-  report(e: Omit<ApiError, 'commandIndex'>): void;
-}
-
-/** A command's outcome: the reducer actions to run, and what to tell the caller. `null`: it failed. */
-type Outcome = { actions: Action[]; result: CommandResult } | null;
-
-const round = (n: number) => Math.round(n * 100) / 100;
-const fmt = (p: Point) => `(${round(p.x)}, ${round(p.y)})`;
 
 function findBed(ctx: Ctx, bedId: string, field = 'bedId'): Bed | null {
   const bed = ctx.plan.beds.find((b) => b.id === bedId);
@@ -276,7 +254,14 @@ function warningKey(ctx: Ctx, id: string): string | null {
   return id.slice(id.indexOf(':') + 1); // only spacing warnings exist so far; their key is the conflict key
 }
 
-function applyOne(ctx: Ctx, c: Command): Outcome {
+function applyOne(ctx: Ctx, c: Command, scope: ApplyOptions['scope']): Outcome {
+  if (!isPlantingCommand(c)) {
+    if (scope === 'planting') {
+      ctx.report({ code: 'forbidden', path: `${ctx.at}/type`, message: `"${c.type}" changes beds or the garden's profile, which this request isn't allowed to do.`, details: { type: c.type } });
+      return null;
+    }
+    return applyLayoutCommand(ctx, c);
+  }
   switch (c.type) {
     case 'addPlant':
       return addPlant(ctx, c);
@@ -329,7 +314,7 @@ export function applyCommands(plan: GardenPlan, commands: Command[], options: Ap
   commands.forEach((command, i) => {
     const ctx: Ctx = { plan: work, at: `/commands/${i}`, newId: options.newId, refs, report: (e) => errors.push({ ...e, commandIndex: i }) };
     const before = errors.length;
-    const outcome = applyOne(ctx, command);
+    const outcome = applyOne(ctx, command, options.scope);
     if (!outcome) {
       // A failed command's ref stays claimed, so later commands using it are skipped quietly instead of piling on errors.
       const ref = 'ref' in command ? command.ref : undefined;

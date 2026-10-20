@@ -157,36 +157,6 @@ describe('reducer', () => {
     expect(cleared.plants[0].variety).toBeUndefined();
   });
 
-  describe('dismissConflictsForGroup', () => {
-    it('records the conflict key for every pair touching the dismissed group', () => {
-      // tomato spacing 24in, basil spacing 12in -> required gap = 18in; these are 10in apart.
-      const state = basePlan([
-        { id: 'a', bedId: 'bed-1', cropId: 'tomato', x: 0, y: 0, groupId: 'g1' },
-        { id: 'b', bedId: 'bed-1', cropId: 'basil', x: 10, y: 0, groupId: 'g2' },
-      ]);
-      const next = reducer(state, { type: 'dismissConflictsForGroup', groupId: 'g1' });
-      expect(next.dismissedConflictKeys).toEqual(['g1::g2']);
-    });
-
-    it('is a no-op when the group has no active conflict', () => {
-      const state = basePlan([{ id: 'a', bedId: 'bed-1', cropId: 'tomato', x: 0, y: 0, groupId: 'g1' }]);
-      const next = reducer(state, { type: 'dismissConflictsForGroup', groupId: 'g1' });
-      expect(next).toBe(state);
-    });
-
-    it('does not duplicate a key already dismissed', () => {
-      const state: GardenPlan = {
-        ...basePlan([
-          { id: 'a', bedId: 'bed-1', cropId: 'tomato', x: 0, y: 0, groupId: 'g1' },
-          { id: 'b', bedId: 'bed-1', cropId: 'basil', x: 10, y: 0, groupId: 'g2' },
-        ]),
-        dismissedConflictKeys: ['g1::g2'],
-      };
-      const next = reducer(state, { type: 'dismissConflictsForGroup', groupId: 'g2' });
-      expect(next.dismissedConflictKeys).toEqual(['g1::g2']);
-    });
-  });
-
   describe('setConflictDismissed', () => {
     const base = (keys: string[]): GardenPlan => ({ ...basePlan([]), dismissedConflictKeys: keys });
 

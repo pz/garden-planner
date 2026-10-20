@@ -13,6 +13,12 @@
       }
     },
     {
+      "files": ["src/app/**"],
+      "rules": {
+        "no-restricted-imports": ["error", { "patterns": [{ "group": ["**/core/reducer"], "importNames": ["reducer"], "message": "Edit a garden with GardenApi.apply (commands), not by calling the reducer." }] }]
+      }
+    },
+    {
       "files": ["src/api/**"],
       "rules": {
         "no-restricted-imports": ["error", { "patterns": [{ "regex": "(^|/)app(/|$)", "message": "src/api is headless: it may not import from app." }] }]
