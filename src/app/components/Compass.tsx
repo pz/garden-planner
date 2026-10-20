@@ -21,11 +21,11 @@ export function Compass({ northDeg, onChange }: { northDeg: number; onChange?: (
   }
 
   const interactive = !!onChange;
-  const size = interactive ? 32 : 36;
-  // Read-only, it's a quiet marker: no dial, a muted needle. As a control it gets a faint ring.
+  const size = 32;
+  // Read-only, the needle is gray: it shows north but can't be turned from here.
   const needle = (
     <svg width={size} height={size} viewBox="-16 -16 32 32" aria-hidden="true" style={{ display: 'block' }}>
-      {interactive && <circle r={15} fill="none" stroke="var(--color-divider)" strokeWidth={1.5} />}
+      <circle r={15} fill="none" stroke="var(--color-divider)" strokeWidth={1.5} />
       <g transform={`rotate(${deg})`}>
         <polygon points="0,-9 3,3 0,1 -3,3" fill={interactive ? 'var(--color-accent)' : 'var(--color-text-muted)'} />
         <g transform="translate(0 -12.5)">
@@ -45,7 +45,7 @@ export function Compass({ northDeg, onChange }: { northDeg: number; onChange?: (
 
   if (!interactive) {
     return (
-      <div data-testid="compass" style={{ pointerEvents: 'none', opacity: 0.8 }} title={`North is ${deg}° clockwise from up`}>
+      <div data-testid="compass" style={{ pointerEvents: 'none' }} title={`North is ${deg}° clockwise from up`}>
         {needle}
       </div>
     );

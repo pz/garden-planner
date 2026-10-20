@@ -768,9 +768,6 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
                   </div>
                 );
               })()}
-              <div style={{ position: 'absolute', left: 16, top: 16 }}>
-                <Compass northDeg={plan.northDeg ?? 0} />
-              </div>
               {plants.length === 0 && (
                 // One hint for the whole garden, outside the beds: centered in a bed it would cross an
                 // ellipse's curve or a polygon's notch, and repeated in every bed it's just noise.
@@ -787,7 +784,16 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
                   Empty so far — long-press or right-click a bed to plant something.
                 </p>
               )}
-              {camera && <ZoomControls percent={zoomPercent(camera)} onZoomOut={() => zoomBy(0.8)} onZoomIn={() => zoomBy(1.25)} onFit={fitGarden} />}
+              <div
+                // Presses on the controls must not start a pan.
+                onPointerDown={(e) => e.stopPropagation()}
+                style={{ position: 'absolute', right: 16, bottom: 16, display: 'flex', alignItems: 'center', gap: 8, cursor: 'default' }}
+              >
+                <div style={{ padding: 4, borderRadius: 999, background: 'var(--color-bg)', boxShadow: 'var(--shadow-md)' }}>
+                  <Compass northDeg={plan.northDeg ?? 0} />
+                </div>
+                {camera && <ZoomControls percent={zoomPercent(camera)} onZoomOut={() => zoomBy(0.8)} onZoomIn={() => zoomBy(1.25)} onFit={fitGarden} />}
+              </div>
           </div>
 
           {menuState && menuBed && (
@@ -916,12 +922,7 @@ function ZoomControls({
   const round = { width: 32, height: 32, padding: 0, justifyContent: 'center', borderRadius: 999, borderColor: 'transparent' } as const;
   return (
     <div
-      // Presses on the controls must not start a pan.
-      onPointerDown={(e) => e.stopPropagation()}
       style={{
-        position: 'absolute',
-        right: 16,
-        bottom: 16,
         display: 'flex',
         alignItems: 'center',
         gap: 2,
@@ -929,7 +930,6 @@ function ZoomControls({
         borderRadius: 999,
         background: 'var(--color-bg)',
         boxShadow: 'var(--shadow-md)',
-        cursor: 'default',
       }}
     >
       <button className="btn btn-secondary" title="Zoom out (−)" aria-label="Zoom out" onClick={onZoomOut} style={round}>
