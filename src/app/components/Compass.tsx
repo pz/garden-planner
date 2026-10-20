@@ -2,7 +2,6 @@ import { useRef } from 'react';
 import { normalizeAngle } from '../../core/layout';
 import { rotationFromPointer } from '../layoutInteraction';
 
-const SIZE = 72;
 const KEY_STEP_DEG = 15;
 
 /**
@@ -22,22 +21,20 @@ export function Compass({ northDeg, onChange }: { northDeg: number; onChange?: (
   }
 
   const interactive = !!onChange;
+  const size = interactive ? 32 : 36;
+  // Read-only, it's a quiet marker: no dial, a muted needle. As a control it gets a faint ring.
   const needle = (
-    <svg width={SIZE} height={SIZE} viewBox="-36 -36 72 72" aria-hidden="true" style={{ display: 'block' }}>
-      <circle r={34} fill="var(--color-surface-raised)" stroke="var(--color-divider)" strokeWidth={1.5} />
-      {[0, 90, 180, 270].map((a) => (
-        <line key={a} x1={0} y1={-34} x2={0} y2={-30} stroke="var(--color-text-muted)" strokeWidth={1.5} transform={`rotate(${a})`} />
-      ))}
+    <svg width={size} height={size} viewBox="-16 -16 32 32" aria-hidden="true" style={{ display: 'block' }}>
+      {interactive && <circle r={15} fill="none" stroke="var(--color-divider)" strokeWidth={1.5} />}
       <g transform={`rotate(${deg})`}>
-        <polygon points="0,-22 5,0 -5,0" fill="var(--color-accent)" />
-        <polygon points="0,22 5,0 -5,0" fill="var(--color-text-muted)" opacity={0.5} />
-        <g transform="translate(0 -27)">
+        <polygon points="0,-9 3,3 0,1 -3,3" fill={interactive ? 'var(--color-accent)' : 'var(--color-text-muted)'} />
+        <g transform="translate(0 -12.5)">
           {/* Counter-turned so the letter stays upright wherever the needle points. */}
           <text
             transform={`rotate(${-deg})`}
             textAnchor="middle"
             dominantBaseline="central"
-            style={{ font: '800 11px Figtree', fill: 'var(--color-accent-700)' }}
+            style={{ font: '700 8.5px Figtree', fill: interactive ? 'var(--color-accent-700)' : 'var(--color-text-muted)' }}
           >
             N
           </text>
@@ -48,7 +45,7 @@ export function Compass({ northDeg, onChange }: { northDeg: number; onChange?: (
 
   if (!interactive) {
     return (
-      <div data-testid="compass" style={{ pointerEvents: 'none', filter: 'drop-shadow(var(--shadow-sm))' }} title={`North is ${deg}° clockwise from up`}>
+      <div data-testid="compass" style={{ pointerEvents: 'none', opacity: 0.8 }} title={`North is ${deg}° clockwise from up`}>
         {needle}
       </div>
     );
@@ -90,7 +87,7 @@ export function Compass({ northDeg, onChange }: { northDeg: number; onChange?: (
         e.preventDefault();
         e.stopPropagation();
       }}
-      style={{ touchAction: 'none', cursor: 'grab', borderRadius: '50%', filter: 'drop-shadow(var(--shadow-md))' }}
+      style={{ touchAction: 'none', cursor: 'grab', borderRadius: '50%' }}
     >
       {needle}
     </div>

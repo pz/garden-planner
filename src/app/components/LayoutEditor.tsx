@@ -1013,12 +1013,6 @@ export function LayoutEditor() {
         <ToolButton icon="undo" title={`Undo (${MOD}Z)`} disabled={!history.length || !!pending} onClick={undo} />
       </div>
 
-      {/* Which way is north */}
-      <div style={{ position: 'absolute', left: 84, top: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <Compass northDeg={plan.northDeg ?? 0} onChange={setNorth} />
-        <span style={{ font: '600 12px Figtree', color: C.muted, pointerEvents: 'none' }}>North</span>
-      </div>
-
       {/* Hint + shortcuts */}
       {!pending && (
         <div
@@ -1070,11 +1064,14 @@ export function LayoutEditor() {
 
       {/* Zoom */}
       {view && (
+        <div style={{ position: 'absolute', right: 16, bottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div
+          style={{ padding: 4, borderRadius: 999, background: 'var(--color-bg)', boxShadow: 'var(--shadow-md)' }}
+        >
+          <Compass northDeg={plan.northDeg ?? 0} onChange={setNorth} />
+        </div>
         <div
           style={{
-            position: 'absolute',
-            right: 16,
-            bottom: 16,
             display: 'flex',
             alignItems: 'center',
             gap: 2,
@@ -1095,6 +1092,7 @@ export function LayoutEditor() {
           </button>
           <ToolButton icon="plus" title="Zoom in (+)" small onClick={() => zoomBy(1.25)} />
           <ToolButton icon="fit" title="Fit garden (0)" small onClick={fit} />
+        </div>
         </div>
       )}
 
