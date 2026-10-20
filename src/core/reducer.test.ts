@@ -458,3 +458,35 @@ describe('reducer: rotating and pasting beds', () => {
     expect(state.plants).toHaveLength(1);
   });
 });
+
+describe('north direction', () => {
+  it('setNorth stores a normalized angle and touches nothing else', () => {
+    const state = basePlan();
+    const next = reducer(state, { type: 'setNorth', northDeg: -90 });
+    expect(next.northDeg).toBe(270);
+    expect(next).toEqual({ ...state, northDeg: 270 });
+    expect(next.beds).toBe(state.beds);
+    expect(next.plants).toBe(state.plants);
+  });
+
+  it('setNorth to the current direction returns the same state, absent counting as 0', () => {
+    const state = basePlan();
+    expect(reducer(state, { type: 'setNorth', northDeg: 0 })).toBe(state);
+    expect(reducer(state, { type: 'setNorth', northDeg: 360 })).toBe(state);
+    const turned = { ...state, northDeg: 45 };
+    expect(reducer(turned, { type: 'setNorth', northDeg: 405 })).toBe(turned);
+  });
+
+  it('parsePlan keeps a valid angle (normalized) and drops a malformed one', () => {
+    expect(parsePlan(JSON.stringify({ ...basePlan(), northDeg: 400 }), TEST_ID).northDeg).toBe(40);
+    for (const bad of ['east', null, {}]) {
+      const parsed = parsePlan(JSON.stringify({ ...basePlan(), northDeg: bad }), TEST_ID);
+      expect(parsed.northDeg).toBeUndefined();
+      expect(parsed.beds).toEqual(DEFAULT_PLAN.beds);
+    }
+  });
+
+  it('a plan saved before north existed loads with north unset (up)', () => {
+    expect(parsePlan(JSON.stringify(basePlan()), TEST_ID).northDeg).toBeUndefined();
+  });
+});

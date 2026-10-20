@@ -137,6 +137,7 @@ describe('parseRequest: bed, layout and profile commands', () => {
     { type: 'removeBed', id: 'b' },
     { type: 'restoreLayout', beds: [bed], plants: [plant] },
     { type: 'setGardenName', name: '' },
+    { type: 'setNorth', northDeg: 135 },
     { type: 'setProfile', profile: { zoneId: '6', sunExposure: 'shade', onboarded: true, location: { lat: 1, lng: 2, label: 'x' } } },
   ];
 

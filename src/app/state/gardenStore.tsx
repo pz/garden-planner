@@ -18,6 +18,7 @@ interface GardenContextValue {
   // Layout and profile edits: thin wrappers that send one command each.
   setProfile: (profile: Profile) => void;
   setGardenName: (name: string) => void;
+  setNorth: (northDeg: number) => void;
   addBed: (bed: Bed) => void;
   renameBed: (id: string, name: string) => void;
   moveBed: (id: string, dx: number, dy: number) => void;
@@ -67,6 +68,7 @@ export function GardenProvider({ gardenId, api: injected, children }: { gardenId
       apply: api.apply,
       setProfile: (profile) => run(api, [{ type: 'setProfile', profile }]),
       setGardenName: (name) => run(api, [{ type: 'setGardenName', name }]),
+      setNorth: (northDeg) => run(api, [{ type: 'setNorth', northDeg }]),
       addBed: (bed) => run(api, [addBedCommand(bed)]),
       renameBed: (id, name) => run(api, [{ type: 'renameBed', id, name }]),
       moveBed: (id, dx, dy) => run(api, [{ type: 'moveBed', id, dx, dy }]),

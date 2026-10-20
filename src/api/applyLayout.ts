@@ -168,6 +168,8 @@ export function applyLayoutCommand(ctx: Ctx, c: LayoutCommand): Outcome {
       return restoreLayout(ctx, c);
     case 'setGardenName':
       return { actions: [{ type: 'setGardenName', name: c.name }], result: { type: 'setGardenName' } };
+    case 'setNorth':
+      return { actions: [{ type: 'setNorth', northDeg: c.northDeg }], result: { type: 'setNorth' } };
     case 'setProfile':
       return setProfile(ctx, c);
   }

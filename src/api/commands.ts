@@ -134,6 +134,11 @@ export interface SetGardenNameCommand {
   type: 'setGardenName';
   name: string;
 }
+/** Which way north points on the layout, in degrees clockwise from straight up the screen (normalized to 0…360). */
+export interface SetNorthCommand {
+  type: 'setNorth';
+  northDeg: number;
+}
 export interface SetProfileCommand {
   type: 'setProfile';
   profile: Profile;
@@ -160,6 +165,7 @@ export type LayoutCommand =
   | RemoveBedCommand
   | RestoreLayoutCommand
   | SetGardenNameCommand
+  | SetNorthCommand
   | SetProfileCommand;
 
 export type Command = PlantingCommand | LayoutCommand;
@@ -167,7 +173,7 @@ export type Command = PlantingCommand | LayoutCommand;
 export type CommandType = Command['type'];
 
 const LAYOUT_TYPES: ReadonlySet<string> = new Set<LayoutCommand['type']>([
-  'addBed', 'renameBed', 'moveBed', 'reshapeBed', 'rotateBed', 'pasteBed', 'removeBed', 'restoreLayout', 'setGardenName', 'setProfile',
+  'addBed', 'renameBed', 'moveBed', 'reshapeBed', 'rotateBed', 'pasteBed', 'removeBed', 'restoreLayout', 'setGardenName', 'setNorth', 'setProfile',
 ]);
 
 /** Whether a command only plants, moves, removes or annotates plants (what an agent may do), rather than changing beds or the profile. */
@@ -319,6 +325,7 @@ const SCHEMA: Record<CommandType, { required: Record<string, Check>; optional: R
   removeBed: { required: { id: str }, optional: {} },
   restoreLayout: { required: { beds: arrayOf(bedObject), plants: arrayOf(plantObject) }, optional: {} },
   setGardenName: { required: { name: text }, optional: {} },
+  setNorth: { required: { northDeg: num }, optional: {} },
   setProfile: { required: { profile: profileObject }, optional: {} },
 };
 

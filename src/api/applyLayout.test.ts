@@ -38,6 +38,7 @@ describe('scope', () => {
     { type: 'pasteBed', bed: bed2, plants: [] },
     { type: 'restoreLayout', beds: [], plants: [] },
     { type: 'setGardenName', name: 'x' },
+    { type: 'setNorth', northDeg: 90 },
     { type: 'setProfile', profile: { zoneId: '6', sunExposure: 'shade', onboarded: true } },
   ];
 
@@ -216,6 +217,21 @@ describe('restoreLayout', () => {
       ['unknown_bed', '/commands/0/plants/0/bedId'],
       ['unknown_crop', '/commands/0/plants/1/cropId'],
     ]);
+  });
+});
+
+describe('setNorth', () => {
+  it('turns north, normalizing the angle, and changes nothing else', () => {
+    const r = ok(apply(planWith(), [{ type: 'setNorth', northDeg: -90 }]));
+    expect(r.plan.northDeg).toBe(270);
+    expect(r.plan.beds).toEqual(planWith().beds);
+    expect(r.plan.plants).toEqual(planWith().plants);
+  });
+
+  it('is accepted as a no-op when north is already there, and changes the revision only when it moves', () => {
+    const base = ok(apply(planWith(), [{ type: 'setNorth', northDeg: 0 }]));
+    expect(base.plan.northDeg).toBeUndefined();
+    expect(ok(apply(planWith(), [{ type: 'setNorth', northDeg: 45 }])).rev).not.toBe(base.rev);
   });
 });
 

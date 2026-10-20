@@ -101,6 +101,7 @@ Bed, layout and profile commands (not available to an agent-scoped request, see 
 | `pasteBed` | `bed, plants` | A whole bed with its plants, all ids the caller's; plants must be inside it. |
 | `restoreLayout` | `beds, plants` | Puts the beds and plants back as they were (the layout editor's undo). Validated as a well-formed garden but lenient about where plants sit. |
 | `setGardenName` / `setProfile` | `name` / `profile` | `setProfile` checks the zone and normalizes the location. |
+| `setNorth` | `northDeg` | Which way north points on the layout, degrees clockwise from straight up the screen; normalized to 0…360. Shade prediction reads it. |
 
 **Scope.** `applyCommands(..., { scope: "planting" })` refuses every command in the second table with a `forbidden` error, which is what an agent's token will get; the default `all` is what the UI uses.
 

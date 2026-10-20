@@ -9,6 +9,7 @@ import { ROTATION_STEP_DEG, bedToGarden, boxCorners, cloneBed, drawnCornerRadius
 import { fitView, gardenToScreen, isDrag, panBy, screenToGarden, wheelZoomFactor, zoomAt, zoomPercent, type Insets, type View } from '../viewport';
 import { CROP_COLORS } from './PlantMark';
 import { Icon, type IconName } from './Icon';
+import { Compass } from './Compass';
 
 /** Palette from the layout editor design; the app's shared tokens don't have these steps yet. */
 const C = {
@@ -99,7 +100,7 @@ function isTyping(target: EventTarget | null): boolean {
 }
 
 export function LayoutEditor() {
-  const { plan, addBed, renameBed, moveBed, reshapeBed, rotateBed, pasteBed, removeBed, restoreLayout } = useGarden();
+  const { plan, setNorth, addBed, renameBed, moveBed, reshapeBed, rotateBed, pasteBed, removeBed, restoreLayout } = useGarden();
   const { beds, plants } = plan;
 
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -682,10 +683,10 @@ export function LayoutEditor() {
       data-testid="layout-editor"
       style={{
         position: 'relative',
-        height: 'max(460px, calc(100vh - 150px))',
-        borderRadius: 'var(--radius-lg)',
+        // Full bleed: fills whatever the page leaves below the header.
+        flex: 1,
+        minHeight: 460,
         overflow: 'hidden',
-        border: '1.5px solid var(--color-divider)',
         background: C.ground,
       }}
     >
@@ -1063,11 +1064,14 @@ export function LayoutEditor() {
 
       {/* Zoom */}
       {view && (
+        <div style={{ position: 'absolute', right: 16, bottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div
+          style={{ padding: 4, borderRadius: 999, background: 'var(--color-bg)', boxShadow: 'var(--shadow-md)' }}
+        >
+          <Compass northDeg={plan.northDeg ?? 0} onChange={setNorth} />
+        </div>
         <div
           style={{
-            position: 'absolute',
-            right: 16,
-            bottom: 16,
             display: 'flex',
             alignItems: 'center',
             gap: 2,
@@ -1088,6 +1092,7 @@ export function LayoutEditor() {
           </button>
           <ToolButton icon="plus" title="Zoom in (+)" small onClick={() => zoomBy(1.25)} />
           <ToolButton icon="fit" title="Fit garden (0)" small onClick={fit} />
+        </div>
         </div>
       )}
 

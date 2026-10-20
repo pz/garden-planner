@@ -32,6 +32,15 @@ describe('validatePlan', () => {
     expect(validatePlan(v2)).toEqual([]);
   });
 
+  it('accepts a missing or numeric north direction and rejects anything else', () => {
+    expect(validatePlan({ ...createPlan('g'), northDeg: 135 })).toEqual([]);
+    for (const bad of ['north', null, Number.NaN]) {
+      expect(validatePlan({ ...createPlan('g'), northDeg: bad })).toEqual([
+        expect.objectContaining({ code: 'invalid_garden_file', path: '/northDeg' }),
+      ]);
+    }
+  });
+
   it('rejects anything that is not a plan object', () => {
     for (const bad of [null, undefined, 'x', 3, []]) {
       expect(validatePlan(bad)).toEqual([expect.objectContaining({ code: 'invalid_garden_file', path: '' })]);

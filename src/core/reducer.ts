@@ -92,6 +92,11 @@ export function parsePlan(raw: string | null, id: string): GardenPlan {
     const bedIds = new Set(parsed.beds.map((b) => b.id));
     const plants = Array.isArray(parsed.plants) ? parsed.plants.filter((p) => bedIds.has(p.bedId)) : [];
     parsed = { ...parsed, id, plants };
+    // `northDeg` is optional and newer than v3 itself: a bad value falls back to north-up.
+    if (parsed.northDeg !== undefined) {
+      const { northDeg, ...rest } = parsed;
+      parsed = isNum(northDeg) ? { ...rest, northDeg: normalizeAngle(northDeg) } : rest;
+    }
     if (typeof parsed.profile !== 'object' || parsed.profile === null) return parsed;
     // `location` is optional and newer than v2 itself, so validate it rather than trust it:
     // a bad value just drops the pin instead of breaking the setup screen's map.
@@ -106,6 +111,7 @@ export function parsePlan(raw: string | null, id: string): GardenPlan {
 export type Action =
   | { type: 'setProfile'; profile: Profile }
   | { type: 'setGardenName'; name: string }
+  | { type: 'setNorth'; northDeg: number }
   | { type: 'addBed'; bed: Bed }
   | { type: 'renameBed'; id: string; name: string }
   | { type: 'moveBed'; id: string; dx: number; dy: number }
@@ -128,6 +134,11 @@ export function reducer(state: GardenPlan, action: Action): GardenPlan {
       return { ...state, profile: action.profile };
     case 'setGardenName':
       return { ...state, name: action.name };
+    case 'setNorth': {
+      const northDeg = normalizeAngle(action.northDeg);
+      if (northDeg === (state.northDeg ?? 0)) return state;
+      return { ...state, northDeg };
+    }
     case 'addBed':
       return { ...state, beds: [...state.beds, action.bed] };
     case 'renameBed':
