@@ -67,16 +67,24 @@ problems and change it:
   tokens), `layoutView.ts` (`readLayout`, a text-grid picture of each bed), `types.ts`
   (`Warning`, `ApiError`).
 
-The UI doesn't use it yet. The design, and what's still to come (bed commands, UI wiring,
-shade and companion warnings), is in [`docs/api-design.md`](docs/api-design.md).
+- `gardenApi.ts`: `GardenApi`, what the UI talks to for one garden (a store-shaped
+  `getSnapshot` / `subscribe` plus a synchronous `apply`), and `createMemoryGardenApi`.
+- `mockGardenApi.ts`: `createMockGardenApi`, a `GardenApi` for testing a client: it records
+  every call and can fail the next one, report chosen warnings, or have the garden change
+  behind the client's back.
+
+The UI's planting edits go through it. Bed and profile edits still use reducer actions (via
+`GardenApi.dispatch`) until they have commands. The design, and what's still to come (bed
+commands, shade and companion warnings), is in [`docs/api-design.md`](docs/api-design.md).
 
 ### `src/app/` — the app
 
 Everything that needs a browser or React:
 
 - `components/` — thin UI: rendering, gesture wiring and calls into `core`.
-- `state/` — React contexts and `localStorage` persistence (`gardenStore`,
-  `gardensStore`, dismissed tips, storage namespacing for PR previews, editor undo).
+- `state/` — React contexts and `localStorage` persistence: `gardenStore` (binds a
+  `GardenApi` to React), `gardenApiFactory` (the real, localStorage-backed `GardenApi`), `gardensStore`,
+  dismissed tips, storage namespacing for PR previews, editor undo.
 - `layoutInteraction.ts`, `viewport.ts` — layout-editor interaction math that only
   exists with a pointer and a screen: snapping, alignment guides, zoom and pan. Pure and
   unit-tested, but not part of the engine.
@@ -93,8 +101,8 @@ data  ←  core  ←  api  ←  app
 - `core` imports only `data` and `types`.
 - `api` imports `core`, `data` and `types`, never `app`.
 - `app` may import `core` for pure read-only helpers (e.g. computing a patch's
-  bounding box to draw it). Changes to a garden are meant to go through `api` once its
-  commands exist.
+  bounding box to draw it). Changes to a garden go through `api` (planting edits now; bed
+  edits once they have commands).
 
 These are enforced, not conventions: `.oxlintrc.json` has `no-restricted-imports`
 overrides, and `tsconfig.core.json` typechecks `data`, `core` and `api` with no DOM lib, so
@@ -112,6 +120,9 @@ drag, remove and undo, spacing warnings, the layout editor, export/load, first-r
 seed a garden into `localStorage`, assert on what the app saves as well as on what it shows,
 block all non-local network requests, and fail on any uncaught page error. They exist so the
 state layer can be refactored (e.g. onto `api`) without silently changing how the app behaves.
+`e2e/mock-api.spec.ts` runs the UI against the mock `GardenApi` instead of the real one, to test the
+client on its own: what it asks the API for, and how it shows what comes back (see
+`e2e/fixtures.ts`; the mock is only available in development builds).
 
 ## Docs
 

@@ -16,10 +16,12 @@ A client-only React + TypeScript (Vite) app for planning a vegetable garden bed 
 The code is layered; see the README for the full map. In short: `src/data` (static
 reference data) ← `src/core` (the headless engine: rules, plan state machine, file
 format) ← `src/app` (React UI and browser bindings). `src/api` sits between `core` and `app`
-(planting commands, errors, warnings, revision tokens and the layout view; the UI is not wired to it yet; see `docs/api-design.md`). Dependencies only point one way, and it's enforced:
+(planting commands, errors, warnings, revision tokens, the layout view and the `GardenApi` the UI binds to; see `docs/api-design.md`). Dependencies only point one way, and it's enforced:
 `.oxlintrc.json` forbids `data` importing `core`/`api`/`app`, `core` importing `api`/`app`
 and `api` importing `app`, and `tsconfig.core.json` typechecks `data`, `core` and `api` without the DOM lib, so browser APIs
 fail `npx tsc -b --noEmit` there.
+
+Edits to a garden's plants go through `GardenApi.apply` (commands), never straight to the reducer; components get it from `useGarden().apply`. Test client behavior in isolation with the mock (`e2e/mock-api.spec.ts`).
 
 Components (`src/app/components/`) should be thin: rendering, gesture wiring, and
 calling into pure functions. They should not contain the actual rules — spacing math,
