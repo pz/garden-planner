@@ -173,10 +173,10 @@ Spacing is warn-only, so there is no "too close" error.
 ```
 
 - **spacing.** This is today's `findOverlapConflicts`, unchanged: same bed only, with groupId pairs and a gap below the average of the two crops' spacing. The id is `spacing:` plus the existing `conflictKey`, so existing dismissals map one-to-one. The old UI refusal band (below 0.7 of the average gap, the `fitsAt` rule) becomes `severity: "problem"`. The UI can keep its own placement refusal as a gesture-level affordance.
-- **shade.** A taller crop on the sun side of a shorter, sun-needing crop. It works across beds, using `bedToGarden` for garden coordinates. The sun side comes from `profile.location` (hemisphere; northern if absent) and `plan.northDeg`.
-- **companion.** Antagonist pairs, and mismatched water or fertilizer needs among neighbors in the same bed.
+- **shade** ✅ (`core/shade.ts`). A patch shades another when its crop is at least 12 in taller, the other crop needs `full` sun, and the other sits ahead of it along the shadow direction within 0.6 × its height (the midsummer-midday shadow length) and inside a band as wide as the shading plant's spacing. Works across beds, in garden coordinates. Shadows fall toward the pole away from the sun: north in the northern hemisphere (the default when there is no location), south in the southern, turned by `plan.northDeg` (the bearing of garden-up). Severity `caution`; id `shade:<caster>><shaded>`. The principle (tall crops on the north side) is extension guidance; the constants are a rule of thumb, named and tested at their boundaries.
+- **companion** ✅ (`core/companions.ts`). Pairs of patches in the same bed, closer than 24 in, whose crops list each other in `avoidNear`. Severity `caution`; id `companion:<conflictKey>`; the message says plainly when the advice is only traditional (`evidence: "anecdotal"`). **Water and fertilizer mismatches were dropped**: the extension sources found give feeder classes only as a basis for rotating crops between seasons, and no common scale of water need per crop, so there was nothing to base an adjacency warning on.
 
-New `crops.json` fields, hand-curated and never LLM-generated, with data-integrity tests: `heightIn`, `sunNeed`, `water: low|med|high`, `feeder: light|heavy|fixer`, `companions[]`, `antagonists[]` (each with a reason).
+New `crops.json` fields, with data-integrity tests: `heightIn`, `sunNeed: full|partial`, and optional `avoidNear[]` (each with a reason and an `evidence` level). These were drafted from the sources listed in `src/data/README.md` and are flagged there as needing human review; extension sources say most companion-planting claims lack research, so `avoidNear` has a single, `anecdotal`, entry (beans and onion).
 
 **Dismissal.** Spacing dismissals keep using `dismissedConflictKeys`, and shade and companion dismissals use `dismissedWarnings`. As today, a dismissal persists while the pair exists.
 
@@ -185,9 +185,9 @@ New `crops.json` fields, hand-curated and never LLM-generated, with data-integri
 1. ✅ Add `src/api/` (commands, validation, warnings, `layout`) with unit tests, as pure functions.
 2. ✅ Add a `GardenApi` interface; `gardenStore.tsx` binds to it. Every edit, including profile, name, beds and layout undo, is a command through `apply`; the transitional `dispatch(action)` is gone.
 3. ✅ Move the UI's planting commits onto commands (plant, drag, multiply, duplicate, remove, undo, variety, dismiss). Live ghosts and drags keep using the pure functions. Warning badges now come from `GardenApi.warnings()`. A refused commit shows the API's message as a toast.
-4. Refactor `planProblem` into the shared `validatePlan` ✅, and add the `northDeg` and `dismissedWarnings` fields to the types and `parsePlan`.
+4. ✅ Refactor `planProblem` into the shared `validatePlan`, and add the optional `northDeg` and `dismissedWarnings` fields to the types, `parsePlan` and validation. `setNorthDeg` is a layout command; there is no UI control for it yet.
 5. ✅ **Mock API for client tests.** `createMockGardenApi` behaves like the real one by default, and a test can read `calls` (every `apply`, with its result), `failNext(errors)`, `setWarnings(...)` and `replacePlan(...)` (an edit from elsewhere). In development builds, setting the `garden-planner-mock-api` localStorage flag before load makes the app use it and exposes it as `window.__mockGardenApi`; production builds don't contain it (CI checks). `e2e/mock-api.spec.ts` drives the real UI against it.
-6. Add the crop reference data, and the shade and companion warnings.
+6. ✅ Add the crop reference data, and the shade and companion warnings. The plant card shows each in its own wording.
 7. Later: HTTP and MCP adapters, generated from the OpenAPI and JSON Schema source of truth.
 
 ## 8. Decisions

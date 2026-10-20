@@ -72,6 +72,15 @@ export function isValidBed(b: unknown): b is Bed {
   return true;
 }
 
+/** `northDeg` and `dismissedWarnings` are optional and newer than v3 itself: keep them only if usable. */
+function dropBadOptionalFields(plan: GardenPlan): GardenPlan {
+  const { northDeg, dismissedWarnings, ...rest } = plan;
+  const clean: GardenPlan = rest;
+  if (typeof northDeg === 'number' && Number.isFinite(northDeg)) clean.northDeg = northDeg;
+  if (Array.isArray(dismissedWarnings) && dismissedWarnings.every((id) => typeof id === 'string')) clean.dismissedWarnings = dismissedWarnings;
+  return clean;
+}
+
 /**
  * Parses a garden plan from raw storage content, falling back to a fresh plan for anything
  * unusable. `id` is always authoritative — it comes from the storage key the plan was read
@@ -91,7 +100,7 @@ export function parsePlan(raw: string | null, id: string): GardenPlan {
     parsed = { ...parsed, beds: parsed.beds.filter(isValidBed) };
     const bedIds = new Set(parsed.beds.map((b) => b.id));
     const plants = Array.isArray(parsed.plants) ? parsed.plants.filter((p) => bedIds.has(p.bedId)) : [];
-    parsed = { ...parsed, id, plants };
+    parsed = dropBadOptionalFields({ ...parsed, id, plants });
     if (typeof parsed.profile !== 'object' || parsed.profile === null) return parsed;
     // `location` is optional and newer than v2 itself, so validate it rather than trust it:
     // a bad value just drops the pin instead of breaking the setup screen's map.
@@ -120,6 +129,8 @@ export type Action =
   | { type: 'removeGroup'; groupId: string }
   | { type: 'setVariety'; id: string; variety: string | undefined }
   | { type: 'setConflictDismissed'; key: string; dismissed: boolean }
+  | { type: 'setWarningDismissed'; id: string; dismissed: boolean }
+  | { type: 'setNorthDeg'; northDeg: number }
   | { type: 'reset' };
 
 export function reducer(state: GardenPlan, action: Action): GardenPlan {
@@ -202,6 +213,19 @@ export function reducer(state: GardenPlan, action: Action): GardenPlan {
           ? [...state.dismissedConflictKeys, action.key]
           : state.dismissedConflictKeys.filter((k) => k !== action.key),
       };
+    }
+    case 'setWarningDismissed': {
+      const list = state.dismissedWarnings ?? [];
+      if (action.dismissed === list.includes(action.id)) return state;
+      const next = action.dismissed ? [...list, action.id] : list.filter((id) => id !== action.id);
+      const { dismissedWarnings: _old, ...rest } = state;
+      return next.length ? { ...rest, dismissedWarnings: next } : rest; // no list at all means none dismissed
+    }
+    case 'setNorthDeg': {
+      const northDeg = normalizeAngle(action.northDeg);
+      if ((state.northDeg ?? 0) === northDeg) return state;
+      const { northDeg: _old, ...rest } = state;
+      return northDeg === 0 ? rest : { ...rest, northDeg }; // 0 is the default, so it isn't stored
     }
     case 'reset':
       return createPlan(state.id);

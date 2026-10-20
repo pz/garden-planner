@@ -48,7 +48,7 @@ Pure functions and types with no React, DOM or storage. This is where the rules 
 - **State machine and file format.** `reducer.ts` (`GardenPlan` state transitions and
   `parsePlan`), `gardenFile.ts` (export/load format and validation), `migration.ts`
   (legacy plan upgrades), `gardenIndex.ts` (the list of saved gardens).
-- **Planting rules.** `spacing.ts` (overlap and fit), `geometry.ts` (outlines, patch
+- **Planting rules.** `spacing.ts` (overlap and fit), `shade.ts` and `companions.ts` (what a neighbor's shadow or an unlucky pairing does), `geometry.ts` (outlines, patch
   boxes, multiply-drag ghosts), `layout.ts` (bed frames, resizing, relocating plants,
   cloning).
 - **Scheduling.** `dates.ts`, `calendar.ts`.
@@ -63,7 +63,7 @@ problems and change it:
 - `apply.ts`: `applyCommands(plan, commands, {newId, ifRev?, dryRun?})`. Atomic; returns the
   new plan, its revision, what each command did, and the warnings it introduced and resolved,
   or every error with its command index.
-- `warnings.ts` (`computeWarnings` / `diffWarnings`), `rev.ts` (content-hash revision
+- `warnings.ts` (`computeWarnings` / `diffWarnings`: spacing, shade and companion warnings), `rev.ts` (content-hash revision
   tokens), `layoutView.ts` (`readLayout`, a text-grid picture of each bed), `types.ts`
   (`Warning`, `ApiError`).
 

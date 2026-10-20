@@ -2,7 +2,7 @@ import { CROPS } from '../data/crops';
 import type { Bed, GardenPlan, PlantInstance, Point } from '../types';
 import { MAX_PATCH_PLANTS, clampGroupDelta, clampToOutline, gridPoints, isInsideOutline } from '../core/geometry';
 import { bedOutline } from '../core/layout';
-import { reducer } from '../core/reducer';
+import { reducer, type Action } from '../core/reducer';
 import { REF_PREFIX, isPlantingCommand, type AddPatchCommand, type AddPlantCommand, type Command } from './commands';
 import { revOf } from './rev';
 import type { ApiError, WarningDiff } from './types';
@@ -246,12 +246,19 @@ function movePatch(ctx: Ctx, c: Extract<Command, { type: 'movePatch' }>): Outcom
   return { actions: [{ type: 'moveGroup', groupId, dx: c.dx, dy: c.dy }], result: { type: 'movePatch', groupId } };
 }
 
-function warningKey(ctx: Ctx, id: string): string | null {
+function existingWarningId(ctx: Ctx, id: string): string | null {
   if (!computeWarnings(ctx.plan).some((w) => w.id === id)) {
     ctx.report({ code: 'unknown_id', path: `${ctx.at}/id`, message: `There is no current warning with id "${id}".`, details: { id } });
     return null;
   }
-  return id.slice(id.indexOf(':') + 1); // only spacing warnings exist so far; their key is the conflict key
+  return id;
+}
+
+/** The reducer action that dismisses or restores a warning: spacing ones are kept by conflict key, the rest by id. */
+function dismissAction(id: string, dismissed: boolean): Action {
+  return id.startsWith('spacing:')
+    ? { type: 'setConflictDismissed', key: id.slice('spacing:'.length), dismissed }
+    : { type: 'setWarningDismissed', id, dismissed };
 }
 
 function applyOne(ctx: Ctx, c: Command, scope: ApplyOptions['scope']): Outcome {
@@ -283,8 +290,8 @@ function applyOne(ctx: Ctx, c: Command, scope: ApplyOptions['scope']): Outcome {
     }
     case 'dismissWarning':
     case 'restoreWarning': {
-      const key = warningKey(ctx, c.id);
-      return key === null ? null : { actions: [{ type: 'setConflictDismissed', key, dismissed: c.type === 'dismissWarning' }], result: { type: c.type } };
+      const id = existingWarningId(ctx, c.id);
+      return id === null ? null : { actions: [dismissAction(id, c.type === 'dismissWarning')], result: { type: c.type } };
     }
   }
 }

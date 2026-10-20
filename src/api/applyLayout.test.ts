@@ -219,6 +219,26 @@ describe('restoreLayout', () => {
   });
 });
 
+describe('setNorthDeg', () => {
+  it('sets the bearing, normalized, and clears the default', () => {
+    const turned = ok(apply(planWith(), [{ type: 'setNorthDeg', northDeg: -90 }])).plan;
+    expect(turned.northDeg).toBe(270);
+    expect(ok(apply(turned, [{ type: 'setNorthDeg', northDeg: 360 }])).plan).not.toHaveProperty('northDeg');
+  });
+
+  it('can change which plants shade which, reported as warnings introduced and resolved', () => {
+    // A tomato with a basil 10 in north of it shades it; turning the garden so north points down removes that.
+    const plan = planWith([plant('t', { cropId: 'tomato', x: 40, y: 40 }), plant('b', { cropId: 'basil', x: 40, y: 30 })]);
+    expect(ok(apply(plan, [{ type: 'addPlant', bedId: 'bed-1', cropId: 'kale', x: 5, y: 5 }])).warnings.introduced).toEqual([]);
+    const turned = ok(apply(plan, [{ type: 'setNorthDeg', northDeg: 180 }]));
+    expect(turned.warnings.resolved.map((w) => w.id)).toEqual(['shade:t>b']);
+  });
+
+  it('is refused for a planting-only scope', () => {
+    expect(codes(apply(planWith(), [{ type: 'setNorthDeg', northDeg: 10 }], { scope: 'planting' }))).toEqual(['forbidden']);
+  });
+});
+
 describe('setGardenName and setProfile', () => {
   it('sets the name to any string', () => {
     expect(ok(apply(planWith(), [{ type: 'setGardenName', name: '' }])).plan.name).toBe('');

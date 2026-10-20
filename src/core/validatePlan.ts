@@ -86,5 +86,11 @@ export function validatePlan(plan: unknown): PlanProblem[] {
   if (!Array.isArray(plan.dismissedConflictKeys) || plan.dismissedConflictKeys.some((k) => typeof k !== 'string')) {
     problems.push(problem('invalid_garden_file', '/dismissedConflictKeys', 'the dismissed-warnings list is invalid'));
   }
+  if (plan.dismissedWarnings !== undefined && (!Array.isArray(plan.dismissedWarnings) || plan.dismissedWarnings.some((k) => typeof k !== 'string'))) {
+    problems.push(problem('invalid_garden_file', '/dismissedWarnings', 'the dismissed shade and companion warnings list is invalid'));
+  }
+  if (plan.northDeg !== undefined && (typeof plan.northDeg !== 'number' || !Number.isFinite(plan.northDeg))) {
+    problems.push(problem('invalid_garden_file', '/northDeg', 'the compass direction of the garden is invalid'));
+  }
   return problems;
 }

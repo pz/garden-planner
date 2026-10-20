@@ -87,3 +87,57 @@ describe('diffWarnings', () => {
     expect(diffWarnings(dismissed, none)).toEqual({ introduced: [], resolved: [], unchanged: 0 });
   });
 });
+
+describe('shade and companion warnings', () => {
+  // The default garden's bed-1 is 96×48 with its top-left at the origin; up is north; northern hemisphere.
+  const shadePlan = (extra: Partial<GardenPlan> = {}) => planWith([plant('t', 'tomato', 40), { ...plant('b', 'basil', 40), y: 30 }], extra);
+  const tomatoAt = (plan: GardenPlan) => ({ ...plan, plants: plan.plants.map((p) => (p.id === 't' ? { ...p, y: 40 } : p)) });
+
+  it('warns that a tall crop shades a full-sun crop to its north, with a fix and a stable id', () => {
+    const [w] = computeWarnings(tomatoAt(shadePlan()));
+    expect(w).toMatchObject({
+      id: 'shade:t>b',
+      kind: 'shade',
+      severity: 'caution',
+      bedId: 'bed-1',
+      subjects: ['t', 'b'],
+      dismissed: false,
+    });
+    expect(w.message).toBe('Tomato (about 48 in tall) shades Basil, which wants full sun, at midday.');
+    expect(w.suggestion).toContain('sun side');
+  });
+
+  it('follows the garden’s compass direction and hemisphere', () => {
+    expect(computeWarnings(tomatoAt(shadePlan({ northDeg: 180 }))).filter((w) => w.kind === 'shade')).toEqual([]);
+    const south = shadePlan();
+    const inSouth = { ...tomatoAt(south), profile: { ...south.profile, location: { lat: -35, lng: 150 } } };
+    expect(computeWarnings(inSouth).filter((w) => w.kind === 'shade')).toEqual([]);
+  });
+
+  it('flags a dismissed shade warning by its id in dismissedWarnings, but keeps it listed', () => {
+    const plan = tomatoAt(shadePlan({ dismissedWarnings: ['shade:t>b'] }));
+    expect(computeWarnings(plan).filter((w) => w.kind === 'shade').map((w) => [w.id, w.dismissed])).toEqual([['shade:t>b', true]]);
+  });
+
+  it('warns about beans near onion, saying plainly that the advice is traditional', () => {
+    const plan = planWith([plant('b', 'beans', 10), plant('o', 'onion', 20)]);
+    const w = computeWarnings(plan).find((x) => x.kind === 'companion')!;
+    expect(w).toMatchObject({ id: `companion:${conflictKey('b', 'o')}`, severity: 'caution', subjects: ['b', 'o'], dismissed: false });
+    expect(w.message).toContain('Beans and Onion are 10 in apart.');
+    expect(w.message).toContain('little research behind it');
+    expect(w.suggestion).toBe('Keep them at least 24 in apart.');
+  });
+
+  it('stops warning about the pair at exactly the near distance, and dismisses by id', () => {
+    expect(computeWarnings(planWith([plant('b', 'beans', 10), plant('o', 'onion', 34)])).filter((w) => w.kind === 'companion')).toEqual([]);
+    const dismissed = planWith([plant('b', 'beans', 10), plant('o', 'onion', 20)], { dismissedWarnings: [`companion:${conflictKey('b', 'o')}`] });
+    expect(computeWarnings(dismissed).find((w) => w.kind === 'companion')?.dismissed).toBe(true);
+  });
+
+  it('lists all kinds together in id order', () => {
+    const plan = planWith([plant('b', 'beans', 10), plant('o', 'onion', 14), plant('t', 'tomato', 60), { ...plant('s', 'basil', 60), y: 0 }]);
+    const ids = computeWarnings(plan).map((w) => w.id);
+    expect(ids).toEqual([...ids].sort());
+    expect(new Set(computeWarnings(plan).map((w) => w.kind))).toEqual(new Set(['spacing', 'companion', 'shade']));
+  });
+});

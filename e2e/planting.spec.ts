@@ -158,3 +158,42 @@ test.describe('spacing warnings', () => {
     await expect(page.getByText('too close to a neighbor')).toHaveCount(0);
   });
 });
+
+test.describe('shade and companion warnings', () => {
+  test('a tall crop just south of a full-sun crop is reported as shading it, in the card', async ({ page, garden }) => {
+    // Up is north. The tomato (48 in tall) shades 26 in north of it: the basil there wants full sun.
+    await garden.seed(gardenWith([{ id: 't', cropId: 'tomato', x: 40, y: 44 }, { id: 'b', cropId: 'basil', x: 40, y: 18 }]));
+    await page.goto('/');
+    const basil = await garden.plantPoint('b');
+    await page.mouse.click(basil.x, basil.y);
+    await expect(page.getByText('! In shade from a neighbor')).toBeVisible();
+    await expect(page.getByText(/Tomato \(about 48 in tall\) shades Basil/)).toBeVisible();
+    await expect(page.getByText('too close to a neighbor')).toHaveCount(0); // 26 in apart is fine for spacing
+  });
+
+  test('turning the garden so that north is down moves the shadow to the other side', async ({ page, garden }) => {
+    const plan = gardenWith([{ id: 't', cropId: 'tomato', x: 40, y: 44 }, { id: 'b', cropId: 'basil', x: 40, y: 18 }]);
+    await garden.seed({ ...plan, northDeg: 180 });
+    await page.goto('/');
+    const basil = await garden.plantPoint('b');
+    await page.mouse.click(basil.x, basil.y);
+    await expect(page.getByRole('button', { name: 'Remove', exact: true })).toBeVisible(); // the card is open
+    await expect(page.getByText('In shade from a neighbor')).toHaveCount(0);
+  });
+
+  test('beans near onions get a plain-spoken "usually kept apart" note, which can be dismissed and stays dismissed', async ({ page, garden }) => {
+    await garden.seed(gardenWith([{ id: 'be', cropId: 'beans', x: 20, y: 10 }, { id: 'o', cropId: 'onion', x: 30, y: 10 }]));
+    await page.goto('/');
+    const beans = await garden.plantPoint('be');
+    await page.mouse.click(beans.x, beans.y);
+    await expect(page.getByText('! Usually kept apart')).toBeVisible();
+    await expect(page.getByText(/little research behind it/)).toBeVisible();
+
+    await page.getByRole('button', { name: 'Dismiss this warning' }).click();
+    expect((await garden.plan()).dismissedWarnings).toEqual(['companion:be::o']);
+    await page.reload();
+    const again = await garden.plantPoint('be');
+    await page.mouse.click(again.x, again.y);
+    await expect(page.getByText('! Usually kept apart')).toHaveCount(0);
+  });
+});

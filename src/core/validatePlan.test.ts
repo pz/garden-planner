@@ -84,4 +84,10 @@ describe('validatePlan', () => {
       expect.objectContaining({ path: '/beds/0', message: 'bed 1 is invalid' }),
     ]);
   });
+
+  it('accepts the optional northDeg and dismissedWarnings when usable, and reports them when not', () => {
+    expect(validatePlan({ ...createPlan('g'), northDeg: 45, dismissedWarnings: ['a'] })).toEqual([]);
+    expect(validatePlan({ ...createPlan('g'), northDeg: NaN, dismissedWarnings: [3] }).map((p) => p.path)).toEqual(['/dismissedWarnings', '/northDeg']);
+    expect(validatePlan({ ...createPlan('g'), dismissedWarnings: 'x' }).map((p) => p.path)).toEqual(['/dismissedWarnings']);
+  });
 });
