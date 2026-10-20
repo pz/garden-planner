@@ -1,6 +1,6 @@
 import type { PlantInstance } from '../types';
 import { getCrop } from '../data/crops';
-import { isInsideOutline, type Outline } from './geometry';
+import { clampToOutline, isInsideOutline, type Outline, type Point } from './geometry';
 
 export interface OverlapConflict {
   /** groupIds of the two conflicting entities (a patch or a solo plant), canonically a < b. */
@@ -93,4 +93,18 @@ export function fitsAt(x: number, y: number, spacingIn: number, outline: Outline
     if (Math.sqrt(dx * dx + dy * dy) < (r + otherR) * HARD_SPACING_FACTOR) return false;
   }
   return true;
+}
+
+/** How far from the original, as a fraction of the crop's spacing, a duplicated plant is placed. */
+export const DUPLICATE_OFFSET_FACTOR = 0.8;
+
+/**
+ * Where "duplicate" puts a copy of `plant`: just to its right, pulled back inside the bed's
+ * `outline` if that would be outside it. Null if a plant there would crowd one of `existing`
+ * (the plants of the same bed) the way `fitsAt` refuses.
+ */
+export function duplicateSpot(plant: PlantInstance, outline: Outline, existing: PlantInstance[]): Point | null {
+  const spacing = getCrop(plant.cropId).spacingIn;
+  const at = clampToOutline({ x: plant.x + spacing * DUPLICATE_OFFSET_FACTOR, y: plant.y }, outline);
+  return fitsAt(at.x, at.y, spacing, outline, existing) ? at : null;
 }

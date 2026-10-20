@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { parseRequest } from './commands';
+import { parseRequest, restorePlantCommand } from './commands';
+import { applyCommands } from './apply';
+import { createPlan } from '../core/reducer';
 
 const errorsOf = (raw: unknown) => {
   const r = parseRequest(raw);
@@ -94,5 +96,30 @@ describe('parseRequest', () => {
 
   it('treats prototype-ish type names as unknown commands', () => {
     expect(pathsOf({ commands: [{ type: 'constructor' }, { type: '__proto__' }] })).toEqual(['/commands/0/type', '/commands/1/type']);
+  });
+});
+
+describe('restorePlantCommand', () => {
+  const plant = { id: 'p', bedId: 'bed-1', cropId: 'kale', x: 30, y: 12.5, groupId: 'g', variety: 'Lacinato' };
+
+  it('carries everything needed to put the plant back exactly, and is a valid request', () => {
+    const command = restorePlantCommand(plant);
+    expect(command).toEqual({ type: 'addPlant', ...plant });
+    expect(parseRequest({ commands: [command] }).ok).toBe(true);
+  });
+
+  it('leaves variety out when the plant has none', () => {
+    const { variety: _variety, ...bare } = plant;
+    expect(restorePlantCommand(bare)).not.toHaveProperty('variety');
+  });
+
+  it('really restores a removed plant: same ids, position and variety', () => {
+    const before = { ...createPlan('g'), plants: [plant] };
+    let n = 0;
+    const newId = () => `x${++n}`;
+    const removed = applyCommands(before, [{ type: 'removePlant', id: 'p' }], { newId });
+    if (!removed.ok) throw new Error('remove failed');
+    const restored = applyCommands(removed.plan, [restorePlantCommand(plant)], { newId });
+    expect(restored.ok && restored.plan.plants).toEqual([plant]);
   });
 });

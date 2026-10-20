@@ -8,7 +8,7 @@ Goal: every edit to a garden goes through one API, so an AI agent can read and e
 
 1. **One command layer is the only way to change a plan.** A pure `src/api/` module exposes `applyCommands(plan, commands, options) → Result`. It has no React, DOM or transport. The UI, a future HTTP server and a future MCP server all call it. The rules live in `src/core/` and `src/data/`, as `CLAUDE.md` requires; the API validates by calling them.
 2. **The wire format is the file format.** The API speaks the same `GardenPlan` v3 JSON that Export garden writes and Load garden reads (`src/core/gardenFile.ts`). See section 2. Nothing is renamed, so existing exports keep loading.
-3. **The client talks to an async `GardenApi` interface.** `LocalGardenApi` (localStorage) comes first; `HttpGardenApi` later. The UI doesn't change when we swap them.
+3. **The client talks to a `GardenApi`, shaped like a store** (`getSnapshot`, `subscribe`, and a synchronous `apply` that returns its result), so the UI binds to it with `useSyncExternalStore` and gets errors and warnings back at once, which gestures need (a commit and the preview clearing must land in the same frame). The real one applies commands in memory and saves to localStorage; a remote one would keep a local replica and sync in the background, so the UI wouldn't change; tests use a mock. Implemented in `src/api/gardenApi.ts` and `src/app/state/gardenApiFactory.ts`.
 4. **Per-frame drag previews stay synchronous.** They call the pure geometry functions directly. Commits and explicit validation go through the API.
 5. **Warnings are derived, never stored.** The only stored state is dismissals.
 
@@ -167,11 +167,11 @@ New `crops.json` fields, hand-curated and never LLM-generated, with data-integri
 
 ## 7. Dogfooding in the client
 
-1. Add `src/api/` (commands, validation, warnings, `layout`) with unit tests, as pure functions.
-2. Add a `GardenApi` interface and `LocalGardenApi`; `gardenStore.tsx` calls it instead of `dispatch`.
-3. Move the UI's commits onto commands. Live ghosts and drags keep using the pure functions.
-4. Refactor `planProblem` into the shared `validatePlan`, and add the `northDeg` and `dismissedWarnings` fields to the types and `parsePlan`.
-5. **Mock API for client tests.** In the same PR, add a mock `GardenApi` (scripted responses, injectable errors and warnings, recorded calls) so the client can be tested without the real command layer, and Playwright tests that run the UI against it (e.g. an `outside_bed` error shows up as the right message; introduced warnings render; a stale `rev` is handled). The store takes its `GardenApi` by injection, with the real local implementation as the default.
+1. ✅ Add `src/api/` (commands, validation, warnings, `layout`) with unit tests, as pure functions.
+2. ✅ Add a `GardenApi` interface; `gardenStore.tsx` binds to it. Non-planting edits (profile, name, beds, layout undo) still go through its transitional `dispatch(action)`; each becomes a command with the bed commands.
+3. ✅ Move the UI's planting commits onto commands (plant, drag, multiply, duplicate, remove, undo, variety, dismiss). Live ghosts and drags keep using the pure functions. Warning badges now come from `GardenApi.warnings()`. A refused commit shows the API's message as a toast.
+4. Refactor `planProblem` into the shared `validatePlan` ✅, and add the `northDeg` and `dismissedWarnings` fields to the types and `parsePlan`.
+5. ✅ **Mock API for client tests.** `createMockGardenApi` behaves like the real one by default, and a test can read `calls` (every `apply`, with its result), `failNext(errors)`, `setWarnings(...)` and `replacePlan(...)` (an edit from elsewhere). In development builds, setting the `garden-planner-mock-api` localStorage flag before load makes the app use it and exposes it as `window.__mockGardenApi`; production builds don't contain it (CI checks). `e2e/mock-api.spec.ts` drives the real UI against it.
 6. Add the crop reference data, and the shade and companion warnings.
 7. Later: HTTP and MCP adapters, generated from the OpenAPI and JSON Schema source of truth.
 
