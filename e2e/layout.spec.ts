@@ -92,4 +92,50 @@ test.describe('layout editor', () => {
     expect(restored.beds).toEqual(before.beds);
     expect(restored.plants).toEqual(before.plants);
   });
+
+  test('the compass sets which way north points, by keys or by dragging, and survives a reload', async ({ page, garden }) => {
+    await garden.seed(planted());
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Edit layout' }).click();
+    const compass = page.getByRole('slider', { name: 'North direction' });
+    await expect(compass).toHaveAttribute('aria-valuenow', '0');
+
+    await compass.focus();
+    for (let i = 0; i < 6; i++) await page.keyboard.press('ArrowRight'); // 6 × 15°
+    await expect(compass).toHaveAttribute('aria-valuenow', '90');
+    expect((await garden.plan()).northDeg).toBe(90);
+
+    // Drag the needle to point down the screen (south-up): 180° clockwise from up.
+    const box = (await compass.boundingBox())!;
+    const c = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    await garden.drag(c, { x: c.x, y: c.y + 30 });
+    await expect(compass).toHaveAttribute('aria-valuenow', '180');
+    expect((await garden.plan()).northDeg).toBe(180);
+    // Turning north never touches the beds or plants.
+    expect((await garden.plan()).beds).toEqual(planted().beds);
+
+    await page.reload();
+    await page.getByRole('button', { name: 'Edit layout' }).click();
+    await expect(page.getByRole('slider', { name: 'North direction' })).toHaveAttribute('aria-valuenow', '180');
+    await page.getByRole('button', { name: 'Done' }).click();
+    await expect(page.getByTestId('compass')).toHaveAttribute('title', /180°/);
+  });
+
+  test('the layout editor and the plant view are full bleed, hanging below the header', async ({ page, garden }) => {
+    await garden.seed(planted());
+    await page.goto('/');
+    const viewport = page.viewportSize()!;
+    const headerBottom = (await page.locator('header').boundingBox())!.y + (await page.locator('header').boundingBox())!.height;
+
+    const plantView = (await page.getByTestId('garden-viewport').boundingBox())!;
+    expect(plantView).toMatchObject({ x: 0, width: viewport.width });
+    expect(plantView.y).toBeCloseTo(headerBottom, 0);
+    expect(plantView.y + plantView.height).toBeCloseTo(viewport.height, 0);
+
+    await page.getByRole('button', { name: 'Edit layout' }).click();
+    const editor = (await page.getByTestId('layout-editor').boundingBox())!;
+    expect(editor).toMatchObject({ x: 0, width: viewport.width });
+    expect(editor.y).toBeCloseTo(headerBottom, 0);
+    expect(editor.y + editor.height).toBeCloseTo(viewport.height, 0);
+  });
 });

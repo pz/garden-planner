@@ -27,6 +27,7 @@ import { GardenSwitcher } from './GardenSwitcher';
 import { CROP_COLORS } from './PlantMark';
 import { ToastStack, type ToastItem } from './ToastStack';
 import { LayoutEditor } from './LayoutEditor';
+import { Compass } from './Compass';
 import { Icon } from './Icon';
 
 const PX_PER_INCH = PLANTING_PX_PER_INCH;
@@ -635,83 +636,96 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
   }
 
   return (
-    <div style={{ padding: '28px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100svh' }}>
+      {/* The header casts a shadow onto the full-bleed canvas below it. */}
+      <header
+        style={{
+          position: 'relative',
+          zIndex: 2,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 12,
+          padding: '12px 24px',
+          background: 'var(--color-bg)',
+          boxShadow: 'var(--shadow-md)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
           <GardenSwitcher variant="title" onEditSetup={onEditSetup} />
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            {isLayout ? (
-              <>
-                <span
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    font: '500 13px Figtree',
-                    color: 'var(--color-accent-700)',
-                  }}
-                >
-                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--color-accent)' }} />
-                  Editing layout
-                </span>
-                <button onClick={toggleLayout} className="btn btn-primary" style={{ padding: '8px 14px', font: '600 12.5px Figtree' }}>
-                  <Icon name="check" size={15} />
-                  Done
-                </button>
-              </>
-            ) : (
-              <>
-                <button onClick={toggleLayout} className="btn btn-secondary" style={{ padding: '8px 14px', font: '600 12.5px Figtree' }}>
-                  <Icon name="ruler" size={15} />
-                  Edit layout
-                </button>
-                <ViewTab label="Bed layout" active={view === 'bed'} onClick={() => setView('bed')} />
-                <ViewTab label="Planting calendar" active={view === 'calendar'} onClick={() => setView('calendar')} />
-              </>
-            )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <p style={{ font: '400 13px Figtree', color: 'var(--color-text-muted)' }}>
+              {beds.length} {beds.length === 1 ? 'bed' : 'beds'} · {profile.sunExposure.replace('-', ' ')}
+            </p>
+            {!isLayout && <HelpTip text="Long-press or right-click anywhere on a bed to plant. Drag to pan; pinch, ⌘/Ctrl-scroll or +/− to zoom; 0 to fit." />}
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <p style={{ font: '400 13px Figtree', color: 'var(--color-text-muted)' }}>
-            {beds.length} {beds.length === 1 ? 'bed' : 'beds'} · {profile.sunExposure.replace('-', ' ')}
-          </p>
-          {!isLayout && <HelpTip text="Long-press or right-click anywhere on a bed to plant. Drag to pan; pinch, ⌘/Ctrl-scroll or +/− to zoom; 0 to fit." />}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {isLayout ? (
+            <>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  font: '500 13px Figtree',
+                  color: 'var(--color-accent-700)',
+                }}
+              >
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--color-accent)' }} />
+                Editing layout
+              </span>
+              <button onClick={toggleLayout} className="btn btn-primary" style={{ padding: '8px 14px', font: '600 12.5px Figtree' }}>
+                <Icon name="check" size={15} />
+                Done
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={toggleLayout} className="btn btn-secondary" style={{ padding: '8px 14px', font: '600 12.5px Figtree' }}>
+                <Icon name="ruler" size={15} />
+                Edit layout
+              </button>
+              <ViewTab label="Bed layout" active={view === 'bed'} onClick={() => setView('bed')} />
+              <ViewTab label="Planting calendar" active={view === 'calendar'} onClick={() => setView('calendar')} />
+            </>
+          )}
         </div>
-      </div>
+      </header>
 
       {isLayout && <LayoutEditor />}
 
-      {!isLayout && view === 'calendar' && <PlantingCalendar plants={plants} zoneId={profile.zoneId} />}
+      {!isLayout && view === 'calendar' && (
+        <div style={{ padding: '24px' }}>
+          <PlantingCalendar plants={plants} zoneId={profile.zoneId} />
+        </div>
+      )}
 
       {!isLayout && view === 'bed' && !bounds && (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'flex-start',
-            gap: 12,
-            padding: '28px 24px',
-            borderRadius: 'var(--radius-lg)',
-            border: '1.5px dashed var(--color-divider)',
-          }}
-        >
-          <p style={{ font: '400 17px Caveat, cursive', color: '#9a8c76' }}>No beds yet — add one to start planting.</p>
-          <button onClick={toggleLayout} className="btn btn-primary" style={{ padding: '8px 14px', font: '600 12.5px Figtree' }}>
-            <Icon name="ruler" size={15} />
-            Edit layout
-          </button>
+        <div style={{ padding: '24px' }}>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-start',
+              gap: 12,
+              padding: '28px 24px',
+              borderRadius: 'var(--radius-lg)',
+              border: '1.5px dashed var(--color-divider)',
+            }}
+          >
+            <p style={{ font: '400 17px Caveat, cursive', color: '#9a8c76' }}>No beds yet — add one to start planting.</p>
+            <button onClick={toggleLayout} className="btn btn-primary" style={{ padding: '8px 14px', font: '600 12.5px Figtree' }}>
+              <Icon name="ruler" size={15} />
+              Edit layout
+            </button>
+          </div>
         </div>
       )}
 
       {!isLayout && view === 'bed' && bounds && (
         <>
-          {plants.length === 0 && (
-            // One hint for the whole garden, outside the beds: centered in a bed it would cross an
-            // ellipse's curve or a polygon's notch, and repeated in every bed it's just noise.
-            <p style={{ font: '400 17px Caveat, cursive', color: '#9a8c76', marginBottom: -4 }}>
-              Empty so far — long-press or right-click a bed to plant something.
-            </p>
-          )}
           <div
               ref={viewportRef}
               data-testid="garden-viewport"
@@ -723,13 +737,13 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
               // or just outside a bed's shape does nothing instead of popping it over the garden.
               onContextMenu={(e) => e.preventDefault()}
               // The garden is drawn at a fixed scale inside this frame, which the camera pans and
-              // zooms over; a narrow window just shows less of it instead of squashing it.
+              // zooms over; a narrow window just shows less of it instead of squashing it. The frame
+              // is full bleed: it fills whatever the page leaves below the header.
               style={{
                 position: 'relative',
-                height: 'max(420px, calc(100vh - 230px))',
+                flex: 1,
+                minHeight: 420,
                 overflow: 'hidden',
-                borderRadius: 'var(--radius-lg)',
-                border: '1.5px solid var(--color-divider)',
                 background: '#f9f4ed',
                 touchAction: 'none',
                 cursor: panning ? 'grabbing' : 'grab',
@@ -754,6 +768,25 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
                   </div>
                 );
               })()}
+              <div style={{ position: 'absolute', left: 16, top: 16 }}>
+                <Compass northDeg={plan.northDeg ?? 0} />
+              </div>
+              {plants.length === 0 && (
+                // One hint for the whole garden, outside the beds: centered in a bed it would cross an
+                // ellipse's curve or a polygon's notch, and repeated in every bed it's just noise.
+                <p
+                  style={{
+                    position: 'absolute',
+                    left: 16,
+                    bottom: 20,
+                    pointerEvents: 'none',
+                    font: '400 17px Caveat, cursive',
+                    color: '#9a8c76',
+                  }}
+                >
+                  Empty so far — long-press or right-click a bed to plant something.
+                </p>
+              )}
               {camera && <ZoomControls percent={zoomPercent(camera)} onZoomOut={() => zoomBy(0.8)} onZoomIn={() => zoomBy(1.25)} onFit={fitGarden} />}
           </div>
 

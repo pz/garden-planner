@@ -72,6 +72,9 @@ export function validatePlan(plan: unknown): PlanProblem[] {
   if (plan.version === 3 && typeof plan.name !== 'string') {
     return [problem('invalid_garden_file', '/name', 'the garden has no name')];
   }
+  if (plan.northDeg !== undefined && (typeof plan.northDeg !== 'number' || !Number.isFinite(plan.northDeg))) {
+    return [problem('invalid_garden_file', '/northDeg', 'the garden\'s north direction is not a number')];
+  }
   const beds = bedsProblem(plan);
   if (beds) return [beds];
   if (!Array.isArray(plan.plants)) return [problem('invalid_garden_file', '/plants', 'the garden has no plant list')];

@@ -15,6 +15,7 @@ interface GardenContextValue {
   plan: GardenPlan;
   setProfile: (profile: Profile) => void;
   setGardenName: (name: string) => void;
+  setNorth: (northDeg: number) => void;
   addBed: (bed: Bed) => void;
   renameBed: (id: string, name: string) => void;
   moveBed: (id: string, dx: number, dy: number) => void;
@@ -50,6 +51,7 @@ export function GardenProvider({ gardenId, children }: { gardenId: string; child
       plan,
       setProfile: (profile) => dispatch({ type: 'setProfile', profile }),
       setGardenName: (name) => dispatch({ type: 'setGardenName', name }),
+      setNorth: (northDeg) => dispatch({ type: 'setNorth', northDeg }),
       addBed: (bed) => dispatch({ type: 'addBed', bed }),
       renameBed: (id, name) => dispatch({ type: 'renameBed', id, name }),
       moveBed: (id, dx, dy) => dispatch({ type: 'moveBed', id, dx, dy }),

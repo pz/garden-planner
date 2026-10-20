@@ -99,6 +99,12 @@ export interface GardenPlan {
   id: string;
   name: string;
   profile: Profile;
+  /**
+   * Which way geographic north points on the layout, in degrees clockwise from straight up the
+   * screen (90 = north is to the right). Absent means 0: north is up. Shade prediction needs it
+   * to know where the sun is relative to the beds.
+   */
+  northDeg?: number;
   beds: Bed[];
   plants: PlantInstance[];
   /** Canonical (sorted, "::"-joined) groupId pairs whose overlap warning the user dismissed. */
