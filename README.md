@@ -73,9 +73,10 @@ problems and change it:
   every call and can fail the next one, report chosen warnings, or have the garden change
   behind the client's back.
 
-The UI's planting edits go through it. Bed and profile edits still use reducer actions (via
-`GardenApi.dispatch`) until they have commands. The design, and what's still to come (bed
-commands, shade and companion warnings), is in [`docs/api-design.md`](docs/api-design.md).
+Every edit the UI makes (planting, beds, layout undo, profile, name) is a command through
+`GardenApi.apply`; the reducer is only the state machine underneath. `scope: "planting"` is how
+an agent's request will be limited to planting. The design, and what's still to come (shade and
+companion warnings, the HTTP/MCP layer), is in [`docs/api-design.md`](docs/api-design.md).
 
 ### `src/app/` — the app
 
@@ -101,8 +102,7 @@ data  ←  core  ←  api  ←  app
 - `core` imports only `data` and `types`.
 - `api` imports `core`, `data` and `types`, never `app`.
 - `app` may import `core` for pure read-only helpers (e.g. computing a patch's
-  bounding box to draw it). Changes to a garden go through `api` (planting edits now; bed
-  edits once they have commands).
+  bounding box to draw it). Every change to a garden goes through `api` (lint forbids importing the reducer into `app`).
 
 These are enforced, not conventions: `.oxlintrc.json` has `no-restricted-imports`
 overrides, and `tsconfig.core.json` typechecks `data`, `core` and `api` with no DOM lib, so

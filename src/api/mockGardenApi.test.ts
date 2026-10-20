@@ -89,7 +89,7 @@ describe('createMockGardenApi', () => {
     const listener = vi.fn();
     api.subscribe(listener);
     api.apply([kale]);
-    api.dispatch({ type: 'setGardenName', name: 'x' });
+    api.apply([{ type: 'setGardenName', name: 'x' }]);
     expect(listener).toHaveBeenCalledTimes(2);
     expect(api.getSnapshot().plan.name).toBe('x');
   });

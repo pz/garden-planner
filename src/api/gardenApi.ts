@@ -1,5 +1,4 @@
 import type { GardenPlan } from '../types';
-import { reducer, type Action } from '../core/reducer';
 import { applyCommands, type ApplyResult } from './apply';
 import type { Command } from './commands';
 import { revOf } from './rev';
@@ -17,6 +16,8 @@ export interface ApplyOptions {
   ifRev?: string;
   /** Report what would happen without changing anything. */
   dryRun?: boolean;
+  /** `planting` refuses commands that change beds or the profile; see `applyCommands`. */
+  scope?: 'all' | 'planting';
 }
 
 /**
@@ -28,15 +29,10 @@ export interface ApplyOptions {
 export interface GardenApi {
   getSnapshot(): GardenSnapshot;
   subscribe(listener: () => void): () => void;
-  /** Applies a batch of planting commands atomically (see `applyCommands`). A rejected batch changes nothing. */
+  /** Applies a batch of commands atomically (see `applyCommands`). A rejected batch changes nothing. */
   apply(commands: Command[], options?: ApplyOptions): ApplyResult;
   /** Every warning on the garden as it is now, dismissed ones included (flagged). */
   warnings(): Warning[];
-  /**
-   * Transitional: edits that aren't planting commands yet (profile, name, beds, layout undo) are
-   * still reducer actions. Each of these becomes a command, and this goes away, as the API grows.
-   */
-  dispatch(action: Action): void;
 }
 
 export interface MemoryGardenApiOptions {
@@ -75,7 +71,6 @@ export function createMemoryGardenApi(initial: GardenPlan, options: MemoryGarden
       return result;
     },
     warnings: () => computeWarnings(snapshot.plan),
-    dispatch: (action) => set(reducer(snapshot.plan, action)),
     replace: set,
   };
 }

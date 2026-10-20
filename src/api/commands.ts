@@ -1,4 +1,4 @@
-import type { PlantInstance, Point } from '../types';
+import type { Bed, BedShape, PlantInstance, Point, Profile } from '../types';
 import type { ApiError } from './types';
 
 /** `$name` in an id field refers to the object an earlier command in the same batch created with `ref: "name"`. */
@@ -70,7 +70,81 @@ export interface RestoreWarningCommand {
   id: string;
 }
 
-export type Command =
+/** The fields that place and shape a bed, as `addBed` and `reshapeBed` take them. */
+export interface BedGeometryFields {
+  cx: number;
+  cy: number;
+  widthIn: number;
+  heightIn: number;
+  /** A polygon's corners, in the bed's own frame, spanning its width × height box. */
+  points?: Point[];
+  /** Rectangles only. */
+  cornerRadiusIn?: number;
+}
+
+export interface AddBedCommand extends BedGeometryFields {
+  type: 'addBed';
+  /** Normally generated. */
+  id?: string;
+  /** Normally "Bed N". */
+  name?: string;
+  shape: BedShape;
+  /** Degrees clockwise; default 0. */
+  rotationDeg?: number;
+}
+export interface RenameBedCommand {
+  type: 'renameBed';
+  id: string;
+  name: string;
+}
+export interface MoveBedCommand {
+  type: 'moveBed';
+  id: string;
+  dx: number;
+  dy: number;
+}
+/** Resize or reshape a bed. Plants whose centers the new shape no longer contains are removed, and reported as `removed`. */
+export interface ReshapeBedCommand extends BedGeometryFields {
+  type: 'reshapeBed';
+  id: string;
+}
+export interface RotateBedCommand {
+  type: 'rotateBed';
+  id: string;
+  rotationDeg: number;
+}
+/** Adds a whole bed with its plants (e.g. a copy of another). Every id is the caller's. */
+export interface PasteBedCommand {
+  type: 'pasteBed';
+  bed: Bed;
+  plants: PlantInstance[];
+}
+/** Removes a bed and, with it, its plants (reported as `removed`). */
+export interface RemoveBedCommand {
+  type: 'removeBed';
+  id: string;
+}
+/** Puts the beds and plants back as they were (the layout editor's undo). Leaves dismissals alone. */
+export interface RestoreLayoutCommand {
+  type: 'restoreLayout';
+  beds: Bed[];
+  plants: PlantInstance[];
+}
+export interface SetGardenNameCommand {
+  type: 'setGardenName';
+  name: string;
+}
+/** Which way north points on the layout, in degrees clockwise from straight up the screen (normalized to 0…360). */
+export interface SetNorthCommand {
+  type: 'setNorth';
+  northDeg: number;
+}
+export interface SetProfileCommand {
+  type: 'setProfile';
+  profile: Profile;
+}
+
+export type PlantingCommand =
   | AddPlantCommand
   | AddPatchCommand
   | RemovePlantCommand
@@ -80,7 +154,50 @@ export type Command =
   | DismissWarningCommand
   | RestoreWarningCommand;
 
+/** Commands that change beds, the garden's name or its profile, not just what is planted. */
+export type LayoutCommand =
+  | AddBedCommand
+  | RenameBedCommand
+  | MoveBedCommand
+  | ReshapeBedCommand
+  | RotateBedCommand
+  | PasteBedCommand
+  | RemoveBedCommand
+  | RestoreLayoutCommand
+  | SetGardenNameCommand
+  | SetNorthCommand
+  | SetProfileCommand;
+
+export type Command = PlantingCommand | LayoutCommand;
+
 export type CommandType = Command['type'];
+
+const LAYOUT_TYPES: ReadonlySet<string> = new Set<LayoutCommand['type']>([
+  'addBed', 'renameBed', 'moveBed', 'reshapeBed', 'rotateBed', 'pasteBed', 'removeBed', 'restoreLayout', 'setGardenName', 'setNorth', 'setProfile',
+]);
+
+/** Whether a command only plants, moves, removes or annotates plants (what an agent may do), rather than changing beds or the profile. */
+export function isPlantingCommand(command: Command): command is PlantingCommand {
+  return !LAYOUT_TYPES.has(command.type);
+}
+
+/** The `addBed` that adds a bed exactly as given (same id, name, shape, place and rotation). */
+export function addBedCommand(bed: Bed): AddBedCommand {
+  const c: AddBedCommand = {
+    type: 'addBed',
+    id: bed.id,
+    name: bed.name,
+    shape: bed.shape,
+    cx: bed.cx,
+    cy: bed.cy,
+    widthIn: bed.widthIn,
+    heightIn: bed.heightIn,
+    rotationDeg: bed.rotationDeg,
+  };
+  if (bed.points !== undefined) c.points = bed.points;
+  if (bed.cornerRadiusIn !== undefined) c.cornerRadiusIn = bed.cornerRadiusIn;
+  return c;
+}
 
 /** The `addPlant` that puts a plant back exactly as it was (same ids, position and variety), e.g. to undo removing it. */
 export function restorePlantCommand(plant: PlantInstance): AddPlantCommand {
@@ -118,6 +235,15 @@ const num: Check = (v, path, fail) => {
 const bool: Check = (v, path, fail) => {
   if (typeof v !== 'boolean') fail(path, 'must be true or false');
 };
+/** Any string, including an empty one. */
+const text: Check = (v, path, fail) => {
+  if (typeof v !== 'string') fail(path, 'must be a string');
+};
+const oneOf =
+  (...options: string[]): Check =>
+  (v, path, fail) => {
+    if (typeof v !== 'string' || !options.includes(v)) fail(path, `must be one of ${options.join(', ')}`);
+  };
 const refName: Check = (v, path, fail) => {
   if (typeof v !== 'string' || !REF_NAME.test(v)) fail(path, 'must be a name of letters, digits, "_" or "-", starting with a letter');
 };
@@ -140,6 +266,37 @@ const grid: Check = (v, path, fail) => {
   for (const k of Object.keys(v)) if (!['origin', 'axis', 'columns', 'rows'].includes(k)) fail(`${path}/${k}`, 'is not a known field');
 };
 
+/** An object with exactly these fields: `required` must be present, `optional` may be; each checked. */
+const shaped =
+  (required: Record<string, Check>, optional: Record<string, Check>): Check =>
+  (v, path, fail) => {
+    if (!isRecord(v)) return fail(path, 'must be an object');
+    for (const [k, check] of Object.entries(required)) {
+      if (v[k] === undefined) fail(`${path}/${k}`, 'is required');
+      else check(v[k], `${path}/${k}`, fail);
+    }
+    for (const [k, check] of Object.entries(optional)) if (v[k] !== undefined) check(v[k], `${path}/${k}`, fail);
+    for (const k of Object.keys(v)) if (!(k in required) && !(k in optional)) fail(`${path}/${k}`, 'is not a known field');
+  };
+const arrayOf =
+  (item: Check): Check =>
+  (v, path, fail) => {
+    if (!Array.isArray(v)) return fail(path, 'must be an array');
+    v.forEach((x, i) => item(x, `${path}/${i}`, fail));
+  };
+
+const SHAPES = oneOf('rect', 'ellipse', 'polygon');
+const bedObject = shaped(
+  { id: str, name: text, shape: SHAPES, cx: num, cy: num, widthIn: num, heightIn: num, rotationDeg: num },
+  { points, cornerRadiusIn: num },
+);
+const plantObject = shaped({ id: str, bedId: str, cropId: str, groupId: str, x: num, y: num }, { variety: str });
+const profileObject = shaped(
+  { zoneId: str, sunExposure: oneOf('full-sun', 'part-shade', 'shade'), onboarded: bool },
+  { location: shaped({ lat: num, lng: num }, { label: text }) },
+);
+const geometryFields = { cx: num, cy: num, widthIn: num, heightIn: num };
+
 /** Per command type: its fields, each with its check; `required` ones must be present. */
 const SCHEMA: Record<CommandType, { required: Record<string, Check>; optional: Record<string, Check> }> = {
   addPlant: {
@@ -156,6 +313,20 @@ const SCHEMA: Record<CommandType, { required: Record<string, Check>; optional: R
   setVariety: { required: { id: str, variety: nullableStr }, optional: {} },
   dismissWarning: { required: { id: str }, optional: {} },
   restoreWarning: { required: { id: str }, optional: {} },
+  addBed: {
+    required: { shape: SHAPES, ...geometryFields },
+    optional: { id: str, name: text, rotationDeg: num, points, cornerRadiusIn: num },
+  },
+  renameBed: { required: { id: str, name: text }, optional: {} },
+  moveBed: { required: { id: str, dx: num, dy: num }, optional: {} },
+  reshapeBed: { required: { id: str, ...geometryFields }, optional: { points, cornerRadiusIn: num } },
+  rotateBed: { required: { id: str, rotationDeg: num }, optional: {} },
+  pasteBed: { required: { bed: bedObject, plants: arrayOf(plantObject) }, optional: {} },
+  removeBed: { required: { id: str }, optional: {} },
+  restoreLayout: { required: { beds: arrayOf(bedObject), plants: arrayOf(plantObject) }, optional: {} },
+  setGardenName: { required: { name: text }, optional: {} },
+  setNorth: { required: { northDeg: num }, optional: {} },
+  setProfile: { required: { profile: profileObject }, optional: {} },
 };
 
 /**
