@@ -58,7 +58,6 @@ export function createMockGardenApi(initial: GardenPlan, options: MemoryGardenAp
       return result;
     },
     warnings: () => warningsOverride ?? inner.warnings(),
-    dispatch: (action) => inner.dispatch(action),
     failNext(errors) {
       failures.push(errors);
     },

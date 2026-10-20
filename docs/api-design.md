@@ -89,6 +89,21 @@ POST /v1/gardens/{g}/commands
 | `setVariety` | `id, variety` | `variety: null` clears it. |
 | `dismissWarning` / `restoreWarning` | `id` | |
 
+Bed, layout and profile commands (not available to an agent-scoped request, see below):
+
+| Command | Fields | Notes |
+|---|---|---|
+| `addBed` | `id?, name?, shape, cx, cy, widthIn, heightIn, rotationDeg?, points?, cornerRadiusIn?` | `name` defaults to "Bed N", `id` is generated. The bed must pass `bedProblems`: sides of at least 12 in, a polygon's corners inside its box and enclosing area, `points` only on polygons, a corner radius only on rectangles and no more than they can curve. Each problem is its own `invalid_bed` error. |
+| `renameBed` | `id, name` | |
+| `moveBed` / `rotateBed` | `id, dx, dy` / `id, rotationDeg` | Plants are bed-local, so they come along untouched. |
+| `reshapeBed` | `id, cx, cy, widthIn, heightIn, points?, cornerRadiusIn?` | Plants keep their place in the garden; any the new shape no longer contains are removed and listed in the result's `removed`. A polygon must be given its corners. Use `dryRun` to see `removed` before committing. |
+| `removeBed` | `id` | Its plants go too, listed in `removed`. |
+| `pasteBed` | `bed, plants` | A whole bed with its plants, all ids the caller's; plants must be inside it. |
+| `restoreLayout` | `beds, plants` | Puts the beds and plants back as they were (the layout editor's undo). Validated as a well-formed garden but lenient about where plants sit. |
+| `setGardenName` / `setProfile` | `name` / `profile` | `setProfile` checks the zone and normalizes the location. |
+
+**Scope.** `applyCommands(..., { scope: "planting" })` refuses every command in the second table with a `forbidden` error, which is what an agent's token will get; the default `all` is what the UI uses.
+
 Rules:
 
 - **Atomic.** All commands in a batch apply or none do. Later commands see earlier ones. `ref` names an object a command creates; later commands refer to it as `"$name"` in an id field (`id`, `groupId`). A `$ref` to a plant works wherever a plant id does; a `$ref` to a patch works wherever a `groupId` does. A command that fails keeps its ref claimed, so commands that depend on it are skipped without piling on extra errors.
@@ -168,7 +183,7 @@ New `crops.json` fields, hand-curated and never LLM-generated, with data-integri
 ## 7. Dogfooding in the client
 
 1. ✅ Add `src/api/` (commands, validation, warnings, `layout`) with unit tests, as pure functions.
-2. ✅ Add a `GardenApi` interface; `gardenStore.tsx` binds to it. Non-planting edits (profile, name, beds, layout undo) still go through its transitional `dispatch(action)`; each becomes a command with the bed commands.
+2. ✅ Add a `GardenApi` interface; `gardenStore.tsx` binds to it. Every edit, including profile, name, beds and layout undo, is a command through `apply`; the transitional `dispatch(action)` is gone.
 3. ✅ Move the UI's planting commits onto commands (plant, drag, multiply, duplicate, remove, undo, variety, dismiss). Live ghosts and drags keep using the pure functions. Warning badges now come from `GardenApi.warnings()`. A refused commit shows the API's message as a toast.
 4. Refactor `planProblem` into the shared `validatePlan` ✅, and add the `northDeg` and `dismissedWarnings` fields to the types and `parsePlan`.
 5. ✅ **Mock API for client tests.** `createMockGardenApi` behaves like the real one by default, and a test can read `calls` (every `apply`, with its result), `failNext(errors)`, `setWarnings(...)` and `replacePlan(...)` (an edit from elsewhere). In development builds, setting the `garden-planner-mock-api` localStorage flag before load makes the app use it and exposes it as `window.__mockGardenApi`; production builds don't contain it (CI checks). `e2e/mock-api.spec.ts` drives the real UI against it.
@@ -177,7 +192,7 @@ New `crops.json` fields, hand-curated and never LLM-generated, with data-integri
 
 ## 8. Decisions
 
-1. **Layout edits.** Bed commands (`addBed`, `moveBed`, `reshapeBed`, `rotateBed`, `pasteBed`, `removeBed`, `restoreLayout`) join the same command union so the UI's edits all go through the API, but agent tokens are limited to planting commands for now.
+1. **Layout edits.** Bed, profile and name commands (✅ implemented) join the same command union so all of the UI's edits go through the API, but agent tokens are limited to planting commands for now (`scope: "planting"`).
 2. **`northDeg`** is garden-level.
 3. **Revision token.** A content hash for now (nothing stored); a server counter later. Both are opaque to clients.
 

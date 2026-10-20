@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseRequest, restorePlantCommand } from './commands';
+import { isPlantingCommand, parseRequest, restorePlantCommand } from './commands';
 import { applyCommands } from './apply';
 import { createPlan } from '../core/reducer';
 
@@ -121,5 +121,60 @@ describe('restorePlantCommand', () => {
     if (!removed.ok) throw new Error('remove failed');
     const restored = applyCommands(removed.plan, [restorePlantCommand(plant)], { newId });
     expect(restored.ok && restored.plan.plants).toEqual([plant]);
+  });
+});
+
+describe('parseRequest: bed, layout and profile commands', () => {
+  const bed = { id: 'b', name: 'Bed', shape: 'rect', cx: 1, cy: 2, widthIn: 24, heightIn: 24, rotationDeg: 0 };
+  const plant = { id: 'p', bedId: 'b', cropId: 'kale', x: 1, y: 2, groupId: 'g' };
+  const valid = [
+    { type: 'addBed', shape: 'polygon', cx: 1, cy: 2, widthIn: 48, heightIn: 48, points: [{ x: 0, y: 0 }], id: 'b', name: '', rotationDeg: 45, cornerRadiusIn: 3 },
+    { type: 'renameBed', id: 'b', name: '' },
+    { type: 'moveBed', id: 'b', dx: 1, dy: -1 },
+    { type: 'reshapeBed', id: 'b', cx: 1, cy: 2, widthIn: 24, heightIn: 24 },
+    { type: 'rotateBed', id: 'b', rotationDeg: 90 },
+    { type: 'pasteBed', bed, plants: [plant, { ...plant, variety: 'v' }] },
+    { type: 'removeBed', id: 'b' },
+    { type: 'restoreLayout', beds: [bed], plants: [plant] },
+    { type: 'setGardenName', name: '' },
+    { type: 'setProfile', profile: { zoneId: '6', sunExposure: 'shade', onboarded: true, location: { lat: 1, lng: 2, label: 'x' } } },
+  ];
+
+  it('accepts every layout command with its fields', () => {
+    for (const c of valid) expect(parseRequest({ commands: [c] }).ok, c.type).toBe(true);
+  });
+
+  it('classifies commands as planting or layout', () => {
+    const kinds = valid.map((c) => isPlantingCommand(c as never));
+    expect(kinds.every((k) => k === false)).toBe(true);
+    expect(isPlantingCommand({ type: 'removePlant', id: 'a' })).toBe(true);
+    expect(isPlantingCommand({ type: 'dismissWarning', id: 'a' })).toBe(true);
+  });
+
+  it('points at the exact field inside a nested bed, plant or profile', () => {
+    expect(pathsOf({ commands: [{ type: 'pasteBed', bed: { ...bed, shape: 'blob', widthIn: 'x' }, plants: [plant, { ...plant, x: null }, { id: 'q' }] }] })).toEqual([
+      '/commands/0/bed/shape',
+      '/commands/0/bed/widthIn',
+      '/commands/0/plants/1/x',
+      '/commands/0/plants/2/bedId',
+      '/commands/0/plants/2/cropId',
+      '/commands/0/plants/2/groupId',
+      '/commands/0/plants/2/x',
+      '/commands/0/plants/2/y',
+    ]);
+    expect(pathsOf({ commands: [{ type: 'setProfile', profile: { zoneId: '6', sunExposure: 'sunny', onboarded: 'yes', location: { lat: 1 } } }] })).toEqual([
+      '/commands/0/profile/sunExposure',
+      '/commands/0/profile/onboarded',
+      '/commands/0/profile/location/lng',
+    ]);
+  });
+
+  it('rejects unknown fields on a nested bed, and a non-array plants list', () => {
+    expect(pathsOf({ commands: [{ type: 'restoreLayout', beds: [{ ...bed, color: 'red' }], plants: 'none' }] })).toEqual(['/commands/0/beds/0/color', '/commands/0/plants']);
+  });
+
+  it('requires the geometry of an addBed and a reshapeBed', () => {
+    expect(pathsOf({ commands: [{ type: 'addBed', shape: 'rect', cx: 1 }] })).toEqual(['/commands/0/cy', '/commands/0/widthIn', '/commands/0/heightIn']);
+    expect(pathsOf({ commands: [{ type: 'reshapeBed', id: 'b' }] })).toEqual(['/commands/0/cx', '/commands/0/cy', '/commands/0/widthIn', '/commands/0/heightIn']);
   });
 });

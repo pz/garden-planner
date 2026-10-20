@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  bedProblems,
   BED_CORNER_RADIUS_IN,
   MIN_BED_SIDE_IN,
   bedBounds,
@@ -407,5 +408,48 @@ describe('outlinePoints', () => {
       const ny = (q.y - 24) / 24;
       expect(nx * nx + ny * ny).toBeCloseTo(1, 9);
     }
+  });
+});
+describe('bedProblems', () => {
+  const rect: Bed = { id: 'b', name: 'Bed', shape: 'rect', cx: 48, cy: 24, widthIn: 96, heightIn: 48, rotationDeg: 0 };
+  const poly: Bed = { ...rect, shape: 'polygon', widthIn: 48, heightIn: 48, points: [{ x: 0, y: 0 }, { x: 48, y: 0 }, { x: 24, y: 48 }] };
+
+  it('has none for good rect, ellipse and polygon beds', () => {
+    expect(bedProblems(rect)).toEqual([]);
+    expect(bedProblems({ ...rect, shape: 'ellipse' })).toEqual([]);
+    expect(bedProblems(poly)).toEqual([]);
+  });
+
+  it('allows a side of exactly the minimum and not a hair less', () => {
+    expect(bedProblems({ ...rect, widthIn: MIN_BED_SIDE_IN, heightIn: MIN_BED_SIDE_IN })).toEqual([]);
+    expect(bedProblems({ ...rect, widthIn: MIN_BED_SIDE_IN - 0.01 })).toEqual([`its width must be at least ${MIN_BED_SIDE_IN} in`]);
+    expect(bedProblems({ ...rect, heightIn: 0 })).toHaveLength(1);
+  });
+
+  it('rejects non-finite numbers and unknown shapes, and says each thing once', () => {
+    expect(bedProblems({ ...rect, cx: NaN, cy: 3 })).toEqual(['its position must be finite numbers']);
+    expect(bedProblems({ ...rect, rotationDeg: Infinity })).toEqual(['its rotation must be a finite number']);
+    expect(bedProblems({ ...rect, shape: 'blob' as never })).toEqual(['its shape must be rect, ellipse or polygon']);
+  });
+
+  it('rejects a polygon without enough corners, with corners outside its box, or with no area', () => {
+    expect(bedProblems({ ...poly, points: poly.points!.slice(0, 2) })).toEqual(['a polygon needs at least three corners']);
+    expect(bedProblems({ ...poly, points: undefined })).toEqual(['a polygon needs at least three corners']);
+    expect(bedProblems({ ...poly, points: [{ x: 0, y: 0 }, { x: 48, y: 0 }, { x: 24, y: 48.01 }] })).toEqual(["a polygon's corners must lie inside its width × height box"]);
+    expect(bedProblems({ ...poly, points: [{ x: 0, y: 0 }, { x: 24, y: 0 }, { x: 48, y: 0 }] })).toEqual(['a polygon must enclose some area']);
+  });
+
+  it('accepts a corner exactly on the box edge (and float noise past it), but not points on a non-polygon', () => {
+    expect(bedProblems({ ...poly, points: [{ x: 0, y: 0 }, { x: 48 + 1e-9, y: 0 }, { x: 24, y: 48 }] })).toEqual([]);
+    expect(bedProblems({ ...rect, points: poly.points })).toEqual(['only a polygon has corner points']);
+  });
+
+  it('allows a rectangle corner radius up to what it can curve and no more; only rectangles have one', () => {
+    const max = Math.min(rect.widthIn, rect.heightIn) / 2;
+    expect(bedProblems({ ...rect, cornerRadiusIn: 0 })).toEqual([]);
+    expect(bedProblems({ ...rect, cornerRadiusIn: max })).toEqual([]);
+    expect(bedProblems({ ...rect, cornerRadiusIn: max + 0.01 })).toEqual([`its corner radius can be at most ${max} in`]);
+    expect(bedProblems({ ...rect, cornerRadiusIn: -1 })).toEqual(['its corner radius must be zero or more']);
+    expect(bedProblems({ ...rect, shape: 'ellipse', cornerRadiusIn: 2 })).toEqual(['only a rectangle has rounded corners']);
   });
 });

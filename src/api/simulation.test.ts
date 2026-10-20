@@ -6,7 +6,7 @@ import { bedOutline } from '../core/layout';
 import { createPlan } from '../core/reducer';
 import { validatePlan } from '../core/validatePlan';
 import { applyCommands } from './apply';
-import { parseRequest, type Command } from './commands';
+import { isPlantingCommand, parseRequest, type Command } from './commands';
 import { readLayout } from './layoutView';
 import { revOf } from './rev';
 import { computeWarnings } from './warnings';
@@ -41,9 +41,37 @@ function randomCommands(next: () => number, plan: GardenPlan): Command[] {
   const coord = (max: number) => Math.round((next() < 0.125 ? next() * (max + 40) - 20 : next() * max) * 10) / 10;
   const plantId = () => (plan.plants.length && next() < 0.95 ? pick(plan.plants).id : 'ghost-plant');
   const groupId = () => (plan.plants.length && next() < 0.95 ? pick(plan.plants).groupId : 'ghost-group');
+  /** A layout command: sometimes with a bad size, a missing polygon corner list, or a bed that doesn't exist. */
+  const layoutCommand = (): Command => {
+    const bed = next() < 0.05 ? { id: 'ghost-bed', shape: 'rect' as const, widthIn: 48, heightIn: 48 } : pick(plan.beds);
+    const size = () => Math.round(next() < 0.1 ? next() * 12 : 12 + next() * 90);
+    const r = next();
+    if (r < 0.25) {
+      const w = size();
+      const h = size();
+      const shape = pick(['rect', 'ellipse', 'polygon'] as const);
+      const points = shape === 'polygon' && next() < 0.9 ? [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w / 2, y: h }] : undefined;
+      return { type: 'addBed', shape, cx: 400 + Math.floor(next() * 400), cy: Math.floor(next() * 200), widthIn: w, heightIn: h, ...(points && { points }) };
+    }
+    if (r < 0.4) return { type: 'moveBed', id: bed.id, dx: Math.round(next() * 40 - 20), dy: Math.round(next() * 40 - 20) };
+    if (r < 0.5) return { type: 'rotateBed', id: bed.id, rotationDeg: Math.round(next() * 720 - 360) };
+    if (r < 0.75) {
+      const w = size();
+      const h = size();
+      const triangle = [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w / 2, y: h }];
+      return { type: 'reshapeBed', id: bed.id, cx: Math.round(next() * 100), cy: Math.round(next() * 100), widthIn: w, heightIn: h, ...(bed.shape === 'polygon' && next() < 0.9 && { points: triangle }) };
+    }
+    if (r < 0.85 && plan.beds.length > 1) return { type: 'removeBed', id: bed.id };
+    if (r < 0.95) return { type: 'renameBed', id: bed.id, name: next() < 0.2 ? '' : `Bed ${Math.floor(next() * 9)}` };
+    return { type: 'setGardenName', name: `Garden ${Math.floor(next() * 9)}` };
+  };
   const n = 1 + Math.floor(next() * 3);
   const out: Command[] = [];
   for (let i = 0; i < n; i++) {
+    if (next() < 0.2) {
+      out.push(layoutCommand());
+      continue;
+    }
     const r = next();
     if (r < 0.3) {
       const b = place();
@@ -90,6 +118,12 @@ describe('simulation: random command batches never break the garden', () => {
         expect(again).toEqual(result);
         // Anything that is a valid request round-trips through the parser (what an HTTP layer would see).
         expect(parseRequest(JSON.parse(JSON.stringify({ commands }))).ok).toBe(true);
+        // An agent-scoped request is refused exactly when it contains a layout command, and never changes anything.
+        const scoped = applyCommands(plan, commands, { newId: () => `s${step}`, scope: 'planting' });
+        if (commands.some((c) => !isPlantingCommand(c))) {
+          expect(scoped.ok).toBe(false);
+          expect(!scoped.ok && scoped.errors.some((e) => e.code === 'forbidden')).toBe(true);
+        }
 
         if (!result.ok) {
           rejected++;
@@ -130,6 +164,10 @@ describe('simulation: random command batches never break the garden', () => {
         // A dry run says the same and asks not to be committed.
         const dry = applyCommands(plan, commands, { newId: () => `a${++n2}-${step}`, dryRun: true });
         expect(dry.ok && dry.committed).toBe(false);
+        // A removal is reported for exactly the plants that are gone (other than by an explicit remove command).
+        const gone = plan.plants.filter((p) => !after.plants.some((q) => q.id === p.id)).map((p) => p.id);
+        const reported = new Set(result.results.flatMap((r) => r.removed ?? []));
+        for (const id of gone) expect(reported.has(id)).toBe(true);
         // The layout view can always be drawn for what we produced.
         expect(readLayout(after).ok).toBe(true);
 

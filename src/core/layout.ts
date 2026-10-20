@@ -259,3 +259,43 @@ export function nextBedName(beds: Bed[]): string {
   while (taken.has(`bed ${n}`)) n++;
   return `Bed ${n}`;
 }
+/** Slack for floating-point error when checking that a polygon's corners lie in its box. */
+const BOX_EPSILON_IN = 1e-6;
+
+/**
+ * Everything wrong with a bed as someone is about to add or reshape it, as short sentences; empty
+ * if it is fine. Stricter than `isValidBed` (which only asks whether a stored bed can be drawn):
+ * sides at least `MIN_BED_SIDE_IN`, a polygon's corners inside its box and enclosing some area,
+ * `points` only on polygons and a corner radius only on rectangles, within what they can curve.
+ */
+export function bedProblems(bed: Bed): string[] {
+  const problems: string[] = [];
+  const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+  if (typeof bed.id !== 'string' || bed.id === '') problems.push('it needs an id');
+  if (typeof bed.name !== 'string') problems.push('it needs a name');
+  if (bed.shape !== 'rect' && bed.shape !== 'ellipse' && bed.shape !== 'polygon') problems.push('its shape must be rect, ellipse or polygon');
+  if (!finite(bed.cx) || !finite(bed.cy)) problems.push('its position must be finite numbers');
+  if (!finite(bed.rotationDeg)) problems.push('its rotation must be a finite number');
+  for (const [side, v] of [['width', bed.widthIn], ['height', bed.heightIn]] as const) {
+    if (!finite(v) || v < MIN_BED_SIDE_IN) problems.push(`its ${side} must be at least ${MIN_BED_SIDE_IN} in`);
+  }
+  const sized = finite(bed.widthIn) && finite(bed.heightIn);
+  if (bed.shape === 'polygon') {
+    const pts = bed.points;
+    if (!Array.isArray(pts) || pts.length < 3 || !pts.every((q) => finite(q?.x) && finite(q?.y))) {
+      problems.push('a polygon needs at least three corners');
+    } else if (sized) {
+      const inBox = pts.every((q) => q.x >= -BOX_EPSILON_IN && q.y >= -BOX_EPSILON_IN && q.x <= bed.widthIn + BOX_EPSILON_IN && q.y <= bed.heightIn + BOX_EPSILON_IN);
+      if (!inBox) problems.push("a polygon's corners must lie inside its width × height box");
+      if (signedArea2(pts) === 0) problems.push('a polygon must enclose some area');
+    }
+  } else if (bed.points !== undefined) {
+    problems.push('only a polygon has corner points');
+  }
+  if (bed.cornerRadiusIn !== undefined) {
+    if (bed.shape !== 'rect') problems.push('only a rectangle has rounded corners');
+    else if (!finite(bed.cornerRadiusIn) || bed.cornerRadiusIn < 0) problems.push('its corner radius must be zero or more');
+    else if (sized && bed.cornerRadiusIn > maxCornerRadius(bed)) problems.push(`its corner radius can be at most ${maxCornerRadius(bed)} in`);
+  }
+  return problems;
+}

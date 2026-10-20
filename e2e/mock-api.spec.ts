@@ -151,4 +151,63 @@ test.describe('the client, against a mock API', () => {
     await expect(page.locator('[data-plant-id]')).toHaveCount(3);
     await expect(page.getByRole('button', { name: /Edited elsewhere/ })).toBeVisible();
   });
+
+  test('first-run setup sends the profile and the garden name', async ({ page, mock }) => {
+    await mock.enable();
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Zone 8' }).click();
+    await page.getByRole('button', { name: /^Part shade/ }).click();
+    await page.getByRole('button', { name: 'Continue to your garden' }).click();
+    await expect(page.getByRole('button', { name: 'Edit layout' })).toBeVisible();
+
+    const commands = await mock.commands();
+    expect(commands.map((c) => c.type)).toEqual(['setProfile', 'setGardenName']);
+    expect(commands[0]).toMatchObject({ profile: { zoneId: '8', sunExposure: 'part-shade', onboarded: true } });
+  });
+
+  test.describe('layout editor', () => {
+    const insideBed = async (page: import('@playwright/test').Page) => {
+      const box = (await page.getByTestId('layout-editor').boundingBox())!;
+      return { x: box.x + box.width / 3, y: box.y + box.height / 2 };
+    };
+
+    test('moving, resizing and undoing a bed each send one command', async ({ page, garden, mock }) => {
+      await garden.seed(gardenWith([{ id: 'a', cropId: 'kale', x: 20, y: 24 }]));
+      await mock.enable();
+      await page.goto('/');
+      await page.getByRole('button', { name: 'Edit layout' }).click();
+      const before = (await mock.plan()).beds;
+
+      const from = await insideBed(page);
+      await garden.drag(from, { x: from.x + 90, y: from.y + 60 });
+      await page.getByRole('button', { name: 'Grow width' }).click();
+      await page.getByRole('button', { name: /^Undo/ }).click();
+
+      const commands = await mock.commands();
+      expect(commands.map((c) => c.type)).toEqual(['moveBed', 'reshapeBed', 'restoreLayout']);
+      expect(commands[0]).toMatchObject({ id: 'bed-1' });
+      expect((commands[0] as { dx: number }).dx).toBeGreaterThan(0);
+      expect(commands[1]).toMatchObject({ type: 'reshapeBed', id: 'bed-1', heightIn: 48 });
+      expect((commands[1] as { widthIn: number }).widthIn).toBe(102);
+      // Undo sends the layout as it was before the resize (so after the move), not the original.
+      const restore = commands[2] as { beds: { id: string; cx: number; widthIn: number }[] };
+      expect(restore.beds[0]).toMatchObject({ id: 'bed-1', widthIn: 96 });
+      expect(restore.beds[0].cx).toBeGreaterThan(before[0].cx);
+    });
+
+    test('adding a bed with the rectangle tool sends addBed with the editor\'s id and name', async ({ page, garden, mock }) => {
+      await garden.seed(gardenWith());
+      await mock.enable();
+      await page.goto('/');
+      await page.getByRole('button', { name: 'Edit layout' }).click();
+      await page.getByRole('button', { name: /^Rectangle bed/ }).click();
+      const box = (await page.getByTestId('layout-editor').boundingBox())!;
+      await garden.drag({ x: box.x + box.width * 0.75, y: box.y + box.height * 0.2 }, { x: box.x + box.width * 0.9, y: box.y + box.height * 0.5 });
+
+      const [command] = await mock.commands();
+      expect(command).toMatchObject({ type: 'addBed', shape: 'rect', name: 'Bed 2', rotationDeg: 0 });
+      expect((command as { id: string }).id).toBeTruthy();
+      expect((await mock.plan()).beds).toHaveLength(2);
+    });
+  });
 });

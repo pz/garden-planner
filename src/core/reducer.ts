@@ -1,7 +1,6 @@
 import type { Bed, GardenPlan, PlantInstance, Profile } from '../types';
 import { parseGardenLocation } from './location';
 import { normalizeAngle, relocatePlants, type BedGeometry } from './layout';
-import { conflictKey, findOverlapConflicts } from './spacing';
 
 /** Template for a fresh garden; always used via createPlan so every garden gets its own id. */
 export const DEFAULT_PLAN: GardenPlan = {
@@ -120,7 +119,6 @@ export type Action =
   | { type: 'removePlant'; id: string }
   | { type: 'removeGroup'; groupId: string }
   | { type: 'setVariety'; id: string; variety: string | undefined }
-  | { type: 'dismissConflictsForGroup'; groupId: string }
   | { type: 'setConflictDismissed'; key: string; dismissed: boolean }
   | { type: 'reset' };
 
@@ -195,15 +193,6 @@ export function reducer(state: GardenPlan, action: Action): GardenPlan {
         ...state,
         plants: state.plants.map((p) => (p.id === action.id ? { ...p, variety: action.variety } : p)),
       };
-    case 'dismissConflictsForGroup': {
-      const touching = findOverlapConflicts(state.plants).filter(
-        (c) => c.a === action.groupId || c.b === action.groupId,
-      );
-      if (touching.length === 0) return state;
-      const merged = new Set(state.dismissedConflictKeys);
-      for (const c of touching) merged.add(conflictKey(c.a, c.b));
-      return { ...state, dismissedConflictKeys: [...merged] };
-    }
     case 'setConflictDismissed': {
       const has = state.dismissedConflictKeys.includes(action.key);
       if (action.dismissed === has) return state;

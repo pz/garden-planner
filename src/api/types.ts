@@ -44,7 +44,12 @@ export type ApiErrorCode =
   | 'invalid_grid'
   /** A patch would have no plants (no points, or `clip` dropped them all). */
   | 'empty_patch'
-  | 'stale_revision';
+  | 'stale_revision'
+  /** The request's scope doesn't allow this kind of command (e.g. an agent changing beds). */
+  | 'forbidden'
+  /** A bed's shape or size isn't valid (see `bedProblems`). */
+  | 'invalid_bed'
+  | 'invalid_profile';
 
 /** Why a request was rejected. Stable `code`s are for programs, `message` is for people. */
 export interface ApiError {

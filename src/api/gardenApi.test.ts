@@ -75,15 +75,21 @@ describe('createMemoryGardenApi', () => {
     expect(onChange.mock.calls[0][0]).toBe(api.getSnapshot().plan);
   });
 
-  it('applies reducer actions through dispatch, and ignores one that changes nothing', () => {
+  it('applies layout commands like any other, and a command that changes nothing tells no one', () => {
     const api = make();
     const listener = vi.fn();
     api.subscribe(listener);
-    api.dispatch({ type: 'setGardenName', name: 'Back yard' });
+    api.apply([{ type: 'setGardenName', name: 'Back yard' }]);
     expect(api.getSnapshot().plan.name).toBe('Back yard');
     expect(listener).toHaveBeenCalledTimes(1);
-    api.dispatch({ type: 'dismissConflictsForGroup', groupId: 'nobody' }); // reducer returns the same state
+    api.apply([{ type: 'moveBed', id: 'bed-1', dx: 0, dy: 0 }]); // the reducer returns the same state
     expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses layout commands for a planting-only scope', () => {
+    const api = make();
+    const r = api.apply([{ type: 'setGardenName', name: 'x' }], { scope: 'planting' });
+    expect(r.ok === false && r.errors[0].code).toBe('forbidden');
   });
 
   it('computes warnings for the current garden', () => {
