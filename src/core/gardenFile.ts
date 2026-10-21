@@ -1,4 +1,5 @@
-import type { GardenPlan } from '../types';
+import type { CropDef, GardenPlan } from '../types';
+import { findCrop, isCustomCropId, parseCustomCrop } from '../data/crops';
 import { parsePlan } from './reducer';
 import { isRecord, validatePlan } from './validatePlan';
 
@@ -16,12 +17,18 @@ export interface GardenFile {
   formatVersion: 1;
   meta: GardenFileMeta;
   plan: GardenPlan;
+  /** The user-made plants the garden uses, so the file loads on a device that doesn't have them. */
+  customCrops?: CropDef[];
 }
 
-export type ParsedGardenFile = { ok: true; plan: GardenPlan; meta: GardenFileMeta | null } | { ok: false; error: string };
+export type ParsedGardenFile =
+  | { ok: true; plan: GardenPlan; meta: GardenFileMeta | null; customCrops: CropDef[] }
+  | { ok: false; error: string };
 
 export function serializeGardenFile(plan: GardenPlan, meta: GardenFileMeta): string {
-  const file: GardenFile = { format: 'garden-planner-export', formatVersion: 1, meta, plan };
+  const used = [...new Set(plan.plants.map((p) => p.cropId))].filter(isCustomCropId);
+  const customCrops = used.flatMap((id) => findCrop(id) ?? []);
+  const file: GardenFile = { format: 'garden-planner-export', formatVersion: 1, meta, plan, ...(customCrops.length ? { customCrops } : {}) };
   return JSON.stringify(file, null, 2);
 }
 
@@ -52,9 +59,12 @@ export function parseGardenFile(text: string): ParsedGardenFile {
   }
   const wrapper = isRecord(json) && json.format === 'garden-planner-export' ? json : null;
   const candidate = wrapper ? wrapper.plan : json;
-  const [problem] = validatePlan(candidate);
+  // A file carries the user-made plants its plants need; each is checked, and any that isn't well-formed is ignored.
+  const customCrops = wrapper && Array.isArray(wrapper.customCrops) ? wrapper.customCrops.flatMap((c) => parseCustomCrop(c) ?? []) : [];
+  const [problem] = validatePlan(candidate, customCrops.map((c) => c.id));
   if (problem) return { ok: false, error: `Couldn't load garden: ${problem.message}.` };
   const id = isRecord(candidate) && typeof candidate.id === 'string' ? candidate.id : '';
-  // parsePlan also sanitizes the optional location pin.
-  return { ok: true, plan: parsePlan(JSON.stringify(candidate), id), meta: wrapper ? parseMeta(wrapper.meta) : null };
+  // parsePlan also sanitizes the optional location pin, and drops plants of crops it doesn't know, so the file's
+  // own user-made plants are named to it. The caller adds them to its library.
+  return { ok: true, plan: parsePlan(JSON.stringify(candidate), id, new Set(customCrops.map((c) => c.id))), meta: wrapper ? parseMeta(wrapper.meta) : null, customCrops };
 }

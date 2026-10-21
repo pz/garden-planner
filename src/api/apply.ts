@@ -1,4 +1,4 @@
-import { CROPS } from '../data/crops';
+import { findCrop } from '../data/crops';
 import type { Bed, GardenPlan, PlantInstance, Point } from '../types';
 import { MAX_PATCH_PLANTS, clampGroupDelta, clampToOutline, gridPoints, isInsideOutline } from '../core/geometry';
 import { bedOutline } from '../core/layout';
@@ -60,7 +60,7 @@ function findBed(ctx: Ctx, bedId: string, field = 'bedId'): Bed | null {
 }
 
 function checkCrop(ctx: Ctx, cropId: string) {
-  const crop = CROPS.find((c) => c.id === cropId);
+  const crop = findCrop(cropId);
   if (!crop) ctx.report({ code: 'unknown_crop', path: `${ctx.at}/cropId`, message: `There is no crop with id "${cropId}".`, details: { cropId } });
   return crop ?? null;
 }
@@ -360,7 +360,7 @@ function restorePlants(ctx: Ctx, c: RestorePlantsCommand): Outcome {
       ctx.report({ code: 'unknown_bed', path: `${at}/bedId`, message: `There is no bed with id "${p.bedId}".`, details: { bedId: p.bedId } });
       ok = false;
     }
-    if (!CROPS.some((cr) => cr.id === p.cropId)) {
+    if (!findCrop(p.cropId)) {
       ctx.report({ code: 'unknown_crop', path: `${at}/cropId`, message: `There is no crop with id "${p.cropId}".`, details: { cropId: p.cropId } });
       ok = false;
     }

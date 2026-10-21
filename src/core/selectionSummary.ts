@@ -1,5 +1,5 @@
 import type { Bed, PlantInstance } from '../types';
-import { getCrop } from '../data/crops';
+import { getCrop, hasSchedule } from '../data/crops';
 import { extent, type Disc } from './planting';
 
 /** What the inspector says about the selected plants. */
@@ -18,6 +18,10 @@ export interface SelectionSummary {
   /** Width and height the selected plants cover, in inches; only for more than one plant. */
   areaIn: { w: number; h: number } | null;
   harvestDays: number | null;
+  /** For a user-made plant, if the gardener said how tall it grows. */
+  heightIn: number | null;
+  /** Every selected plant is the same user-made plant. */
+  custom: boolean;
   bedNames: string[];
   /** One plant picked out of a patch of this many. */
   partOfPatch: number | null;
@@ -55,7 +59,9 @@ export function summarizeSelection(plants: PlantInstance[], beds: Bed[], selecte
     mixedPatch: oneWholePatch && crops.length > 1,
     spacingIn: crop?.spacingIn ?? null,
     areaIn: area ? { w: area.x1 - area.x0, h: area.y1 - area.y0 } : null,
-    harvestDays: crop?.daysToMaturity ?? null,
+    harvestDays: crop && hasSchedule(crop) ? crop.daysToMaturity : null,
+    heightIn: crop && !hasSchedule(crop) && crop.heightIn > 0 ? crop.heightIn : null,
+    custom: !!crop && !hasSchedule(crop),
     bedNames: beds.filter((b) => bedIds.has(b.id)).map((b) => b.name),
     partOfPatch: sel.length === 1 && (groupSize.get(sel[0].groupId) ?? 1) > 1 ? groupSize.get(sel[0].groupId)! : null,
     canGroup: sel.length > 1 && bedIds.size === 1 && !oneWholePatch,

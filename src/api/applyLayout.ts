@@ -1,4 +1,4 @@
-import { CROPS } from '../data/crops';
+import { findCrop } from '../data/crops';
 import { ZONES } from '../data/zones';
 import type { Bed, PlantInstance, Profile } from '../types';
 import { clampToOutline, isInsideOutline } from '../core/geometry';
@@ -61,7 +61,7 @@ function pasteBed(ctx: Ctx, c: PasteBedCommand): Outcome {
       ctx.report({ code: 'unknown_bed', path: `${at}/bedId`, message: `Plant ${k + 1} belongs to bed "${p.bedId}", not the pasted bed "${bed.id}".` });
       ok = false;
     }
-    if (!CROPS.some((cr) => cr.id === p.cropId)) {
+    if (!findCrop(p.cropId)) {
       ctx.report({ code: 'unknown_crop', path: `${at}/cropId`, message: `There is no crop with id "${p.cropId}".`, details: { cropId: p.cropId } });
       ok = false;
     }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useGarden } from '../state/gardenStore';
 import { useGardens, readGardenName } from '../state/gardensStore';
 import { BUILD_COMMIT } from '../state/buildInfo';
+import { addCustomCrops } from '../state/customCropsStore';
 import { gardenFileName, parseGardenFile, serializeGardenFile } from '../../core/gardenFile';
 
 export function GardenSwitcher({
@@ -53,6 +54,7 @@ export function GardenSwitcher({
       setLoadError(result.error);
       return;
     }
+    addCustomCrops(result.customCrops); // before the garden is stored, so its plants of them are understood
     importGarden(result.plan);
     setOpen(false);
   }

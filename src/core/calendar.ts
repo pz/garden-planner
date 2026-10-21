@@ -1,5 +1,5 @@
 import type { PlantInstance } from '../types';
-import { getCrop } from '../data/crops';
+import { getCrop, hasSchedule } from '../data/crops';
 import { getZone } from '../data/zones';
 import { scheduleFor, type PlantingSchedule } from './dates';
 
@@ -19,7 +19,8 @@ export function earliestScheduledDate(schedule: PlantingSchedule): Date {
 
 /**
  * One entry per planted patch (plants sharing a groupId), sorted chronologically
- * by each entry's earliest scheduled date.
+ * by each entry's earliest scheduled date. A patch of a user-made plant has no schedule and
+ * isn't listed.
  */
 export function buildCalendarEntries(plants: PlantInstance[], zoneId: string, year: number): CalendarEntry[] {
   const zone = getZone(zoneId);
@@ -30,7 +31,7 @@ export function buildCalendarEntries(plants: PlantInstance[], zoneId: string, ye
     else groups.set(p.groupId, [p]);
   }
 
-  const entries = Array.from(groups.values()).map((members) => {
+  const entries = Array.from(groups.values()).filter((members) => hasSchedule(getCrop(members[0].cropId))).map((members) => {
     const crop = getCrop(members[0].cropId);
     return {
       groupId: members[0].groupId,

@@ -1,5 +1,6 @@
 import { memo, type ReactNode } from 'react';
-import type { Bed, Point } from '../../types';
+import type { Bed, CropLook, Point } from '../../types';
+import { findCrop } from '../../data/crops';
 import { bedOutline, drawnCornerRadius } from '../../core/layout';
 import { extent, type Disc } from '../../core/planting';
 import { radiusOf } from '../../core/placement';
@@ -47,8 +48,8 @@ export interface GardenSvgProps {
   tag: Tag | null;
 }
 
-/** One plant's art at one size; it only redraws when the crop, size or turn changes, not as the plant is dragged around. */
-const PlantArt = memo(function PlantArt({ cropId, r, rot }: { cropId: string; r: number; rot: number }) {
+/** One plant's art at one size; it only redraws when the crop, its look, its size or its turn changes, not as the plant is dragged around. */
+const PlantArt = memo(function PlantArt({ cropId, r, rot }: { cropId: string; r: number; rot: number; look?: CropLook }) {
   if (!hasSprite(cropId)) return <circle r={r * 0.7} fill={CROP_COLORS[cropId] ?? 'var(--color-accent)'} />;
   return <SpriteArt cropId={cropId} radius={r} rotation={rot} />;
 });
@@ -160,7 +161,7 @@ export function GardenSvg(p: GardenSvgProps) {
 
       {p.plants.map((pl) => (
         <g key={pl.id} transform={`translate(${pl.x} ${pl.y})`} style={{ opacity: pl.bad ? 0.45 : 1 }}>
-          <PlantArt cropId={pl.cropId} r={radiusOf(pl.cropId)} rot={spriteRotation(pl.id)} />
+          <PlantArt cropId={pl.cropId} r={radiusOf(pl.cropId)} rot={spriteRotation(pl.id)} look={findCrop(pl.cropId)?.look} />
           <circle data-plant-id={pl.id} r={Math.max(pl.r * 0.2, px(2))} fill="none" />
         </g>
       ))}
@@ -171,7 +172,7 @@ export function GardenSvg(p: GardenSvgProps) {
       {p.ghosts.map((g, i) => (
         <g key={i} transform={`translate(${g.x} ${g.y})`} style={{ opacity: g.ok ? 0.6 : 0.35 }}>
           {g.ok ? (
-            <PlantArt cropId={g.cropId} r={radiusOf(g.cropId)} rot={41} />
+            <PlantArt cropId={g.cropId} r={radiusOf(g.cropId)} rot={41} look={findCrop(g.cropId)?.look} />
           ) : (
             <circle r={radiusOf(g.cropId)} fill="none" stroke={DANGER} strokeWidth={px(1.5)} strokeDasharray={`${px(3)} ${px(2)}`} />
           )}

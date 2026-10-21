@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useGarden } from '../state/gardenStore';
 import type { PlantInstance, Point } from '../../types';
-import { CROPS, getCrop } from '../../data/crops';
+import { allCrops, findCrop, getCrop } from '../../data/crops';
 import type { Command } from '../../api/commands';
 import { bedOutline, bedToGarden, gardenBounds, gardenToBed, type Bounds } from '../../core/layout';
 import { bedAt, discsOf, planMove, planStamp, radiusOf } from '../../core/placement';
@@ -26,6 +26,9 @@ import { Inspector } from './Inspector';
 import { PlantPanel } from './PlantPanel';
 import { ContextMenu, HelpBox, ModeChip, ZoomControls, type MenuItem } from './overlays';
 import { MOD, hasMod } from './keys';
+import { CustomPlantDialog, customCropFrom } from './CustomPlantDialog';
+import { deleteCustomCrop, saveCustomCrop, useCustomCrops } from '../state/customCropsStore';
+import { newCustomCropId } from '../state/customCrops';
 
 /** Room kept clear of the plant list, selection panel, top chip and help box when fitting the garden. */
 const FIT_INSETS = { left: 100, right: 336, top: 72, bottom: 150 };
@@ -36,10 +39,10 @@ const uid = () => crypto.randomUUID();
 const round = (p: Point): Point => ({ x: Math.round(p.x), y: Math.round(p.y) });
 
 function readRecents(): string[] {
-  const fallback = CROPS.slice(0, 6).map((c) => c.id);
+  const fallback = allCrops().slice(0, 6).map((c) => c.id);
   try {
     const raw = JSON.parse(localStorage.getItem(RECENTS_KEY) ?? 'null');
-    const ids = Array.isArray(raw) ? raw.filter((id): id is string => typeof id === 'string' && CROPS.some((c) => c.id === id)) : [];
+    const ids = Array.isArray(raw) ? raw.filter((id): id is string => typeof id === 'string' && !!findCrop(id)) : [];
     return ids.length ? ids.slice(0, 6) : fallback;
   } catch {
     return fallback;
@@ -65,6 +68,9 @@ export function PlantingView() {
   const { plan, warnings, apply } = useGarden();
   const { beds, plants, profile } = plan;
   const bounds: Bounds | null = gardenBounds(beds);
+  const customList = useCustomCrops();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const crops = useMemo(() => allCrops(), [customList]);
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
@@ -85,6 +91,7 @@ export function PlantingView() {
   const [recents, setRecents] = useState(readRecents);
   const [spaceDown, setSpaceDown] = useState(false);
   const [modDown, setModDown] = useState(false);
+  const [dialog, setDialog] = useState<{ cropId: string | null; name: string } | null>(null);
   const clipboard = useRef<StampItem[]>([]);
   const pointers = useRef(new Map<number, Point>());
 
@@ -616,7 +623,7 @@ export function PlantingView() {
   } else if (menu?.target.kind === 'soil') {
     const at = menu.target.garden;
     menuTitle = 'Plant here';
-    for (const [i, id] of recents.entries()) {
+    for (const [i, id] of recents.filter((r) => findCrop(r)).entries()) {
       menuItems.push({ label: getCrop(id).name, hint: String(i + 1), icon: <PlantMark cropId={id} diameter={22} />, onClick: () => plantOneAt(id, at) });
     }
   }
@@ -665,13 +672,15 @@ export function PlantingView() {
       </div>
 
       <PlantPanel
-        crops={CROPS}
+        crops={crops}
         armedId={tool === 'plant' ? armed : null}
         selecting={tool === 'select'}
         canUndo={history.length > 0}
         onSelect={toSelect}
         onUndo={undo}
         onArm={arm}
+        onAdd={(name) => setDialog({ cropId: null, name: name ?? '' })}
+        onEdit={(cropId) => setDialog({ cropId, name: '' })}
       />
 
       {tool === 'plant' && armedCrop && (
@@ -705,6 +714,33 @@ export function PlantingView() {
           onUngroup={ungroup}
           onDuplicate={duplicateSelection}
           onDelete={() => deletePlants(selection)}
+          onEditPlant={() => selectedPlants[0] && setDialog({ cropId: selectedPlants[0].cropId, name: '' })}
+        />
+      )}
+
+      {dialog && (
+        <CustomPlantDialog
+          plant={dialog.cropId ? findCrop(dialog.cropId) ?? null : null}
+          initialName={dialog.name}
+          plantCount={dialog.cropId ? plants.filter((p) => p.cropId === dialog.cropId).length : 0}
+          onClose={() => setDialog(null)}
+          onSave={(fields) => {
+            const id = dialog.cropId ?? newCustomCropId();
+            saveCustomCrop(customCropFrom(id, fields));
+            setDialog(null);
+            if (!dialog.cropId) arm(id);
+          }}
+          onDelete={() => {
+            const id = dialog.cropId!;
+            const gone = plants.filter((p) => p.cropId === id).map((p) => ({ type: 'removePlant' as const, id: p.id }));
+            // The plants go first, while the crop is still known; undo can't bring back a plant of a deleted crop.
+            if (gone.length && !apply(gone).ok) return toast('Could not remove those plants');
+            deleteCustomCrop(id);
+            setHistory([]);
+            setSelection([]);
+            if (armed === id) toSelect();
+            setDialog(null);
+          }}
         />
       )}
 

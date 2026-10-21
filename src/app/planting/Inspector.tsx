@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { getCrop } from '../../data/crops';
+import { getCrop, hasSchedule } from '../../data/crops';
 import type { Warning, WarningKind } from '../../api/types';
 import { getTip } from '../../data/tips';
 import { getZone } from '../../data/zones';
@@ -71,6 +71,7 @@ export function Inspector({
   onUngroup,
   onDuplicate,
   onDelete,
+  onEditPlant,
 }: {
   summary: SelectionSummary;
   zoneId: string;
@@ -86,6 +87,8 @@ export function Inspector({
   onUngroup: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  /** Opens the edit dialog for a user-made plant. */
+  onEditPlant: () => void;
 }) {
   const crop = summary.cropId ? getCrop(summary.cropId) : null;
   const title = selectionTitle(summary);
@@ -95,12 +98,13 @@ export function Inspector({
   const text = draft && draft.key === draftKey ? draft.text : variety ?? '';
   const tip = crop ? getTip(crop.id) : undefined;
   const tipState = useDismissedTip(crop?.id ?? '');
-  const schedule = crop ? scheduleFor(crop, getZone(zoneId), new Date().getFullYear()) : null;
+  const schedule = crop && hasSchedule(crop) ? scheduleFor(crop, getZone(zoneId), new Date().getFullYear()) : null;
 
   const stats: ReactNode[] = [];
   if (summary.count > 1) stats.push(<Stat key="n" label="Plants" value={String(summary.count)} />);
   if (summary.spacingIn !== null) stats.push(<Stat key="sp" label="Spacing" value={formatLength(summary.spacingIn)} />);
   if (summary.areaIn) stats.push(<Stat key="ar" label="Area" value={`${formatLength(summary.areaIn.w)} × ${formatLength(summary.areaIn.h)}`} />);
+  if (summary.heightIn !== null) stats.push(<Stat key="ht" label="Height" value={formatLength(summary.heightIn)} />);
   if (summary.harvestDays !== null) stats.push(<Stat key="hv" label="Harvest" value={`~${summary.harvestDays} days`} />);
   stats.push(<Stat key="bd" label={summary.bedNames.length > 1 ? 'Beds' : 'Bed'} value={summary.bedNames.join(', ')} />);
 
@@ -138,7 +142,7 @@ export function Inspector({
             </span>
             <div>
               <div style={{ font: '600 14px Figtree' }}>{familyLabel(crop.family)}</div>
-              <div style={{ font: '400 13px Figtree', color: 'var(--color-neutral-700)' }}>{SOW_LABEL[crop.sowMethod]}</div>
+              <div style={{ font: '400 13px Figtree', color: 'var(--color-neutral-700)' }}>{crop.look ? 'Your plant' : SOW_LABEL[crop.sowMethod]}</div>
             </div>
           </div>
         ) : (
@@ -237,6 +241,7 @@ export function Inspector({
         )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {summary.custom && <Action icon="pencil" label="Edit plant" onClick={onEditPlant} />}
           {summary.canGroup && <Action icon="group" label="Group into patch" hint={`${MOD}G`} onClick={onGroup} />}
           {summary.canUngroup && <Action icon="ungroup" label="Ungroup" hint={`⇧${MOD}G`} onClick={onUngroup} />}
           <Action icon="copy" label="Duplicate" hint={`${MOD}D`} onClick={onDuplicate} />
