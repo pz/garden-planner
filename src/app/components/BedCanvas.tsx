@@ -32,7 +32,7 @@ import { Compass } from './Compass';
 import { Icon } from './Icon';
 
 const PX_PER_INCH = PLANTING_PX_PER_INCH;
-const PLANT_DIAMETER = 26;
+const PLANT_DIAMETER = 44;
 const BED_BORDER_PX = 2.5;
 /** Room above each bed for its name. */
 const BED_LABEL_PX = 26;

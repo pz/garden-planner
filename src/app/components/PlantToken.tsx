@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import type { PlantInstance } from '../../types';
 import { getCrop } from '../../data/crops';
 import { PlantMark, CROP_COLORS } from './PlantMark';
+import { spriteRotation } from '../spriteGeometry';
 import { isContextPress, isReleasedMove } from '../pointer';
 
 export const LONG_PRESS_MS = 450;
@@ -185,7 +186,7 @@ export function PlantToken({
           }}
         />
       )}
-      <PlantMark family={crop.family} color={color} diameter={diameter} />
+      <PlantMark cropId={plant.cropId} diameter={diameter} rotation={spriteRotation(plant.id)} />
       {warned && (
         <div
           style={{

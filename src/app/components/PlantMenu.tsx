@@ -3,7 +3,7 @@ import { CROPS } from '../../data/crops';
 import { fitsAt } from '../../core/spacing';
 import type { Outline } from '../../core/geometry';
 import type { PlantInstance } from '../../types';
-import { CROP_COLORS, PlantMark } from './PlantMark';
+import { PlantMark } from './PlantMark';
 
 export function PlantMenu({
   clientX,
@@ -86,7 +86,7 @@ export function PlantMenu({
               e.currentTarget.style.background = 'transparent';
             }}
           >
-            <PlantMark family={crop.family} color={CROP_COLORS[crop.id]} diameter={22} />
+            <PlantMark cropId={crop.id} diameter={26} />
             <span style={{ flex: 1 }}>
               <span style={{ display: 'block', font: '600 13px Figtree' }}>{crop.name}</span>
               <span style={{ display: 'block', font: '400 10.5px Figtree', color: 'var(--color-text-muted)' }}>

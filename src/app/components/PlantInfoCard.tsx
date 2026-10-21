@@ -6,7 +6,7 @@ import { getTip } from '../../data/tips';
 import { getZone } from '../../data/zones';
 import { useDismissedTip } from '../state/dismissedTipsStore';
 import { formatDate, scheduleFor } from '../../core/dates';
-import { CROP_COLORS, PlantMark } from './PlantMark';
+import { PlantMark } from './PlantMark';
 
 const WARNING_TITLES: Record<Exclude<WarningKind, 'spacing'>, string> = {
   shade: '! In shade from a neighbor',
@@ -69,7 +69,7 @@ export function PlantInfoCard({
           borderBottom: '1.5px solid var(--color-divider)',
         }}
       >
-        <PlantMark family={crop.family} color={CROP_COLORS[crop.id]} diameter={30} />
+        <PlantMark cropId={crop.id} diameter={36} />
         <div style={{ flex: 1 }}>
           <div style={{ font: '700 15px Figtree' }}>{crop.name}</div>
           <div style={{ font: '400 11px Figtree', color: 'var(--color-text-muted)', textTransform: 'capitalize' }}>
