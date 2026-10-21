@@ -32,6 +32,15 @@ describe('validatePlan', () => {
     expect(validatePlan(v2)).toEqual([]);
   });
 
+  it('accepts a missing or numeric north direction and rejects anything else', () => {
+    expect(validatePlan({ ...createPlan('g'), northDeg: 135 })).toEqual([]);
+    for (const bad of ['north', null, Number.NaN]) {
+      expect(validatePlan({ ...createPlan('g'), northDeg: bad })).toEqual([
+        expect.objectContaining({ code: 'invalid_garden_file', path: '/northDeg' }),
+      ]);
+    }
+  });
+
   it('rejects anything that is not a plan object', () => {
     for (const bad of [null, undefined, 'x', 3, []]) {
       expect(validatePlan(bad)).toEqual([expect.objectContaining({ code: 'invalid_garden_file', path: '' })]);
@@ -87,7 +96,7 @@ describe('validatePlan', () => {
 
   it('accepts the optional northDeg and dismissedWarnings when usable, and reports them when not', () => {
     expect(validatePlan({ ...createPlan('g'), northDeg: 45, dismissedWarnings: ['a'] })).toEqual([]);
-    expect(validatePlan({ ...createPlan('g'), northDeg: NaN, dismissedWarnings: [3] }).map((p) => p.path)).toEqual(['/dismissedWarnings', '/northDeg']);
+    expect(validatePlan({ ...createPlan('g'), dismissedWarnings: [3] }).map((p) => p.path)).toEqual(['/dismissedWarnings']);
     expect(validatePlan({ ...createPlan('g'), dismissedWarnings: 'x' }).map((p) => p.path)).toEqual(['/dismissedWarnings']);
   });
 });

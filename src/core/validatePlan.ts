@@ -72,6 +72,9 @@ export function validatePlan(plan: unknown): PlanProblem[] {
   if (plan.version === 3 && typeof plan.name !== 'string') {
     return [problem('invalid_garden_file', '/name', 'the garden has no name')];
   }
+  if (plan.northDeg !== undefined && (typeof plan.northDeg !== 'number' || !Number.isFinite(plan.northDeg))) {
+    return [problem('invalid_garden_file', '/northDeg', 'the garden\'s north direction is not a number')];
+  }
   const beds = bedsProblem(plan);
   if (beds) return [beds];
   if (!Array.isArray(plan.plants)) return [problem('invalid_garden_file', '/plants', 'the garden has no plant list')];
@@ -88,9 +91,6 @@ export function validatePlan(plan: unknown): PlanProblem[] {
   }
   if (plan.dismissedWarnings !== undefined && (!Array.isArray(plan.dismissedWarnings) || plan.dismissedWarnings.some((k) => typeof k !== 'string'))) {
     problems.push(problem('invalid_garden_file', '/dismissedWarnings', 'the dismissed shade and companion warnings list is invalid'));
-  }
-  if (plan.northDeg !== undefined && (typeof plan.northDeg !== 'number' || !Number.isFinite(plan.northDeg))) {
-    problems.push(problem('invalid_garden_file', '/northDeg', 'the compass direction of the garden is invalid'));
   }
   return problems;
 }

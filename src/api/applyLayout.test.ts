@@ -38,6 +38,7 @@ describe('scope', () => {
     { type: 'pasteBed', bed: bed2, plants: [] },
     { type: 'restoreLayout', beds: [], plants: [] },
     { type: 'setGardenName', name: 'x' },
+    { type: 'setNorth', northDeg: 90 },
     { type: 'setProfile', profile: { zoneId: '6', sunExposure: 'shade', onboarded: true } },
   ];
 
@@ -219,23 +220,29 @@ describe('restoreLayout', () => {
   });
 });
 
-describe('setNorthDeg', () => {
-  it('sets the bearing, normalized, and clears the default', () => {
-    const turned = ok(apply(planWith(), [{ type: 'setNorthDeg', northDeg: -90 }])).plan;
-    expect(turned.northDeg).toBe(270);
-    expect(ok(apply(turned, [{ type: 'setNorthDeg', northDeg: 360 }])).plan).not.toHaveProperty('northDeg');
+describe('setNorth', () => {
+  it('turns north, normalizing the angle, and changes nothing else', () => {
+    const r = ok(apply(planWith(), [{ type: 'setNorth', northDeg: -90 }]));
+    expect(r.plan.northDeg).toBe(270);
+    expect(r.plan.beds).toEqual(planWith().beds);
+    expect(r.plan.plants).toEqual(planWith().plants);
   });
 
-  it('can change which plants shade which, reported as warnings introduced and resolved', () => {
+  it('is accepted as a no-op when north is already there, and changes the revision only when it moves', () => {
+    const base = ok(apply(planWith(), [{ type: 'setNorth', northDeg: 0 }]));
+    expect(base.plan.northDeg).toBeUndefined();
+    expect(ok(apply(planWith(), [{ type: 'setNorth', northDeg: 45 }])).rev).not.toBe(base.rev);
+  });
+
+  it('can change which plants shade which, reported as warnings resolved', () => {
     // A tomato with a basil 10 in north of it shades it; turning the garden so north points down removes that.
     const plan = planWith([plant('t', { cropId: 'tomato', x: 40, y: 40 }), plant('b', { cropId: 'basil', x: 40, y: 30 })]);
-    expect(ok(apply(plan, [{ type: 'addPlant', bedId: 'bed-1', cropId: 'kale', x: 5, y: 5 }])).warnings.introduced).toEqual([]);
-    const turned = ok(apply(plan, [{ type: 'setNorthDeg', northDeg: 180 }]));
+    const turned = ok(apply(plan, [{ type: 'setNorth', northDeg: 180 }]));
     expect(turned.warnings.resolved.map((w) => w.id)).toEqual(['shade:t>b']);
   });
 
   it('is refused for a planting-only scope', () => {
-    expect(codes(apply(planWith(), [{ type: 'setNorthDeg', northDeg: 10 }], { scope: 'planting' }))).toEqual(['forbidden']);
+    expect(codes(apply(planWith(), [{ type: 'setNorth', northDeg: 10 }], { scope: 'planting' }))).toEqual(['forbidden']);
   });
 });
 

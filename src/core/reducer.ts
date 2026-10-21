@@ -72,11 +72,10 @@ export function isValidBed(b: unknown): b is Bed {
   return true;
 }
 
-/** `northDeg` and `dismissedWarnings` are optional and newer than v3 itself: keep them only if usable. */
-function dropBadOptionalFields(plan: GardenPlan): GardenPlan {
-  const { northDeg, dismissedWarnings, ...rest } = plan;
+/** `dismissedWarnings` is optional and newer than v3 itself: keep it only if it is a list of strings. */
+function cleanDismissedWarnings(plan: GardenPlan): GardenPlan {
+  const { dismissedWarnings, ...rest } = plan;
   const clean: GardenPlan = rest;
-  if (typeof northDeg === 'number' && Number.isFinite(northDeg)) clean.northDeg = northDeg;
   if (Array.isArray(dismissedWarnings) && dismissedWarnings.every((id) => typeof id === 'string')) clean.dismissedWarnings = dismissedWarnings;
   return clean;
 }
@@ -100,7 +99,12 @@ export function parsePlan(raw: string | null, id: string): GardenPlan {
     parsed = { ...parsed, beds: parsed.beds.filter(isValidBed) };
     const bedIds = new Set(parsed.beds.map((b) => b.id));
     const plants = Array.isArray(parsed.plants) ? parsed.plants.filter((p) => bedIds.has(p.bedId)) : [];
-    parsed = dropBadOptionalFields({ ...parsed, id, plants });
+    parsed = cleanDismissedWarnings({ ...parsed, id, plants });
+    // `northDeg` is optional and newer than v3 itself: a bad value falls back to north-up.
+    if (parsed.northDeg !== undefined) {
+      const { northDeg, ...rest } = parsed;
+      parsed = isNum(northDeg) ? { ...rest, northDeg: normalizeAngle(northDeg) } : rest;
+    }
     if (typeof parsed.profile !== 'object' || parsed.profile === null) return parsed;
     // `location` is optional and newer than v2 itself, so validate it rather than trust it:
     // a bad value just drops the pin instead of breaking the setup screen's map.
@@ -115,6 +119,7 @@ export function parsePlan(raw: string | null, id: string): GardenPlan {
 export type Action =
   | { type: 'setProfile'; profile: Profile }
   | { type: 'setGardenName'; name: string }
+  | { type: 'setNorth'; northDeg: number }
   | { type: 'addBed'; bed: Bed }
   | { type: 'renameBed'; id: string; name: string }
   | { type: 'moveBed'; id: string; dx: number; dy: number }
@@ -130,7 +135,6 @@ export type Action =
   | { type: 'setVariety'; id: string; variety: string | undefined }
   | { type: 'setConflictDismissed'; key: string; dismissed: boolean }
   | { type: 'setWarningDismissed'; id: string; dismissed: boolean }
-  | { type: 'setNorthDeg'; northDeg: number }
   | { type: 'reset' };
 
 export function reducer(state: GardenPlan, action: Action): GardenPlan {
@@ -139,6 +143,11 @@ export function reducer(state: GardenPlan, action: Action): GardenPlan {
       return { ...state, profile: action.profile };
     case 'setGardenName':
       return { ...state, name: action.name };
+    case 'setNorth': {
+      const northDeg = normalizeAngle(action.northDeg);
+      if (northDeg === (state.northDeg ?? 0)) return state;
+      return { ...state, northDeg };
+    }
     case 'addBed':
       return { ...state, beds: [...state.beds, action.bed] };
     case 'renameBed':
@@ -220,12 +229,6 @@ export function reducer(state: GardenPlan, action: Action): GardenPlan {
       const next = action.dismissed ? [...list, action.id] : list.filter((id) => id !== action.id);
       const { dismissedWarnings: _old, ...rest } = state;
       return next.length ? { ...rest, dismissedWarnings: next } : rest; // no list at all means none dismissed
-    }
-    case 'setNorthDeg': {
-      const northDeg = normalizeAngle(action.northDeg);
-      if ((state.northDeg ?? 0) === northDeg) return state;
-      const { northDeg: _old, ...rest } = state;
-      return northDeg === 0 ? rest : { ...rest, northDeg }; // 0 is the default, so it isn't stored
     }
     case 'reset':
       return createPlan(state.id);

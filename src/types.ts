@@ -115,15 +115,16 @@ export interface GardenPlan {
   id: string;
   name: string;
   profile: Profile;
+  /**
+   * Which way geographic north points on the layout, in degrees clockwise from straight up the
+   * screen (90 = north is to the right). Absent means 0: north is up. Shade prediction needs it
+   * to know where the sun is relative to the beds.
+   */
+  northDeg?: number;
   beds: Bed[];
   plants: PlantInstance[];
   /** Canonical (sorted, "::"-joined) groupId pairs whose overlap warning the user dismissed. */
   dismissedConflictKeys: string[];
   /** Ids of dismissed shade and companion warnings (spacing ones are in `dismissedConflictKeys`). Absent means none. */
   dismissedWarnings?: string[];
-  /**
-   * The compass bearing, in degrees clockwise from north, that the top of the garden plan
-   * (garden-up) points at; 0 (the default) means up is north. Shade falls away from the sun.
-   */
-  northDeg?: number;
 }

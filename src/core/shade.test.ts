@@ -18,10 +18,10 @@ describe('shadowDirection', () => {
     near(shadowDirection(0, 40), 0, -1);
   });
 
-  it('turns with the bearing of garden-up: up pointing east puts north to the left, up pointing south puts north down', () => {
-    near(shadowDirection(90, 40), -1, 0);
+  it('turns with northDeg, clockwise from straight up: 90 puts north to the right, 180 down, 270 to the left', () => {
+    near(shadowDirection(90, 40), 1, 0);
     near(shadowDirection(180, 40), 0, 1);
-    near(shadowDirection(270, 40), 1, 0);
+    near(shadowDirection(270, 40), -1, 0);
   });
 
   it('flips for the southern hemisphere, and treats no latitude or the equator as northern', () => {
@@ -73,11 +73,14 @@ describe('findShadeConflicts', () => {
     expect(shaded([tomato, plant('t2', 'tomato', 40, 30, { groupId: 't' })])).toEqual([]);
   });
 
-  it('follows the compass bearing of garden-up', () => {
+  it('follows which way north points on the plan', () => {
     const west = plant('b', 'basil', 30, 40); // to the left of the tomato
+    const east = plant('b', 'basil', 50, 40); // to the right of it
     expect(shaded([tomato, west], [bed1], 0)).toEqual([]);
-    expect(shaded([tomato, west], [bed1], 90)).toEqual(['t>b']); // up is east, so north (and the shadow) is left
-    expect(shaded([tomato, plant('b', 'basil', 40, 50)], [bed1], 180)).toEqual(['t>b']); // up is south, so shadows fall down
+    expect(shaded([tomato, west], [bed1], 270)).toEqual(['t>b']); // north is left, so the shadow falls left
+    expect(shaded([tomato, east], [bed1], 90)).toEqual(['t>b']); // north is right
+    expect(shaded([tomato, east], [bed1], 270)).toEqual([]);
+    expect(shaded([tomato, plant('b', 'basil', 40, 50)], [bed1], 180)).toEqual(['t>b']); // north is down, so shadows fall down
   });
 
   it('flips in the southern hemisphere', () => {
@@ -102,7 +105,7 @@ describe('findShadeConflicts', () => {
     const t = plant('t', 'tomato', 48, 24);
     const b = plant('b', 'basil', 48, 34);
     expect(shaded([t, b], [turned], 0)).toEqual([]);
-    expect(shaded([t, b], [turned], 90)).toEqual(['t>b']);
+    expect(shaded([t, b], [turned], 270)).toEqual(['t>b']); // north points left on the plan, so the shadow falls to the west
   });
 
   it('reports each patch pair once, with the closest approach', () => {

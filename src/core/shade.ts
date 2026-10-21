@@ -28,13 +28,14 @@ export interface ShadeConflict {
 /**
  * The unit vector shadows fall along, in garden coordinates (x right, y down). The sun is toward
  * the equator at midday, so in the northern hemisphere shadows fall toward north, in the
- * southern toward south. `northDeg` is the compass bearing of garden-up (0: up is north); a
- * missing latitude counts as northern.
+ * southern toward south. `northDeg` is which way north points on the plan, in degrees clockwise
+ * from straight up (0: north is up, 90: north is to the right); a missing latitude counts as
+ * northern.
  */
 export function shadowDirection(northDeg: number, latitude: number | undefined): Point {
   const t = (northDeg * Math.PI) / 180;
-  // North in garden coordinates: garden-up turned counter-clockwise by the bearing of up.
-  const north = { x: -Math.sin(t), y: -Math.cos(t) };
+  // Straight up is (0, -1) with y down; turning it clockwise by northDeg gives north.
+  const north = { x: Math.sin(t), y: -Math.cos(t) };
   const southern = latitude !== undefined && latitude < 0;
   return southern ? { x: -north.x, y: -north.y } : north;
 }
