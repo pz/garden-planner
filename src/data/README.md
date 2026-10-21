@@ -79,7 +79,6 @@ confidence, by what the sources agreed on:
   (timing), nasturtium (days), artichoke (days, spacing), strawberry (timing: treated as a
   direct sow, since crowns go in as soon as the soil can be worked, and days are for everbearing
   types), garlic (planted in fall, so its sow offset is about 28 weeks *after* the last frost).
->>>>>>> 2e21e56 (Add 27 crops and their sprites; port the full sprite sheet)
 
 `heightIn` and `sunNeed` for the added crops follow the same rule as the original eight (see above): a typical mature
 height from general gardening references (no extension table of heights was found), and `partial` for crops
