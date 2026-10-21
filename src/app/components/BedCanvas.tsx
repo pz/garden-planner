@@ -27,7 +27,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
       <header
         style={{
           position: 'relative',
-          zIndex: 2,
+          zIndex: 10,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',

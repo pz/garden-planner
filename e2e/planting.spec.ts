@@ -9,6 +9,20 @@ async function arm(page: Page, name: string) {
 }
 
 test.describe('planting', () => {
+  test('the garden switcher dropdown opens in front of the plant toolbar', async ({ page, garden }) => {
+    await garden.seed(gardenWith());
+    await page.goto('/');
+    await page.locator('header button', { hasText: '▾' }).click();
+    const menu = page.locator('header div[style*="width: 260px"]');
+    await expect(menu).toBeVisible();
+    const box = (await menu.boundingBox())!;
+    const onTop = await page.evaluate(
+      ([x, y]) => !!document.elementFromPoint(x, y)?.closest('header'),
+      [box.x + 20, box.y + box.height - 4],
+    );
+    expect(onTop).toBe(true);
+  });
+
   test('right-clicking the bed offers recent crops, and picking one plants it there', async ({ page, garden }) => {
     await garden.seed(gardenWith());
     await page.goto('/');
