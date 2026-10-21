@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { PlantInstance } from '../../types';
+import type { Warning, WarningKind } from '../../api/types';
 import { getCrop } from '../../data/crops';
 import { getTip } from '../../data/tips';
 import { getZone } from '../../data/zones';
@@ -7,10 +8,15 @@ import { useDismissedTip } from '../state/dismissedTipsStore';
 import { formatDate, scheduleFor } from '../../core/dates';
 import { CROP_COLORS, PlantMark } from './PlantMark';
 
+const WARNING_TITLES: Record<Exclude<WarningKind, 'spacing'>, string> = {
+  shade: '! In shade from a neighbor',
+  companion: '! Usually kept apart',
+};
+
 export function PlantInfoCard({
   plant,
   zoneId,
-  warned,
+  warnings,
   groupCount,
   onClose,
   onSetVariety,
@@ -20,7 +26,8 @@ export function PlantInfoCard({
 }: {
   plant: PlantInstance;
   zoneId: string;
-  warned: boolean;
+  /** The warnings about this plant's patch that haven't been dismissed. */
+  warnings: Warning[];
   groupCount: number;
   onClose: () => void;
   onSetVariety: (variety: string | undefined) => void;
@@ -80,7 +87,7 @@ export function PlantInfoCard({
       </div>
 
       <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto' }}>
-        {warned && (
+        {warnings.length > 0 && (
           <div
             style={{
               background: 'color-mix(in srgb, var(--color-warning) 10%, transparent)',
@@ -89,13 +96,30 @@ export function PlantInfoCard({
               padding: '10px 12px',
             }}
           >
-            <p style={{ font: '600 12.5px Figtree', color: 'var(--color-warning)', marginBottom: 6 }}>
-              ! {groupCount > 1 ? 'This patch is' : 'Planted'} too close to a neighbor
-            </p>
-            <p style={{ font: '400 11.5px/1.4 Figtree', color: 'var(--color-text-muted)', marginBottom: 8 }}>
-              {crop.name} wants at least {crop.spacingIn}" from the next plant or patch. Move{' '}
-              {groupCount > 1 ? 'this patch' : 'one of them'} apart, or dismiss if you're fine with it.
-            </p>
+            {warnings.some((w) => w.kind === 'spacing') && (
+              <>
+                <p style={{ font: '600 12.5px Figtree', color: 'var(--color-warning)', marginBottom: 6 }}>
+                  ! {groupCount > 1 ? 'This patch is' : 'Planted'} too close to a neighbor
+                </p>
+                <p style={{ font: '400 11.5px/1.4 Figtree', color: 'var(--color-text-muted)', marginBottom: 8 }}>
+                  {crop.name} wants at least {crop.spacingIn}" from the next plant or patch. Move{' '}
+                  {groupCount > 1 ? 'this patch' : 'one of them'} apart, or dismiss if you're fine with it.
+                </p>
+              </>
+            )}
+            {warnings
+              .filter((w) => w.kind !== 'spacing')
+              .map((w) => (
+                <div key={w.id} style={{ marginBottom: 8 }}>
+                  <p style={{ font: '600 12.5px Figtree', color: 'var(--color-warning)', marginBottom: 4 }}>
+                    {WARNING_TITLES[w.kind as Exclude<WarningKind, 'spacing'>]}
+                  </p>
+                  <p style={{ font: '400 11.5px/1.4 Figtree', color: 'var(--color-text-muted)' }}>
+                    {w.message}
+                    {w.suggestion ? ` ${w.suggestion}` : ''}
+                  </p>
+                </div>
+              ))}
             <button onClick={onDismissConflict} className="btn btn-secondary" style={{ padding: '5px 12px', font: '600 11.5px Figtree' }}>
               Dismiss this warning
             </button>

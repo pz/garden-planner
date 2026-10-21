@@ -72,6 +72,14 @@ export function isValidBed(b: unknown): b is Bed {
   return true;
 }
 
+/** `dismissedWarnings` is optional and newer than v3 itself: keep it only if it is a list of strings. */
+function cleanDismissedWarnings(plan: GardenPlan): GardenPlan {
+  const { dismissedWarnings, ...rest } = plan;
+  const clean: GardenPlan = rest;
+  if (Array.isArray(dismissedWarnings) && dismissedWarnings.every((id) => typeof id === 'string')) clean.dismissedWarnings = dismissedWarnings;
+  return clean;
+}
+
 /**
  * Parses a garden plan from raw storage content, falling back to a fresh plan for anything
  * unusable. `id` is always authoritative — it comes from the storage key the plan was read
@@ -91,7 +99,7 @@ export function parsePlan(raw: string | null, id: string): GardenPlan {
     parsed = { ...parsed, beds: parsed.beds.filter(isValidBed) };
     const bedIds = new Set(parsed.beds.map((b) => b.id));
     const plants = Array.isArray(parsed.plants) ? parsed.plants.filter((p) => bedIds.has(p.bedId)) : [];
-    parsed = { ...parsed, id, plants };
+    parsed = cleanDismissedWarnings({ ...parsed, id, plants });
     // `northDeg` is optional and newer than v3 itself: a bad value falls back to north-up.
     if (parsed.northDeg !== undefined) {
       const { northDeg, ...rest } = parsed;
@@ -126,6 +134,7 @@ export type Action =
   | { type: 'removeGroup'; groupId: string }
   | { type: 'setVariety'; id: string; variety: string | undefined }
   | { type: 'setConflictDismissed'; key: string; dismissed: boolean }
+  | { type: 'setWarningDismissed'; id: string; dismissed: boolean }
   | { type: 'reset' };
 
 export function reducer(state: GardenPlan, action: Action): GardenPlan {
@@ -213,6 +222,13 @@ export function reducer(state: GardenPlan, action: Action): GardenPlan {
           ? [...state.dismissedConflictKeys, action.key]
           : state.dismissedConflictKeys.filter((k) => k !== action.key),
       };
+    }
+    case 'setWarningDismissed': {
+      const list = state.dismissedWarnings ?? [];
+      if (action.dismissed === list.includes(action.id)) return state;
+      const next = action.dismissed ? [...list, action.id] : list.filter((id) => id !== action.id);
+      const { dismissedWarnings: _old, ...rest } = state;
+      return next.length ? { ...rest, dismissedWarnings: next } : rest; // no list at all means none dismissed
     }
     case 'reset':
       return createPlan(state.id);

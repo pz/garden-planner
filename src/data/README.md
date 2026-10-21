@@ -24,6 +24,9 @@ this doc explains what each field *means*.
 | `transplantWeeksAfterLastFrost` | number (weeks, may be negative) | **Transplant crops only.** Weeks after last frost it's safe to move outside; negative means before last frost (e.g. a frost-tolerant crop). |
 | `directSowWeeksRelativeToLastFrost` | number (weeks, may be negative) | **Direct-sow crops only.** Weeks relative to last frost to sow outside; negative means before last frost. |
 | `daysToMaturity` | number > 0 | Days from sowing/transplanting outside to first harvest. |
+| `heightIn` | number > 0 | Typical mature height in inches. Varies a lot by variety (pole vs bush beans, determinate vs indeterminate tomatoes); this is a middle value. The shade rule compares heights (`core/shade.ts`). |
+| `sunNeed` | `"full" \| "partial"` | `full`: needs about 6+ hours of direct sun, so shade from a neighbor hurts it. `partial`: tolerates some shade (leafy crops, and root crops to a degree). Only `full` crops get shade warnings. |
+| `avoidNear` | optional array of `{cropId, reason, evidence}` | Crops usually kept away from this one. A pair counts if *either* crop lists the other (list it on one side only; `crops.test.ts` checks). `evidence` is `"extension"` (a university extension source supports it) or `"anecdotal"` (traditional advice with little or no research behind it). The reason is shown to the user as-is. |
 
 A `transplant` crop must set `startIndoorsWeeksBeforeLastFrost` (and normally
 `transplantWeeksAfterLastFrost`); a `direct-sow` crop must set
@@ -33,9 +36,34 @@ a supported shorthand — `crops.test.ts` asserts every crop sets the offset its
 `sowMethod` requires, so a bad hand-edit fails a test rather than shipping
 silently.
 
+### Where `heightIn`, `sunNeed` and `avoidNear` came from, and their review status
+
+**These values were drafted from the sources below by an AI assistant and need a human to check
+them line by line** (the data policy here is hand-curated). The honest summary of the sources:
+
+- **Shade is well supported as a principle; the numbers are not.** Extension guidance says to
+  put tall crops on the north side so they don't shade shorter ones (e.g. Texas A&M AgriLife,
+  *E-289 Planning the Vegetable Garden*). No extension table of mature heights for these eight
+  crops was found, so `heightIn` is a typical value from general gardening references (e.g.
+  bush beans about 24 in), rounded.
+- **`sunNeed`** follows the common extension-style grouping: fruiting crops (tomato, squash,
+  beans) are the least shade-tolerant, leafy crops (kale, lettuce) the most tolerant, root
+  crops in between and forgiving. Onion and basil are marked `full` as bulbing and
+  warm-season crops; check that against your own experience.
+- **`avoidNear` is deliberately almost empty.** University extension sources say outright that
+  there is little research behind most companion-planting claims (e.g. Oregon State Extension,
+  *Companion Planting*), and none of the sources found tested a harmful pairing among these
+  crops. The single entry, beans with onion, is the most repeated "keep apart" pair; it is
+  marked `anecdotal`, and competition for light, water and nutrients is a more plausible reason
+  than the often-claimed chemical effect. Add pairs here only with a source, and prefer
+  `extension` evidence.
+- Feeder class (heavy/light) and water need were considered and **left out**: the extension
+  guidance on feeders (UC, UConn) is about rotating crops between seasons, not about which
+  neighbors to avoid, and no source gave water needs per crop on a common scale.
+
 ### Adding a crop
 
-Append an entry to `crops.json` with a new, unique `id`, and add its tip to
+Append an entry to `crops.json` (every field above except `avoidNear` is required) with a new, unique `id`, and add its tip to
 `tips.json` under the same id. No code changes are
 needed — `CROPS` in `crops.ts` is just the parsed JSON, typed as `CropDef[]`.
 Run `npm run test` afterward; `crops.test.ts` checks id uniqueness, that each

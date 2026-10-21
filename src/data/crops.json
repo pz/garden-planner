@@ -8,7 +8,9 @@
     "sowMethod": "transplant",
     "startIndoorsWeeksBeforeLastFrost": 6,
     "transplantWeeksAfterLastFrost": 1,
-    "daysToMaturity": 70
+    "daysToMaturity": 70,
+    "heightIn": 48,
+    "sunNeed": "full"
   },
   {
     "id": "kale",
@@ -19,7 +21,9 @@
     "sowMethod": "transplant",
     "startIndoorsWeeksBeforeLastFrost": 5,
     "transplantWeeksAfterLastFrost": -1,
-    "daysToMaturity": 60
+    "daysToMaturity": 60,
+    "heightIn": 24,
+    "sunNeed": "partial"
   },
   {
     "id": "carrot",
@@ -29,7 +33,9 @@
     "defaultPatch": true,
     "sowMethod": "direct-sow",
     "directSowWeeksRelativeToLastFrost": -2,
-    "daysToMaturity": 70
+    "daysToMaturity": 70,
+    "heightIn": 12,
+    "sunNeed": "partial"
   },
   {
     "id": "onion",
@@ -40,7 +46,9 @@
     "sowMethod": "transplant",
     "startIndoorsWeeksBeforeLastFrost": 8,
     "transplantWeeksAfterLastFrost": -2,
-    "daysToMaturity": 100
+    "daysToMaturity": 100,
+    "heightIn": 18,
+    "sunNeed": "full"
   },
   {
     "id": "beans",
@@ -50,7 +58,16 @@
     "defaultPatch": true,
     "sowMethod": "direct-sow",
     "directSowWeeksRelativeToLastFrost": 1,
-    "daysToMaturity": 55
+    "daysToMaturity": 55,
+    "heightIn": 24,
+    "sunNeed": "full",
+    "avoidNear": [
+      {
+        "cropId": "onion",
+        "reason": "Beans and onions are traditionally kept apart: they compete for light, water and nutrients, and onions are often said to hold back beans.",
+        "evidence": "anecdotal"
+      }
+    ]
   },
   {
     "id": "lettuce",
@@ -60,7 +77,9 @@
     "defaultPatch": true,
     "sowMethod": "direct-sow",
     "directSowWeeksRelativeToLastFrost": -3,
-    "daysToMaturity": 45
+    "daysToMaturity": 45,
+    "heightIn": 8,
+    "sunNeed": "partial"
   },
   {
     "id": "squash",
@@ -70,7 +89,9 @@
     "defaultPatch": false,
     "sowMethod": "direct-sow",
     "directSowWeeksRelativeToLastFrost": 2,
-    "daysToMaturity": 55
+    "daysToMaturity": 55,
+    "heightIn": 30,
+    "sunNeed": "full"
   },
   {
     "id": "basil",
@@ -81,6 +102,8 @@
     "sowMethod": "transplant",
     "startIndoorsWeeksBeforeLastFrost": 6,
     "transplantWeeksAfterLastFrost": 2,
-    "daysToMaturity": 60
+    "daysToMaturity": 60,
+    "heightIn": 18,
+    "sunNeed": "full"
   }
 ]

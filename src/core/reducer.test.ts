@@ -180,6 +180,32 @@ describe('reducer', () => {
     });
   });
 
+  describe('setWarningDismissed', () => {
+    const base = (ids?: string[]): GardenPlan => ({ ...basePlan([]), ...(ids && { dismissedWarnings: ids }) });
+
+    it('adds an id, and only that, when dismissing', () => {
+      const state = base(['a']);
+      const next = reducer(state, { type: 'setWarningDismissed', id: 'b', dismissed: true });
+      expect(next.dismissedWarnings).toEqual(['a', 'b']);
+      expect(state.dismissedWarnings).toEqual(['a']);
+      expect(next.dismissedConflictKeys).toBe(state.dismissedConflictKeys);
+    });
+
+    it('creates the list on first use and drops it again when the last id is restored', () => {
+      const dismissed = reducer(base(), { type: 'setWarningDismissed', id: 'x', dismissed: true });
+      expect(dismissed.dismissedWarnings).toEqual(['x']);
+      const restored = reducer(dismissed, { type: 'setWarningDismissed', id: 'x', dismissed: false });
+      expect(restored).not.toHaveProperty('dismissedWarnings');
+    });
+
+    it('is a no-op (same state object) when already in the requested state', () => {
+      const state = base(['a']);
+      expect(reducer(state, { type: 'setWarningDismissed', id: 'a', dismissed: true })).toBe(state);
+      const none = base();
+      expect(reducer(none, { type: 'setWarningDismissed', id: 'a', dismissed: false })).toBe(none);
+    });
+  });
+
   it('reset returns a fresh plan for the same garden id, discarding all prior state', () => {
     const state = basePlan([{ id: 'a', bedId: 'bed-1', cropId: 'tomato', x: 0, y: 0, groupId: 'g1' }]);
     expect(reducer(state, { type: 'reset' })).toEqual(createPlan(TEST_ID));
@@ -231,6 +257,30 @@ describe('parsePlan: migrating single-bed (v2) plans', () => {
     ['non-numeric', { id: 'bed-1', name: 'x', widthIn: '96', heightIn: 48 }],
   ])('falls back to a fresh plan when the bed is %s', (_label, bed) => {
     expect(parsePlan(JSON.stringify({ ...v2, bed }), TEST_ID)).toEqual(createPlan(TEST_ID));
+  });
+});
+
+describe('parsePlan: optional shade and companion fields', () => {
+  const stored = (extra: object) => JSON.stringify({ ...createPlan('x'), ...extra });
+
+  it('keeps a usable northDeg and dismissedWarnings', () => {
+    const plan = parsePlan(stored({ northDeg: 90, dismissedWarnings: ['shade:a>b'] }), 'x');
+    expect(plan).toMatchObject({ northDeg: 90, dismissedWarnings: ['shade:a>b'] });
+  });
+
+  it('drops an unusable northDeg or dismissedWarnings instead of breaking the garden', () => {
+    for (const bad of [{ northDeg: 'up' }, { northDeg: null }, { dismissedWarnings: 'x' }, { dismissedWarnings: [1] }]) {
+      const plan = parsePlan(stored(bad), 'x');
+      expect(plan).not.toHaveProperty('northDeg');
+      expect(plan).not.toHaveProperty('dismissedWarnings');
+      expect(plan.beds).toEqual(createPlan('x').beds); // the rest of the garden survives
+    }
+  });
+
+  it('adds neither field to an ordinary plan', () => {
+    const plan = parsePlan(stored({}), 'x');
+    expect(plan).not.toHaveProperty('northDeg');
+    expect(plan).not.toHaveProperty('dismissedWarnings');
   });
 });
 

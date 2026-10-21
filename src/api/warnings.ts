@@ -1,5 +1,7 @@
 import { getCrop } from '../data/crops';
 import type { GardenPlan } from '../types';
+import { COMPANION_NEAR_IN, findCompanionConflicts } from '../core/companions';
+import { SHADE_REACH_FACTOR, findShadeConflicts } from '../core/shade';
 import { HARD_SPACING_FACTOR, conflictKey, findSpacingConflicts } from '../core/spacing';
 import type { Warning, WarningDiff } from './types';
 
@@ -23,9 +25,50 @@ function spacingWarnings(plan: GardenPlan): Warning[] {
   });
 }
 
+function shadeWarnings(plan: GardenPlan): Warning[] {
+  const dismissed = new Set(plan.dismissedWarnings ?? []);
+  const bedOf = (groupId: string) => plan.plants.find((p) => p.groupId === groupId)!.bedId;
+  const conflicts = findShadeConflicts(plan.plants, plan.beds, plan.northDeg ?? 0, plan.profile.location?.lat);
+  return conflicts.map((c) => {
+    const caster = getCrop(c.casterCropId);
+    const shaded = getCrop(c.shadedCropId);
+    const id = `shade:${c.caster}>${c.shaded}`;
+    const reach = caster.heightIn * SHADE_REACH_FACTOR;
+    return {
+      id,
+      kind: 'shade',
+      severity: 'caution',
+      bedId: bedOf(c.shaded),
+      subjects: [c.caster, c.shaded],
+      message: `${caster.name} (about ${caster.heightIn} in tall) shades ${shaded.name}, which wants full sun, at midday.`,
+      suggestion: `Move the ${shaded.name.toLowerCase()} to the sun side of the ${caster.name.toLowerCase()}, or at least ${Math.ceil(reach - c.alongIn + 0.01)} in further along from it.`,
+      dismissed: dismissed.has(id),
+    };
+  });
+}
+
+function companionWarnings(plan: GardenPlan): Warning[] {
+  const dismissed = new Set(plan.dismissedWarnings ?? []);
+  return findCompanionConflicts(plan.plants).map((c) => {
+    const [nameA, nameB] = c.cropIds.map((id) => getCrop(id).name);
+    const id = `companion:${conflictKey(c.a, c.b)}`;
+    const basis = c.evidence === 'anecdotal' ? ' (traditional advice; there is little research behind it)' : '';
+    return {
+      id,
+      kind: 'companion',
+      severity: 'caution',
+      bedId: c.bedId,
+      subjects: [c.a, c.b],
+      message: `${nameA} and ${nameB} are ${round1(c.distanceIn)} in apart. ${c.reason}${basis}`,
+      suggestion: `Keep them at least ${COMPANION_NEAR_IN} in apart.`,
+      dismissed: dismissed.has(id),
+    };
+  });
+}
+
 /** Every warning on the plan, dismissed ones included (flagged), sorted by id so output is deterministic. */
 export function computeWarnings(plan: GardenPlan): Warning[] {
-  return [...spacingWarnings(plan)].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return [...spacingWarnings(plan), ...shadeWarnings(plan), ...companionWarnings(plan)].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
 /**

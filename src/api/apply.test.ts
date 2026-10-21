@@ -293,6 +293,17 @@ describe('warnings', () => {
     expect(r.warnings.introduced).toEqual([]);
   });
 
+  it('dismisses and restores shade and companion warnings by id, in dismissedWarnings', () => {
+    const plan = planWith([plantOf('t', { x: 40, y: 40 }), plantOf('b', { cropId: 'basil', x: 40, y: 30 }), plantOf('be', { cropId: 'beans', x: 80, y: 10 }), plantOf('o', { cropId: 'onion', x: 90, y: 10 })]);
+    const ids = computeWarnings(plan).filter((w) => w.kind !== 'spacing').map((w) => w.id);
+    expect(ids).toHaveLength(2);
+    const dismissed = ok(apply(plan, ids.map((id) => ({ type: 'dismissWarning' as const, id })))).plan;
+    expect(dismissed.dismissedWarnings).toEqual(ids);
+    expect(dismissed.dismissedConflictKeys).toEqual([]);
+    const restored = ok(apply(dismissed, [{ type: 'restoreWarning', id: ids[0] }])).plan;
+    expect(restored.dismissedWarnings).toEqual([ids[1]]);
+  });
+
   it('rejects dismissing a warning that does not exist', () => {
     expect(codes(apply(tomato(), [{ type: 'dismissWarning', id: 'spacing:a::b' }, { type: 'restoreWarning', id: 'nope' }]))).toEqual(['unknown_id', 'unknown_id']);
   });

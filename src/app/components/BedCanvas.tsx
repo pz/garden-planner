@@ -838,7 +838,7 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
             <PlantInfoCard
               plant={selectedPlant}
               zoneId={profile.zoneId}
-              warned={warnedGroupIds.has(selectedPlant.groupId)}
+              warnings={warnings.filter((w) => !w.dismissed && w.subjects.includes(selectedPlant.groupId))}
               groupCount={groupCount}
               onClose={() => setSelectedId(null)}
               onSetVariety={(variety) => run([{ type: 'setVariety', id: selectedPlant.id, variety: variety ?? null }])}

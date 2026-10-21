@@ -121,6 +121,29 @@ test.describe('the client, against a mock API', () => {
     await expect(page.getByText('too close to a neighbor')).toHaveCount(0);
   });
 
+  test('shade and companion warnings from the API are shown in the card with their own wording, and dismissing sends their ids', async ({ page, garden, mock }) => {
+    await garden.seed(gardenWith([{ id: 'a', cropId: 'basil', x: 10, y: 24 }, { id: 'b', cropId: 'tomato', x: 80, y: 24 }]));
+    await mock.enable();
+    await page.goto('/');
+    await mock.setWarnings([
+      warning({ id: 'shade:b>a', kind: 'shade', subjects: ['b', 'a'], message: 'Made-up shade message.', suggestion: 'Made-up fix.' }),
+      warning({ id: 'companion:a::b', kind: 'companion', subjects: ['a', 'b'], message: 'Made-up companion message.' }),
+    ]);
+    const a = await garden.plantPoint('a');
+    await page.mouse.click(a.x, a.y);
+    await expect(page.getByText('! In shade from a neighbor')).toBeVisible();
+    await expect(page.getByText('Made-up shade message. Made-up fix.')).toBeVisible();
+    await expect(page.getByText('! Usually kept apart')).toBeVisible();
+    await expect(page.getByText('Made-up companion message.')).toBeVisible();
+    await expect(page.getByText('too close to a neighbor')).toHaveCount(0); // no spacing warning was reported
+
+    await page.getByRole('button', { name: 'Dismiss this warning' }).click();
+    expect(await mock.commands()).toEqual([
+      { type: 'dismissWarning', id: 'shade:b>a' },
+      { type: 'dismissWarning', id: 'companion:a::b' },
+    ]);
+  });
+
   test('dismissing asks the API to dismiss each live warning on that patch, and only those', async ({ page, garden, mock }) => {
     await garden.seed(gardenWith([{ id: 'a', cropId: 'tomato', x: 10, y: 24 }, { id: 'b', cropId: 'tomato', x: 50, y: 24 }, { id: 'c', cropId: 'tomato', x: 80, y: 24 }]));
     await mock.enable();

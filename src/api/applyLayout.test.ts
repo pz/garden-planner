@@ -233,6 +233,17 @@ describe('setNorth', () => {
     expect(base.plan.northDeg).toBeUndefined();
     expect(ok(apply(planWith(), [{ type: 'setNorth', northDeg: 45 }])).rev).not.toBe(base.rev);
   });
+
+  it('can change which plants shade which, reported as warnings resolved', () => {
+    // A tomato with a basil 10 in north of it shades it; turning the garden so north points down removes that.
+    const plan = planWith([plant('t', { cropId: 'tomato', x: 40, y: 40 }), plant('b', { cropId: 'basil', x: 40, y: 30 })]);
+    const turned = ok(apply(plan, [{ type: 'setNorth', northDeg: 180 }]));
+    expect(turned.warnings.resolved.map((w) => w.id)).toEqual(['shade:t>b']);
+  });
+
+  it('is refused for a planting-only scope', () => {
+    expect(codes(apply(planWith(), [{ type: 'setNorth', northDeg: 10 }], { scope: 'planting' }))).toEqual(['forbidden']);
+  });
 });
 
 describe('setGardenName and setProfile', () => {

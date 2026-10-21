@@ -30,6 +30,22 @@ export interface CropDef {
   directSowWeeksRelativeToLastFrost?: number;
   /** Days from sowing/transplanting outside to first harvest. */
   daysToMaturity: number;
+  /** Typical mature height, in inches (varies by variety); what the shade rule compares. */
+  heightIn: number;
+  /** How much sun it needs: `full` (about 6+ hours; shade hurts it) or `partial` (tolerates some shade). */
+  sunNeed: SunNeed;
+  /** Crops usually kept away from this one (the pair counts whichever side lists it), each with why and how well supported. */
+  avoidNear?: AvoidNear[];
+}
+
+export type SunNeed = 'full' | 'partial';
+
+export interface AvoidNear {
+  cropId: string;
+  /** Short reason, shown to the user. */
+  reason: string;
+  /** `extension`: backed by a university extension source. `anecdotal`: traditional advice without good evidence. */
+  evidence: 'extension' | 'anecdotal';
 }
 
 /** Where the garden is, as picked on the setup screen's map. */
@@ -109,4 +125,6 @@ export interface GardenPlan {
   plants: PlantInstance[];
   /** Canonical (sorted, "::"-joined) groupId pairs whose overlap warning the user dismissed. */
   dismissedConflictKeys: string[];
+  /** Ids of dismissed shade and companion warnings (spacing ones are in `dismissedConflictKeys`). Absent means none. */
+  dismissedWarnings?: string[];
 }
