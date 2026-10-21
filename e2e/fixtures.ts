@@ -65,15 +65,12 @@ function garden(page: Page): Garden {
       return JSON.parse(raw) as GardenPlan;
     },
     async bedPoint(bedId, x, y) {
-      const m = await page.locator(`[data-bed-id="${bedId}"]`).evaluate((el) => {
-        const r = el.getBoundingClientRect();
-        const s = getComputedStyle(el);
-        return { left: r.left + parseFloat(s.borderLeftWidth), top: r.top + parseFloat(s.borderTopWidth), pxW: el.clientWidth };
-      });
+      // The bed's box is drawn at its true proportions, so its on-screen rectangle gives the scale.
+      const box = await page.locator(`[data-bed-id="${bedId}"]`).boundingBox();
       const bed = (await this.plan()).beds.find((b) => b.id === bedId);
-      if (!bed) throw new Error(`no bed ${bedId}`);
-      const scale = m.pxW / bed.widthIn;
-      return { x: m.left + x * scale, y: m.top + y * scale };
+      if (!box || !bed) throw new Error(`no bed ${bedId}`);
+      const scale = box.width / bed.widthIn;
+      return { x: box.x + x * scale, y: box.y + y * scale };
     },
     plantPoint: (id) => point(`[data-plant-id="${id}"]`),
     async drag(from, to) {

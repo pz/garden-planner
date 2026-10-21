@@ -17,7 +17,22 @@
   --color-accent-2-700: #56633f;
   --color-accent-2-800: #3d472b;
   --color-accent-2-900: #272e1b;
+  --color-neutral-100: #f9f4ed;
+  --color-neutral-200: #eee7db;
+  --color-neutral-300: #dcd3c4;
+  --color-neutral-400: #c0b6a5;
   --color-neutral-500: #a19786;
+  --color-neutral-600: #82796a;
+  --color-neutral-700: #645c50;
+  --color-neutral-800: #474238;
+  --color-neutral-900: #2e2b25;
+  --color-accent-100: #fff2eb;
+  --color-accent-200: #ffe1d0;
+  --color-accent-300: #ffc6a5;
+  --color-accent-400: #f6a06b;
+  --color-accent-500: #d67f48;
+  --color-accent-800: #643312;
+  --color-accent-900: #402310;
   --color-divider: color-mix(in srgb, #201e1d 16%, transparent);
   --color-warning: #b23b2e;
 
@@ -104,6 +119,27 @@ button {
 
 .btn-secondary:hover {
   background: color-mix(in srgb, var(--color-text) 7%, transparent);
+}
+
+.input {
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 14px;
+  font: 400 14px Figtree, sans-serif;
+  color: var(--color-text);
+  caret-color: var(--color-accent);
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+  border-radius: 999px;
+}
+
+.input:hover {
+  border-color: color-mix(in srgb, var(--color-text) 45%, transparent);
+}
+
+.input:focus-visible {
+  border-color: var(--color-accent);
+  outline: none;
 }
 
 .zone-button {
