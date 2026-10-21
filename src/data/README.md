@@ -16,7 +16,7 @@ this doc explains what each field *means*.
 | --- | --- | --- |
 | `id` | string | Stable identifier. Referenced by `PlantInstance.cropId` in saved plans — **never rename or remove an id**; add a new crop instead, or a garden someone already planted will fail to look it up (`getCrop` throws on an unknown id). |
 | `name` | string | Display name. |
-| `family` | one of `"fruiting" \| "brassica" \| "root" \| "allium" \| "legume" \| "leafy" \| "cucurbit" \| "herb"` | Drives the flat family glyph in `PlantMark`. Must be one of `CropFamily` in `types.ts`. |
+| `family` | one of `"nightshade" \| "cucurbit" \| "brassica" \| "root" \| "leafy" \| "herb" \| "allium" \| "flower" \| "grain" \| "legume" \| "perennial"` | Groups the crop in plant lists. Must be one of `CropFamily` in `types.ts`. |
 | `spacingIn` | number > 0 | Minimum center-to-center spacing between plants of this crop, in inches. Used for overlap/fit checks (`core/spacing.ts`). |
 | `defaultPatch` | boolean | Whether this crop is normally grown as a multi-plant patch (affects UI defaults, not scheduling). |
 | `sowMethod` | `"transplant" \| "direct-sow"` | Which planting-schedule fields below apply — see next row. |
@@ -60,6 +60,32 @@ them line by line** (the data policy here is hand-curated). The honest summary o
 - Feeder class (heavy/light) and water need were considered and **left out**: the extension
   guidance on feeders (UC, UConn) is about rotating crops between seasons, not about which
   neighbors to avoid, and no source gave water needs per crop on a common scale.
+
+### Where the numbers come from
+
+The original eight crops were hand-curated. The 27 added later were drafted from published
+extension and seed-supplier guidance, **and should be reviewed by someone who gardens**: the
+sources give ranges that vary by region and variety, and the app needs one number per field.
+Days to maturity count from transplanting (transplant crops) or sowing (direct-sow crops). Rough
+confidence, by what the sources agreed on:
+
+- **Well sourced** (timing, spacing and days from at least one extension guide): pepper,
+  eggplant, potato, cucumber, zucchini, watermelon, melon, broccoli, cabbage, Brussels sprouts,
+  beet, radish, spinach, Swiss chard, garlic, corn, pole beans, pea, marigold, strawberry
+  spacing. Sources: University of Maryland, Minnesota, Illinois, Oregon State and Colorado State
+  extension planting guides, UGA and UVM planting charts.
+- **Partly sourced** (some fields filled from seed-supplier guides or typical practice): collards
+  (spacing and days), dill (spacing, days), parsley (days), cilantro (spacing, days), borage
+  (timing), nasturtium (days), artichoke (days, spacing), strawberry (timing: treated as a
+  direct sow, since crowns go in as soon as the soil can be worked, and days are for everbearing
+  types), garlic (planted in fall, so its sow offset is about 28 weeks *after* the last frost).
+>>>>>>> 2e21e56 (Add 27 crops and their sprites; port the full sprite sheet)
+
+`heightIn` and `sunNeed` for the added crops follow the same rule as the original eight (see above): a typical mature
+height from general gardening references (no extension table of heights was found), and `partial` for crops
+shade-tolerance lists name (the University of Washington Botanic Gardens list includes beet, broccoli,
+Brussels sprouts, cabbage, kale, pea, potato, radish, spinach, coriander and parsley), `full` for the
+rest. They need the same human review.
 
 ### Adding a crop
 

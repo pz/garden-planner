@@ -3,7 +3,7 @@ import type { CropFamily, SowMethod } from '../types';
 import { CROPS, getCrop } from './crops';
 
 const CROP_FAMILIES: CropFamily[] = [
-  'fruiting',
+  'nightshade',
   'brassica',
   'root',
   'allium',
@@ -11,6 +11,9 @@ const CROP_FAMILIES: CropFamily[] = [
   'leafy',
   'cucurbit',
   'herb',
+  'flower',
+  'grain',
+  'perennial',
 ];
 const SOW_METHODS: SowMethod[] = ['transplant', 'direct-sow'];
 

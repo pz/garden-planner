@@ -6,7 +6,7 @@ import { formatDate, scheduleFor } from './dates';
 const transplantCrop: CropDef = {
   id: 'tomato',
   name: 'Tomato',
-  family: 'fruiting',
+  family: 'nightshade',
   spacingIn: 24,
   defaultPatch: false,
   sowMethod: 'transplant',

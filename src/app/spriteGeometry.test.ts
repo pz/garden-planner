@@ -35,7 +35,7 @@ describe('spriteRotation', () => {
 
 describe('paths', () => {
   const NUM = /-?\d+(\.\d+)?/g;
-  it.each(['oval', 'strap', 'obovate', 'ruffle', 'basil', 'lobed'] as const)('%s is a closed path with finite numbers', (shape) => {
+  it.each(['oval', 'lance', 'strap', 'obovate', 'paddle', 'spade', 'ruffle', 'serrate', 'ovate', 'basil', 'lobed', 'deeplobed', 'round', 'peltate'] as const)('%s is a closed path with finite numbers', (shape) => {
     const d = leafPath(shape, 1, 0.5);
     expect(d.startsWith('M')).toBe(true);
     expect(d.endsWith('Z')).toBe(true);
