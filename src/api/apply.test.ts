@@ -95,10 +95,11 @@ describe('addPlant', () => {
     expect(codes(apply(plan, [{ type: 'addPlant', bedId: 'bed-1', cropId: 'kale', x: 60, y: 30, id: 'old' }]))).toEqual(['duplicate_id']);
   });
 
-  it('lets a client-supplied groupId join an existing patch of the same bed and crop, but not another crop', () => {
-    const plan = planWith([plantOf('a', { cropId: 'carrot', groupId: 'row' })]);
+  it('lets a client-supplied groupId join an existing patch of the same bed, whatever the crop, but not one in another bed', () => {
+    const plan = planWith([plantOf('a', { cropId: 'carrot', groupId: 'row' })], { beds: [...createPlan('g').beds, ellipseBed] });
     expect(ok(apply(plan, [{ type: 'addPlant', bedId: 'bed-1', cropId: 'carrot', x: 13, y: 10, groupId: 'row' }])).plan.plants).toHaveLength(2);
-    expect(codes(apply(plan, [{ type: 'addPlant', bedId: 'bed-1', cropId: 'kale', x: 60, y: 10, groupId: 'row' }]))).toEqual(['duplicate_id']);
+    expect(ok(apply(plan, [{ type: 'addPlant', bedId: 'bed-1', cropId: 'kale', x: 60, y: 10, groupId: 'row' }])).plan.plants).toHaveLength(2); // a mixed patch
+    expect(codes(apply(plan, [{ type: 'addPlant', bedId: 'oval', cropId: 'carrot', x: 20, y: 20, groupId: 'row' }]))).toEqual(['duplicate_id']);
   });
 });
 
@@ -336,5 +337,83 @@ describe('revisions and dry runs', () => {
 
   it('gives the same result for the same inputs', () => {
     expect(apply(plan(), add)).toEqual(apply(plan(), add));
+  });
+});
+
+describe('movePlants', () => {
+  const twoBeds = (plants: PlantInstance[]) => planWith(plants, { beds: [...createPlan('g').beds, ellipseBed] });
+
+  it('moves plants to new places in their own bed, leaving patches and everything else alone', () => {
+    const plan = planWith([plantOf('a', { groupId: 'g1' }), plantOf('b', { x: 50, y: 20, groupId: 'g1' }), plantOf('c', { x: 80, y: 40 })]);
+    const r = ok(apply(plan, [{ type: 'movePlants', moves: [{ id: 'a', x: 12, y: 14 }, { id: 'b', x: 52, y: 22 }] }]));
+    expect(r.plan.plants).toEqual([plantOf('a', { x: 12, y: 14, groupId: 'g1' }), plantOf('b', { x: 52, y: 22, groupId: 'g1' }), plantOf('c', { x: 80, y: 40 })]);
+    expect(r.results[0]).toMatchObject({ type: 'movePlants', plantIds: ['a', 'b'] });
+  });
+
+  it('moves a plant into another bed, splitting it from the patch it leaves behind', () => {
+    const plan = twoBeds([plantOf('a', { groupId: 'g1' }), plantOf('b', { x: 30, groupId: 'g1' })]);
+    const r = ok(apply(plan, [{ type: 'movePlants', moves: [{ id: 'a', bedId: 'oval', x: 20, y: 20 }] }]));
+    const [a, b] = r.plan.plants;
+    expect(a).toMatchObject({ bedId: 'oval', x: 20, y: 20 });
+    expect(b.groupId).toBe('g1');
+    expect(a.groupId).not.toBe('g1');
+  });
+
+  it('keeps a whole patch together when all of it moves to the same other bed', () => {
+    const plan = twoBeds([plantOf('a', { groupId: 'g1' }), plantOf('b', { x: 30, groupId: 'g1' })]);
+    const r = ok(apply(plan, [{ type: 'movePlants', moves: [{ id: 'a', bedId: 'oval', x: 15, y: 20 }, { id: 'b', bedId: 'oval', x: 25, y: 20 }] }]));
+    expect(r.plan.plants.map((p) => p.groupId)).toEqual(['g1', 'g1']);
+  });
+
+  it('rejects a center outside its bed (naming the move), an unknown plant or bed, and a plant named twice', () => {
+    const plan = twoBeds([plantOf('a')]);
+    const out = apply(plan, [{ type: 'movePlants', moves: [{ id: 'a', x: 97, y: 10 }] }]);
+    expect(errorsOf(out).map((e) => [e.code, e.path])).toEqual([['outside_bed', '/commands/0/moves/0']]);
+    expect(codes(apply(plan, [{ type: 'movePlants', moves: [{ id: 'zz', x: 1, y: 1 }] }]))).toEqual(['unknown_id']);
+    expect(codes(apply(plan, [{ type: 'movePlants', moves: [{ id: 'a', bedId: 'nope', x: 1, y: 1 }] }]))).toEqual(['unknown_bed']);
+    expect(codes(apply(plan, [{ type: 'movePlants', moves: [{ id: 'a', x: 1, y: 1 }, { id: 'a', x: 2, y: 2 }] }]))).toEqual(['duplicate_id']);
+  });
+});
+
+describe('groupPlants and ungroupPlants', () => {
+  it('joins plants of any crops in one bed into one patch, and reports its id', () => {
+    const plan = planWith([plantOf('a'), plantOf('b', { cropId: 'kale', x: 40 }), plantOf('c', { x: 70 })]);
+    const r = ok(apply(plan, [{ type: 'groupPlants', ids: ['a', 'b'] }]));
+    expect(r.plan.plants.map((p) => p.groupId)).toEqual(['n1', 'n1', 'c']);
+    expect(r.results[0]).toMatchObject({ type: 'groupPlants', groupId: 'n1', plantIds: ['a', 'b'] });
+  });
+
+  it('refuses plants in different beds', () => {
+    const plan = planWith([plantOf('a'), plantOf('b', { bedId: 'oval', x: 20, y: 20 })], { beds: [...createPlan('g').beds, ellipseBed] });
+    expect(codes(apply(plan, [{ type: 'groupPlants', ids: ['a', 'b'] }]))).toEqual(['invalid_command']);
+  });
+
+  it('gives each named plant of a patch its own patch when ungrouping, leaving the rest of the patch alone', () => {
+    const plan = planWith([plantOf('a', { groupId: 'g' }), plantOf('b', { x: 40, groupId: 'g' }), plantOf('c', { x: 70, groupId: 'g' })]);
+    const r = ok(apply(plan, [{ type: 'ungroupPlants', ids: ['a'] }]));
+    expect(r.plan.plants.map((p) => p.groupId)).toEqual(['n1', 'g', 'g']);
+  });
+
+  it('dissolves a whole patch into solo plants, one of which keeps the old id', () => {
+    const plan = planWith([plantOf('a', { groupId: 'g' }), plantOf('b', { x: 40, groupId: 'g' }), plantOf('s', { x: 70 })]);
+    const r = ok(apply(plan, [{ type: 'ungroupPlants', ids: ['a', 'b', 's'] }]));
+    expect(new Set(r.plan.plants.map((p) => p.groupId)).size).toBe(3);
+    expect(r.plan.plants.find((p) => p.id === 's')!.groupId).toBe('s');
+  });
+});
+
+describe('restorePlants', () => {
+  it('replaces every plant and nothing else', () => {
+    const plan = planWith([plantOf('a'), plantOf('b', { x: 40 })], { dismissedConflictKeys: ['x::y'] });
+    const r = ok(apply(plan, [{ type: 'restorePlants', plants: [plantOf('c', { x: 5 })] }]));
+    expect(r.plan.plants).toEqual([plantOf('c', { x: 5 })]);
+    expect(r.plan.dismissedConflictKeys).toEqual(['x::y']);
+    expect(r.plan.beds).toEqual(plan.beds);
+  });
+
+  it('rejects a plant in an unknown bed, of an unknown crop, or with a repeated id', () => {
+    const plan = planWith([]);
+    const bad = [plantOf('a', { bedId: 'nope' }), plantOf('b', { cropId: 'nope' }), plantOf('c'), plantOf('c')];
+    expect(codes(apply(plan, [{ type: 'restorePlants', plants: bad }]))).toEqual(['unknown_bed', 'unknown_crop', 'duplicate_id']);
   });
 });
