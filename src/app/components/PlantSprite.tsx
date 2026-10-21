@@ -30,11 +30,13 @@ export function PlantSprite({
   fallbackColor?: string;
 }) {
   return (
+    // The art spans radius 1 (its leaf tips touch the circle), so the viewBox puts that radius at the
+    // edge of `diameter`; the 5% border is margin the art may spill into, not extra layout.
     <svg
-      width={diameter}
-      height={diameter}
+      width={diameter * 1.05}
+      height={diameter * 1.05}
       viewBox="-1.05 -1.05 2.1 2.1"
-      style={{ display: 'block', flex: 'none', overflow: 'visible', pointerEvents: 'none' }}
+      style={{ display: 'block', flex: 'none', overflow: 'visible', pointerEvents: 'none', margin: -diameter * 0.025 }}
       aria-hidden="true"
     >
       {hasSprite(cropId) ? <SpriteArt cropId={cropId} radius={1} rotation={rotation} /> : <circle r={0.7} fill={fallbackColor} />}
