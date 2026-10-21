@@ -8,7 +8,16 @@
   --color-accent-600: #b2622d;
   --color-accent-700: #8c491a;
   --color-accent-2: #7a8a5e;
+  --color-accent-2-100: #f0fae1;
+  --color-accent-2-200: #e1eecc;
+  --color-accent-2-300: #ccdbb2;
+  --color-accent-2-400: #aebf92;
+  --color-accent-2-500: #8fa073;
+  --color-accent-2-600: #728157;
   --color-accent-2-700: #56633f;
+  --color-accent-2-800: #3d472b;
+  --color-accent-2-900: #272e1b;
+  --color-neutral-500: #a19786;
   --color-divider: color-mix(in srgb, #201e1d 16%, transparent);
   --color-warning: #b23b2e;
 

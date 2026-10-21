@@ -3,7 +3,7 @@ import { getCrop } from '../../data/crops';
 import { getZone, zoneFirstFrostDate, zoneLastFrostDate } from '../../data/zones';
 import { buildCalendarEntries, groupByMonth, type CalendarEntry } from '../../core/calendar';
 import { formatDate } from '../../core/dates';
-import { CROP_COLORS, PlantMark } from './PlantMark';
+import { PlantMark } from './PlantMark';
 
 export function PlantingCalendar({ plants, zoneId }: { plants: PlantInstance[]; zoneId: string }) {
   const year = new Date().getFullYear();
@@ -57,7 +57,7 @@ function CalendarRow({ entry }: { entry: CalendarEntry }) {
         borderRadius: 'var(--radius-md)',
       }}
     >
-      <PlantMark family={crop.family} color={CROP_COLORS[crop.id]} diameter={26} />
+      <PlantMark cropId={crop.id} diameter={30} />
       <div style={{ flex: 1 }}>
         <div style={{ font: '600 13px Figtree' }}>
           {entry.cropName}

@@ -1,14 +1,17 @@
 export type SunExposure = 'full-sun' | 'part-shade' | 'shade';
 
 export type CropFamily =
-  | 'fruiting'
+  | 'nightshade'
   | 'brassica'
   | 'root'
   | 'allium'
   | 'legume'
   | 'leafy'
   | 'cucurbit'
-  | 'herb';
+  | 'herb'
+  | 'flower'
+  | 'grain'
+  | 'perennial';
 
 export type SowMethod = 'transplant' | 'direct-sow';
 

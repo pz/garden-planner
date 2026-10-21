@@ -3,6 +3,8 @@ import { GardenProvider, useGarden } from './state/gardenStore';
 import { GardensProvider, useGardens } from './state/gardensStore';
 import { SetupScreen } from './components/SetupScreen';
 import { BedCanvas } from './components/BedCanvas';
+import { SpritesPage } from './SpritesPage';
+import { isSpritesRoute } from './route';
 
 function AppShell() {
   const { plan } = useGarden();
@@ -37,6 +39,8 @@ function ActiveGarden() {
 }
 
 function App() {
+  // The sprite sheet needs no garden, so it sits outside the providers.
+  if (isSpritesRoute(window.location.pathname, window.location.hash)) return <SpritesPage />;
   return (
     <GardensProvider>
       <ActiveGarden />

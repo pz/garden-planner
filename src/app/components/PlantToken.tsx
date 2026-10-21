@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import type { PlantInstance } from '../../types';
 import { getCrop } from '../../data/crops';
 import { PlantMark, CROP_COLORS } from './PlantMark';
+import { spriteRotation } from '../spriteGeometry';
 import { isContextPress, isReleasedMove } from '../pointer';
 
 export const LONG_PRESS_MS = 450;
@@ -24,7 +25,6 @@ export interface GestureHandlers {
 export function PlantToken({
   plant,
   pxPerInch,
-  diameter,
   warned,
   selected,
   handlers,
@@ -32,7 +32,6 @@ export function PlantToken({
 }: {
   plant: PlantInstance;
   pxPerInch: number;
-  diameter: number;
   warned: boolean;
   selected: boolean;
   handlers: GestureHandlers;
@@ -40,6 +39,8 @@ export function PlantToken({
   counterRotateDeg?: number;
 }) {
   const crop = getCrop(plant.cropId);
+  // The sprite fills the plant's whole spacing circle: that is the room the plant takes.
+  const diameter = crop.spacingIn * pxPerInch;
   const color = CROP_COLORS[plant.cropId] ?? 'var(--color-accent)';
   // Drives the cursor: 'armed' once a long-press has elapsed (the next drag will multiply
   // into a patch rather than move), so the user can see which gesture they're about to make.
@@ -185,7 +186,7 @@ export function PlantToken({
           }}
         />
       )}
-      <PlantMark family={crop.family} color={color} diameter={diameter} />
+      <PlantMark cropId={plant.cropId} diameter={diameter} rotation={spriteRotation(plant.id)} />
       {warned && (
         <div
           style={{

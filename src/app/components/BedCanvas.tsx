@@ -32,7 +32,6 @@ import { Compass } from './Compass';
 import { Icon } from './Icon';
 
 const PX_PER_INCH = PLANTING_PX_PER_INCH;
-const PLANT_DIAMETER = 26;
 const BED_BORDER_PX = 2.5;
 /** Room above each bed for its name. */
 const BED_LABEL_PX = 26;
@@ -575,7 +574,6 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
                   <PlantToken
                     plant={p}
                     pxPerInch={PX_PER_INCH}
-                    diameter={PLANT_DIAMETER}
                     warned={isSolo && warnedGroupIds.has(p.groupId)}
                     selected={p.id === selectedId}
                     handlers={gestureHandlers}
@@ -605,8 +603,8 @@ export function BedCanvas({ onEditSetup }: { onEditSetup: () => void }) {
                     style={{
                       border: `1.5px dashed ${color}`,
                       borderRadius: '999px',
-                      width: PLANT_DIAMETER,
-                      height: PLANT_DIAMETER,
+                      width: getCrop(origin.cropId).spacingIn * PX_PER_INCH,
+                      height: getCrop(origin.cropId).spacingIn * PX_PER_INCH,
                     }}
                   />
                 </div>
