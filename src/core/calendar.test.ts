@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { PlantInstance } from '../types';
 import { buildCalendarEntries, earliestScheduledDate, groupByMonth, type CalendarEntry } from './calendar';
 import { scheduleFor } from './dates';
-import { getCrop } from '../data/crops';
+import { getCrop, makeCustomCrop, setCustomCrops } from '../data/crops';
 import { getZone } from '../data/zones';
 
 function plant(overrides: Partial<PlantInstance>): PlantInstance {
@@ -18,6 +18,18 @@ function entryScheduledOn(groupId: string, date: Date): CalendarEntry {
     schedule: { sowOrTransplant: date, sowOrTransplantLabel: 'Sow outside', harvest: date },
   };
 }
+
+describe('buildCalendarEntries and user-made plants', () => {
+  it('lists patches of built-in crops but not of user-made plants, which have no schedule', () => {
+    setCustomCrops([makeCustomCrop({ id: 'custom-x', name: 'Mine', spacingIn: 8, look: {} })]);
+    try {
+      const entries = buildCalendarEntries([plant({ id: 'a', groupId: 'ga' }), plant({ id: 'b', groupId: 'gb', cropId: 'custom-x' })], '6', 2024);
+      expect(entries.map((e) => e.groupId)).toEqual(['ga']);
+    } finally {
+      setCustomCrops([]);
+    }
+  });
+});
 
 describe('buildCalendarEntries', () => {
   it('returns an empty list for an empty plan', () => {

@@ -68,6 +68,8 @@ export function PlantPanel({
   onSelect,
   onUndo,
   onArm,
+  onAdd,
+  onEdit,
 }: {
   crops: CropDef[];
   armedId: string | null;
@@ -76,6 +78,9 @@ export function PlantPanel({
   onSelect: () => void;
   onUndo: () => void;
   onArm: (cropId: string) => void;
+  /** Opens the add-a-plant dialog, with a name to start from when searching found nothing. */
+  onAdd: (name?: string) => void;
+  onEdit: (cropId: string) => void;
 }) {
   const [hover, setHover] = useState(false);
   const [query, setQuery] = useState('');
@@ -134,6 +139,12 @@ export function PlantPanel({
         )}
       </div>
 
+      <div style={{ flex: 'none', padding: '0 8px 6px' }}>
+        <Row label={q && groups.length === 0 ? `Add “${query.trim()}” as a plant` : 'Add your own plant'} aria="Add your own plant" open={open} height={34} onClick={() => onAdd(q && groups.length === 0 ? query.trim() : undefined)}>
+          <Icon name="plus" size={16} />
+        </Row>
+      </div>
+
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', scrollbarWidth: 'none', padding: '0 8px 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
         {groups.map((g) => (
           <div key={g.label} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -147,8 +158,8 @@ export function PlantPanel({
             {g.crops.map((c) => {
               const on = armedId === c.id;
               return (
+                <div key={c.id} style={{ position: 'relative', display: 'flex', flex: 'none' }}>
                 <button
-                  key={c.id}
                   type="button"
                   aria-label={c.name}
                   aria-pressed={on}
@@ -157,9 +168,9 @@ export function PlantPanel({
                     display: 'flex',
                     alignItems: 'center',
                     gap: 12,
-                    flex: 'none',
+                    flex: 1,
                     height: 44,
-                    padding: '0 12px 0 9px',
+                    padding: c.look ? '0 44px 0 9px' : '0 12px 0 9px',
                     border: 'none',
                     borderRadius: 999,
                     background: on ? 'var(--color-accent-200)' : 'transparent',
@@ -174,11 +185,17 @@ export function PlantPanel({
                   {open && <span style={{ flex: 1 }}>{c.name}</span>}
                   {open && <span style={{ font: '400 12px Figtree', color: 'var(--color-neutral-700)' }}>{formatLength(c.spacingIn)}</span>}
                 </button>
+                {open && c.look && (
+                  <button type="button" aria-label={`Edit ${c.name}`} title="Edit plant" onClick={() => onEdit(c.id)} style={{ position: 'absolute', right: 6, top: 6, width: 32, height: 32, display: 'grid', placeItems: 'center', border: 'none', borderRadius: 999, background: 'transparent', color: 'var(--color-neutral-700)', cursor: 'pointer' }}>
+                    <Icon name="pencil" size={15} />
+                  </button>
+                )}
+                </div>
               );
             })}
           </div>
         ))}
-        {groups.length === 0 && open && <span style={{ padding: '4px 12px', font: '400 13px Figtree', color: 'var(--color-neutral-700)' }}>No plants match</span>}
+        {groups.length === 0 && open && !q && <span style={{ padding: '4px 12px', font: '400 13px Figtree', color: 'var(--color-neutral-700)' }}>No plants match</span>}
       </div>
     </aside>
   );

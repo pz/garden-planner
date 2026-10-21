@@ -19,6 +19,21 @@ describe('createPlan', () => {
   });
 });
 
+describe('parsePlan and crops', () => {
+  const stored = JSON.stringify(basePlan([
+    { id: 'a', bedId: 'bed-1', cropId: 'tomato', x: 1, y: 1, groupId: 'a' },
+    { id: 'b', bedId: 'bed-1', cropId: 'custom-gone', x: 2, y: 2, groupId: 'b' },
+  ]));
+
+  it('drops plants of a crop it has never heard of (a deleted user-made plant), and keeps the rest', () => {
+    expect(parsePlan(stored, TEST_ID).plants.map((p) => p.id)).toEqual(['a']);
+  });
+
+  it('keeps plants of crops the caller says it is about to register', () => {
+    expect(parsePlan(stored, TEST_ID, new Set(['custom-gone'])).plants.map((p) => p.id)).toEqual(['a', 'b']);
+  });
+});
+
 describe('parsePlan', () => {
   it('returns a fresh plan stamped with the given id when there is nothing stored', () => {
     expect(parsePlan(null, TEST_ID)).toEqual(createPlan(TEST_ID));

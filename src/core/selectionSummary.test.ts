@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Bed, PlantInstance } from '../types';
+import { makeCustomCrop, setCustomCrops } from '../data/crops';
 import { discsOf } from './placement';
 import { summarizeSelection } from './selectionSummary';
 
@@ -46,5 +47,15 @@ describe('summarizeSelection', () => {
     expect(sum(split, ['a', 'b'])).toMatchObject({ canGroup: false, bedNames: ['Bed 1', 'Side'] });
     const half = [p('a', { groupId: 'g' }), p('b', { groupId: 'g', x: 40 }), p('c', { x: 70 })];
     expect(sum(half, ['a', 'c'])).toMatchObject({ canGroup: true, canUngroup: false });
+  });
+
+  it('describes a user-made plant with its height, and no harvest', () => {
+    setCustomCrops([makeCustomCrop({ id: 'custom-x', name: 'Mine', spacingIn: 8, heightIn: 30, look: {} })]);
+    try {
+      expect(sum([p('a', { cropId: 'custom-x' })], ['a'])).toMatchObject({ custom: true, heightIn: 30, harvestDays: null, spacingIn: 8 });
+      expect(sum([p('a')], ['a'])).toMatchObject({ custom: false, heightIn: null });
+    } finally {
+      setCustomCrops([]);
+    }
   });
 });

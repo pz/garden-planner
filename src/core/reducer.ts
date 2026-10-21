@@ -1,4 +1,5 @@
 import type { Bed, GardenPlan, PlantInstance, Profile } from '../types';
+import { findCrop } from '../data/crops';
 import { parseGardenLocation } from './location';
 import { normalizeAngle, relocatePlants, type BedGeometry } from './layout';
 
@@ -85,9 +86,9 @@ function cleanDismissedWarnings(plan: GardenPlan): GardenPlan {
  * unusable. `id` is always authoritative — it comes from the storage key the plan was read
  * from, and is forced onto the result even if the stored JSON disagrees (or lacks one, from
  * before gardens had ids). Single-bed (v2) plans are migrated to the multi-bed layout. Malformed
- * beds (see isValidBed) are dropped, and so are plants whose bed no longer exists.
+ * beds (see isValidBed) are dropped, and so are plants whose bed or crop no longer exists (`extraCropIds` are crops the caller is about to register).
  */
-export function parsePlan(raw: string | null, id: string): GardenPlan {
+export function parsePlan(raw: string | null, id: string, extraCropIds: ReadonlySet<string> = new Set()): GardenPlan {
   try {
     if (!raw) return createPlan(id);
     const stored = JSON.parse(raw) as { version?: unknown };
@@ -98,7 +99,8 @@ export function parsePlan(raw: string | null, id: string): GardenPlan {
     if (!parsed || !Array.isArray(parsed.beds)) return createPlan(id);
     parsed = { ...parsed, beds: parsed.beds.filter(isValidBed) };
     const bedIds = new Set(parsed.beds.map((b) => b.id));
-    const plants = Array.isArray(parsed.plants) ? parsed.plants.filter((p) => bedIds.has(p.bedId)) : [];
+    // A plant of a user-made plant that has since been deleted has nothing to be drawn or spaced by.
+    const plants = Array.isArray(parsed.plants) ? parsed.plants.filter((p) => bedIds.has(p.bedId) && (findCrop(p.cropId) || extraCropIds.has(p.cropId))) : [];
     parsed = cleanDismissedWarnings({ ...parsed, id, plants });
     // `northDeg` is optional and newer than v3 itself: a bad value falls back to north-up.
     if (parsed.northDeg !== undefined) {

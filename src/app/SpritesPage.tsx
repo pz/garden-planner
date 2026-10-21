@@ -1,11 +1,15 @@
-import { useState } from 'react';
-import { CROPS } from '../data/crops';
+import { useMemo, useState } from 'react';
+import { allCrops } from '../data/crops';
+import { useCustomCrops } from './state/customCropsStore';
 import { PlantSprite, hasSprite } from './components/PlantSprite';
 import { formatLength } from './layoutInteraction';
 import { FAMILIES } from './families';
 
 /** Every crop's sprite on one page, at several sizes, for checking the art. Reached at `/_sprites`. */
 export function SpritesPage() {
+  const mine = useCustomCrops(); // so a plant you just made shows up too
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const CROPS = useMemo(() => allCrops(), [mine]);
   const [rotation, setRotation] = useState(20);
   const missing = CROPS.filter((c) => !hasSprite(c.id));
 

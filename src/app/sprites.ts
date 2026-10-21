@@ -1,4 +1,5 @@
 import { createElement as h, type ReactElement } from 'react';
+import type { CropLook } from '../types';
 import { leafPath, type LeafShape } from './spriteGeometry';
 
 // The top-down plant sprites (ported from the plant sprite sheet): each crop is a rosette of
@@ -156,6 +157,28 @@ export const SPR: Record<string, (r: number) => El[]> = {
   strawberry: (r: number) => [...ring(5, r, a => leaf('tri', a, .82, 0, G(600), { lf: [.38, .32, 'serrate'] })), ...ring(3, r + 36, a => { const [x, y] = at(a, .46); return h('g', { transform: `translate(${x} ${y}) rotate(${a + 180})` }, h('path', { d: 'M-.17 0C-.17 -.12 -.05 -.16 .02 -.15C.12 -.12 .2 -.05 .2 0C.2 .05 .12 .12 .02 .15C-.05 .16 -.17 .12 -.17 0Z', fill: C.red, ...EDGE }), ...[[-.05, -.06], [.05, -.07], [-.05, .06], [.05, .07], [.12, 0], [-.1, 0], [.01, 0]].map(([px, py]) => dot(px, py, .013, C.yellow)), h('path', { d: 'M-.17 0L-.24 -.08L-.2 0L-.24 .08Z', fill: G(600), stroke: G(600), strokeWidth: .03, strokeLinejoin: 'round' })); }), flower(0, 0, .09, C.white, C.yellow)],
   artichoke: (r: number) => [...ring(8, r, a => leaf('serrate', a, 1, .34, C.silver, { rib: C.white, ribW: .025 })), dot(0, 0, .26, C.silverD, EDGE), ...ring(8, r + 22, a => { const [x, y] = at(a, .15); return dot(x, y, .075, G(600), EDGE); }), dot(0, 0, .08, C.purple)],
 };
+const RIB = 'rgba(255,255,255,.35)';
+export const LEAF_COLORS: { id: string; c: string }[] = [['sage', G(500)], ['light', G(300)], ['dark', G(700)], ['blue', C.glauc], ['silver', C.silver], ['lime', 'oklch(0.74 0.12 125)'], ['red', 'oklch(0.48 0.1 15)']].map(([id, c]) => ({ id, c }));
+export const ACCENTS: { id: string; c: string | null }[] = ([['none', null], ['red', C.red], ['orange', C.orange], ['yellow', C.yellow], ['pink', C.pink], ['purple', C.purple], ['blue', C.blue], ['white', C.white]] as [string, string | null][]).map(([id, c]) => ({ id, c }));
+const fruitRing = (r: number, A: string) => ring(3, r + 40, a => { const [x, y] = at(a, .44); return h('g', null, dot(x, y, .13, A, EDGE), dot(x - .04, y - .04, .035, 'white', { opacity: .35 })); });
+const GENERIC: Record<string, (r: number, L: string, A: string | null) => El[]> = {
+  mound: (r: number, L: string, A: string | null) => [...ring(7, r, a => leaf('oval', a, .96, .5, L, { rib: RIB })), ...ring(4, r + 25, a => leaf('oval', a, .55, .36, L, { rib: RIB })), ...(A ? fruitRing(r, A) : [])],
+  rosette: (r: number, L: string, A: string | null) => [...ring(9, r, a => leaf('obovate', a, .95, .5, L, { rib: RIB })), ...ring(5, r + 20, a => leaf('obovate', a, .55, .4, L)), A ? dot(0, 0, .2, A, EDGE) : dot(0, 0, .1, L, EDGE)],
+  ruffled: (r: number, L: string, A: string | null) => [...ring(8, r, a => leaf('ruffle', a, .98, .55, L)), ...ring(5, r + 20, a => leaf('ruffle', a, .6, .45, L)), ...(A ? [dot(0, 0, .16, A, EDGE)] : [])],
+  upright: (r: number, L: string, A: string | null) => [...ring(5, r, a => leaf('strap', a, 1, .16, L, { rib: RIB, ribW: .02 })), ...ring(3, r + 36, a => leaf('strap', a, .62, .14, L)), A ? dot(0, 0, .2, A, EDGE) : dot(0, 0, .08, L)],
+  feathery: (r: number, L: string, A: string | null) => [...ring(6, r, a => leaf('feather', a, 1, 0, L, { n: 5, w: .05 })), ...ring(5, r + 30, a => leaf('feather', a, .65, 0, L, { n: 3, w: .045 })), ...(A ? [dot(0, 0, .17, A)] : [])],
+  bushy: (r: number, L: string, A: string | null) => [...ring(6, r, a => leaf('pinnate', a, .96, 0, L, { pairs: 3, lf: [.28, .16, 'oval'] })), ...ring(4, r + 45, a => leaf('pinnate', a, .55, 0, L, { pairs: 2, lf: [.2, .12, 'oval'] })), ...(A ? fruitRing(r, A) : [])],
+  vining: (r: number, L: string, A: string | null) => [...ring(5, r, a => leaf('lobed', a, .95, .58, L)), ...ring(3, r + 36, a => tendril(a, .55, .32, L)), ...(A ? [dot(0, 0, .26, A, EDGE)] : [])],
+  spiky: (r: number, L: string, A: string | null) => [...ring(8, r, a => leaf('serrate', a, 1, .3, L, { rib: RIB, ribW: .025 })), A ? dot(0, 0, .22, A, EDGE) : dot(0, 0, .12, L, EDGE)],
+};
+export const SHAPES: { id: string; label: string }[] = [['mound', 'Leafy mound'], ['rosette', 'Rosette'], ['ruffled', 'Ruffled'], ['upright', 'Upright'], ['feathery', 'Feathery'], ['bushy', 'Bushy'], ['vining', 'Vining'], ['spiky', 'Spiky']].map(([id, label]) => ({ id, label }));
+/** The sprite for a user-made plant, in the same unit space as the built-in ones. */
+export function drawSpec(spec: CropLook, rotation: number): El {
+  if (spec.like && SPR[spec.like]) return h('g', null, ...SPR[spec.like](rotation));
+  const leafColor = (LEAF_COLORS.find((x) => x.id === spec.leaf) ?? LEAF_COLORS[0]).c;
+  const accent = (ACCENTS.find((x) => x.id === spec.accent) ?? ACCENTS[0]).c;
+  return h('g', null, ...(GENERIC[spec.shape ?? ''] ?? GENERIC.mound)(rotation, leafColor, accent));
+}
 
 /** The built-in sprite for a sprite-sheet key, or null if there isn't one. */
 export function drawCrop(key: string, rotation: number): El | null {

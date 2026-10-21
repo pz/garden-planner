@@ -2,6 +2,7 @@ import type { CropFamily } from '../types';
 
 /** The order the plant list groups crops in, with each group's heading. */
 export const FAMILIES: { family: CropFamily; label: string }[] = [
+  { family: 'custom', label: 'My plants' },
   { family: 'nightshade', label: 'Nightshades' },
   { family: 'cucurbit', label: 'Squash & melons' },
   { family: 'brassica', label: 'Brassicas' },

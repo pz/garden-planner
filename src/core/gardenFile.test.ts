@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { CROPS } from '../data/crops';
+import { afterEach, describe, expect, it } from 'vitest';
+import { CROPS, makeCustomCrop, setCustomCrops } from '../data/crops';
 import { createPlan } from './reducer';
 import { gardenFileName, parseGardenFile, serializeGardenFile } from './gardenFile';
 import type { Bed, GardenPlan } from '../types';
@@ -61,7 +61,7 @@ describe('serializeGardenFile / parseGardenFile', () => {
   it('round-trips a plan and its metadata', () => {
     const plan = samplePlan();
     const result = parseGardenFile(serializeGardenFile(plan, meta));
-    expect(result).toEqual({ ok: true, plan, meta });
+    expect(result).toEqual({ ok: true, plan, meta, customCrops: [] });
   });
 
   it('preserves every bed with its shape, rotation and polygon corners', () => {
@@ -80,7 +80,7 @@ describe('serializeGardenFile / parseGardenFile', () => {
 
   it('accepts a bare plan with no wrapper', () => {
     const plan = samplePlan();
-    expect(parseGardenFile(JSON.stringify(plan))).toEqual({ ok: true, plan, meta: null });
+    expect(parseGardenFile(JSON.stringify(plan))).toEqual({ ok: true, plan, meta: null, customCrops: [] });
   });
 
   it('drops unreadable meta instead of failing', () => {
@@ -155,5 +155,47 @@ describe('gardenFileName', () => {
   it('falls back to "garden" for a name with no usable characters', () => {
     const plan = { ...samplePlan(), name: '🌱' };
     expect(gardenFileName(plan, meta.exportedAt)).toBe('garden-2026-10-06.json');
+  });
+});
+
+describe('user-made plants in a garden file', () => {
+  const mine = makeCustomCrop({ id: 'custom-mine', name: 'Mine', spacingIn: 9, heightIn: 20, look: { shape: 'bushy', leaf: 'dark', accent: 'red' } });
+  const other = makeCustomCrop({ id: 'custom-other', name: 'Other', spacingIn: 5, look: { shape: 'rosette' } });
+  const planWithMine = (): GardenPlan => {
+    const p = samplePlan();
+    return { ...p, plants: [...p.plants, { id: 'm1', bedId: 'bed-1', cropId: 'custom-mine', x: 30, y: 30, groupId: 'gm' }] };
+  };
+  afterEach(() => setCustomCrops([]));
+
+  it('are bundled into the export, only those the garden uses', () => {
+    setCustomCrops([mine, other]);
+    const file = JSON.parse(serializeGardenFile(planWithMine(), meta));
+    expect(file.customCrops).toEqual([mine]);
+  });
+
+  it('leave no customCrops field when the garden uses none', () => {
+    setCustomCrops([mine]);
+    expect(JSON.parse(serializeGardenFile(samplePlan(), meta))).not.toHaveProperty('customCrops');
+  });
+
+  it('load on a device that does not have them: the plants stay, and the definitions come back for the caller to keep', () => {
+    setCustomCrops([mine]);
+    const text = serializeGardenFile(planWithMine(), meta);
+    setCustomCrops([]); // the other device
+    const r = parseGardenFile(text);
+    if (!r.ok) throw new Error(r.error);
+    expect(r.customCrops).toEqual([mine]);
+    expect(r.plan.plants.map((p) => p.id)).toEqual(['p1', 'p2', 'm1']);
+  });
+
+  it('are refused when a plant uses one the file does not define', () => {
+    const text = fileOf(planWithMine());
+    expect(errorOf(text)).toMatch(/unknown crop \(custom-mine\)/);
+  });
+
+  it('are refused, rather than trusted, when their definition is malformed', () => {
+    const file = JSON.parse(fileOf(planWithMine()));
+    file.customCrops = [{ ...mine, spacingIn: -3 }];
+    expect(errorOf(JSON.stringify(file))).toMatch(/unknown crop/);
   });
 });

@@ -1,4 +1,4 @@
-import { CROPS } from '../data/crops';
+import { allCrops } from '../data/crops';
 import { isValidBed } from './reducer';
 
 /**
@@ -61,9 +61,10 @@ function plantProblem(p: unknown, i: number, bedIds: Set<string> | null, cropIds
  * boundary), in the order a reader would hit it; empty if it's usable. Document-level problems
  * (version, profile, beds) stop the check, since plants can't be judged without valid beds;
  * after that every bad plant is reported, one problem each. Accepts v3 plans and legacy v2
- * (single-bed) plans, which `parsePlan` migrates.
+ * (single-bed) plans, which `parsePlan` migrates. `extraCropIds` are user-made plants the plan's
+ * own file defines; they count as known crops.
  */
-export function validatePlan(plan: unknown): PlanProblem[] {
+export function validatePlan(plan: unknown, extraCropIds: Iterable<string> = []): PlanProblem[] {
   if (!isRecord(plan)) return [problem('invalid_garden_file', '', 'the file has no garden in it')];
   if (plan.version !== 2 && plan.version !== 3) {
     return [problem('invalid_garden_file', '/version', `unsupported garden version (${String(plan.version)})`)];
@@ -80,7 +81,7 @@ export function validatePlan(plan: unknown): PlanProblem[] {
   if (!Array.isArray(plan.plants)) return [problem('invalid_garden_file', '/plants', 'the garden has no plant list')];
 
   const problems: PlanProblem[] = [];
-  const cropIds = new Set(CROPS.map((c) => c.id));
+  const cropIds = new Set([...allCrops().map((c) => c.id), ...extraCropIds]);
   const bedIds = plan.version === 3 ? new Set((plan.beds as { id: string }[]).map((b) => b.id)) : null;
   for (const [i, p] of plan.plants.entries()) {
     const found = plantProblem(p, i, bedIds, cropIds);

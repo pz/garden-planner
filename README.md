@@ -46,7 +46,7 @@ Crops, USDA zones and the per-crop tips, as JSON plus tiny accessors (`getCrop`,
 Pure functions and types with no React, DOM or storage. This is where the rules live:
 
 - **State machine and file format.** `reducer.ts` (`GardenPlan` state transitions and
-  `parsePlan`), `gardenFile.ts` (export/load format and validation), `migration.ts`
+  `parsePlan`), `gardenFile.ts` (export/load format and validation, including the user-made plants a garden file carries), `migration.ts`
   (legacy plan upgrades), `gardenIndex.ts` (the list of saved gardens).
 - **Planting rules.** `spacing.ts` (overlap warnings), `shade.ts` and `companions.ts` (what a
   neighbor's shadow or an unlucky pairing does), `geometry.ts` (bed outlines, grids),

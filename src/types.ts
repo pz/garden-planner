@@ -11,11 +11,21 @@ export type CropFamily =
   | 'herb'
   | 'flower'
   | 'grain'
-  | 'perennial';
+  | 'perennial'
+  /** The gardener's own plants (see `CropDef.look`). */
+  | 'custom';
 
 export type SowMethod = 'transplant' | 'direct-sow';
 
-/** Static, codified plant info — never LLM-generated. */
+/** How a user-made plant is drawn: like a built-in plant, or a generic shape with leaf and flower/fruit colors. */
+export interface CropLook {
+  like?: string;
+  shape?: string;
+  leaf?: string;
+  accent?: string;
+}
+
+/** Static, codified plant info — never LLM-generated. A user-made plant (`look` set) is the one runtime-added kind. */
 export interface CropDef {
   id: string;
   name: string;
@@ -31,14 +41,16 @@ export interface CropDef {
   transplantWeeksAfterLastFrost?: number;
   /** For direct-sow crops: weeks relative to last frost to sow outside (negative = before). */
   directSowWeeksRelativeToLastFrost?: number;
-  /** Days from sowing/transplanting outside to first harvest. */
+  /** Days from sowing/transplanting outside to first harvest. 0 for a user-made plant, which has no schedule. */
   daysToMaturity: number;
-  /** Typical mature height, in inches (varies by variety); what the shade rule compares. */
+  /** Typical mature height, in inches (varies by variety); what the shade rule compares. 0 for a user-made plant whose height isn't known. */
   heightIn: number;
   /** How much sun it needs: `full` (about 6+ hours; shade hurts it) or `partial` (tolerates some shade). */
   sunNeed: SunNeed;
   /** Crops usually kept away from this one (the pair counts whichever side lists it), each with why and how well supported. */
   avoidNear?: AvoidNear[];
+  /** Set only on a user-made plant: how it's drawn. Its presence is what makes a crop custom. */
+  look?: CropLook;
 }
 
 export type SunNeed = 'full' | 'partial';

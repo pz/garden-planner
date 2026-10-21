@@ -61,6 +61,17 @@ them line by line** (the data policy here is hand-curated). The honest summary o
   guidance on feeders (UC, UConn) is about rotating crops between seasons, not about which
   neighbors to avoid, and no source gave water needs per crop on a common scale.
 
+### User-made plants
+
+The one runtime exception to "static data": a gardener can make plants of their own (a `CropDef`
+with `family: "custom"` and a `look`, id prefixed `custom-`, no schedule: `daysToMaturity` is 0 and
+`hasSchedule` is false, so the calendar skips them). The app keeps them in its own library in
+`localStorage` (`app/state/customCrops*.ts`) and registers them here with `setCustomCrops`, so
+`getCrop`, `findCrop` and `allCrops` see them next to the built-in crops. `parseCustomCrop` rebuilds
+one from untrusted JSON (storage or a garden file) and is the only way in. A garden file bundles the
+ones its plants use (`customCrops`), and loading it adds any the library lacks. A plan that names a
+user-made plant the library no longer has loses those plants when it is read (`parsePlan`).
+
 ### Where the numbers come from
 
 The original eight crops were hand-curated. The 27 added later were drafted from published
