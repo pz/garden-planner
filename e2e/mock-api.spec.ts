@@ -23,7 +23,7 @@ test.describe('the client, against a mock API', () => {
     await page.goto('/');
     const at = await garden.bedPoint('bed-1', 20, 24);
     await page.mouse.click(at.x, at.y, { button: 'right' });
-    await page.getByRole('button', { name: /^Tomato/ }).click();
+    await page.getByRole('menuitem', { name: /^Tomato/ }).click();
 
     const [command, ...rest] = await mock.commands();
     expect(rest).toEqual([]);
@@ -34,17 +34,21 @@ test.describe('the client, against a mock API', () => {
     await expect(page.locator('[data-plant-id]')).toHaveCount(1);
   });
 
-  test('dragging a patch asks to move that patch by the dragged amount', async ({ page, garden, mock }) => {
+  test('dragging a patch asks to move each of its plants by the dragged amount', async ({ page, garden, mock }) => {
     await garden.seed(gardenWith([{ id: 'c1', cropId: 'carrot', x: 40, y: 20, groupId: 'row' }, { id: 'c2', cropId: 'carrot', x: 43, y: 20, groupId: 'row' }]));
     await mock.enable();
     await page.goto('/');
     const from = await garden.plantPoint('c1');
     await garden.drag(from, { x: from.x + 70, y: from.y + 35 });
 
-    const [command] = await mock.commands();
-    expect(command).toMatchObject({ type: 'movePatch', groupId: 'row' });
-    expect((command as { dx: number }).dx).toBeGreaterThan(5);
-    expect((command as { dy: number }).dy).toBeGreaterThan(2);
+    const [command, ...rest] = await mock.commands();
+    expect(rest).toEqual([]);
+    const { moves } = command as { type: string; moves: { id: string; bedId: string; x: number; y: number }[] };
+    expect(command.type).toBe('movePlants');
+    expect(moves.map((m) => [m.id, m.bedId])).toEqual([['c1', 'bed-1'], ['c2', 'bed-1']]);
+    expect(moves[0].x - 40).toBeGreaterThan(5);
+    expect(moves[0].y - 20).toBeGreaterThan(2);
+    expect(moves[1].x - moves[0].x).toBeCloseTo(3, 6); // the patch stays rigid
   });
 
   test('remove, undo, remove patch and variety edits each send the matching command', async ({ page, garden, mock }) => {
@@ -61,15 +65,21 @@ test.describe('the client, against a mock API', () => {
     const kale = await garden.plantPoint('k');
     await page.mouse.click(kale.x, kale.y);
     await page.keyboard.press('Delete');
-    await page.getByRole('button', { name: 'Undo' }).click(); // restores it under its old identity
+    await page.getByRole('button', { name: 'Undo', exact: true }).click(); // puts every plant back as it was
     const carrot = await garden.plantPoint('c1');
     await page.mouse.click(carrot.x, carrot.y);
-    await page.getByRole('button', { name: 'Remove patch' }).click();
+    await page.getByRole('button', { name: 'Delete 2 plants' }).click();
 
+    const plants = [
+      { id: 'k', bedId: 'bed-1', cropId: 'kale', x: 30, y: 30, variety: 'Lacinato', groupId: 'kg' },
+      { id: 'c1', bedId: 'bed-1', cropId: 'carrot', x: 60, y: 10, groupId: 'row' },
+      { id: 'c2', bedId: 'bed-1', cropId: 'carrot', x: 63, y: 10, groupId: 'row' },
+    ];
     expect(await mock.commands()).toEqual([
       { type: 'removePlant', id: 'k' },
-      { type: 'addPlant', id: 'k', groupId: 'kg', bedId: 'bed-1', cropId: 'kale', x: 30, y: 30, variety: 'Lacinato' },
-      { type: 'removePatch', groupId: 'row' },
+      { type: 'restorePlants', plants },
+      { type: 'removePlant', id: 'c1' },
+      { type: 'removePlant', id: 'c2' },
     ]);
   });
 
@@ -99,7 +109,7 @@ test.describe('the client, against a mock API', () => {
     await page.keyboard.press('Delete');
     await expect(page.getByText('There is no plant with id "a".')).toBeVisible();
     await expect(page.getByText('Removed Kale')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Remove', exact: true })).toBeVisible(); // card still open
+    await expect(page.getByRole('button', { name: 'Delete plant' })).toBeVisible(); // panel still open
   });
 
   test('warnings shown are the ones the API reports, not ones the client works out itself', async ({ page, garden, mock }) => {

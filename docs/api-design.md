@@ -81,11 +81,15 @@ POST /v1/gardens/{g}/commands
 
 | Command | Fields | Notes |
 |---|---|---|
-| `addPlant` | `ref?, id?, groupId?, bedId, cropId, x, y, variety?` | `id` and `groupId` are normally generated; supply them to restore a removed plant under its old identity. A supplied `groupId` that already exists joins that patch, if it has the same bed and crop. |
+| `addPlant` | `ref?, id?, groupId?, bedId, cropId, x, y, variety?` | `id` and `groupId` are normally generated; supply them to restore a removed plant under its old identity. A supplied `groupId` that already exists joins that patch, if it is in the same bed (a patch may mix crops). |
 | `addPatch` | `ref?, groupId?, bedId, cropId, (points[] \| grid), variety?, clip?` | Exactly one of `points` and `grid`. `grid` is `{origin, axis:"x"\|"y", columns, rows}`: a block of `columns × rows` plants at the crop's spacing, including the origin, growing in the positive directions (axis `x`: columns run right, rows step down; axis `y`: columns run down, rows step right); at most 1000 plants. `clip: true` drops points outside the bed and reports them as `skipped`; the default is an error. |
 | `removePlant` | `id` | |
 | `removePatch` | `groupId` | |
 | `movePatch` | `groupId, dx, dy` | Rigid translation within the same bed. Cross-bed moves are remove plus add for now. |
+| `movePlants` | `moves: [{id, bedId?, x, y}]` | Puts each plant at a point in a bed's own frame (default: its own bed), so plants can cross into other beds. Every center must be inside its bed. A patch whose members end up in different beds is split: the bed holding the members that didn't move (else the most of them) keeps the patch, the rest get a patch each per bed. |
+| `groupPlants` | `ids, groupId?` | Joins plants of any crops, all in one bed, into one patch (`groupId` in the result). |
+| `ungroupPlants` | `ids` | Each named plant gets a patch of its own; a patch with plants left unnamed keeps them together. |
+| `restorePlants` | `plants` | Replaces every plant with exactly these (the planting view's undo). Beds and dismissed warnings are untouched. |
 | `setVariety` | `id, variety` | `variety: null` clears it. |
 | `dismissWarning` / `restoreWarning` | `id` | |
 

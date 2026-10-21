@@ -3,7 +3,17 @@ import type { Bed, GardenPlan, PlantInstance, Point } from '../types';
 import { MAX_PATCH_PLANTS, clampGroupDelta, clampToOutline, gridPoints, isInsideOutline } from '../core/geometry';
 import { bedOutline } from '../core/layout';
 import { reducer, type Action } from '../core/reducer';
-import { REF_PREFIX, isPlantingCommand, type AddPatchCommand, type AddPlantCommand, type Command } from './commands';
+import {
+  REF_PREFIX,
+  isPlantingCommand,
+  type AddPatchCommand,
+  type AddPlantCommand,
+  type Command,
+  type GroupPlantsCommand,
+  type MovePlantsCommand,
+  type RestorePlantsCommand,
+  type UngroupPlantsCommand,
+} from './commands';
 import { revOf } from './rev';
 import type { ApiError, WarningDiff } from './types';
 import { applyLayoutCommand } from './applyLayout';
@@ -134,11 +144,11 @@ function addPlant(ctx: Ctx, c: AddPlantCommand): Outcome {
     ok = false;
   }
   const members = ctx.plan.plants.filter((p) => p.groupId === groupId);
-  if (members.some((m) => m.bedId !== bed.id || m.cropId !== crop.id)) {
+  if (members.some((m) => m.bedId !== bed.id)) {
     ctx.report({
       code: 'duplicate_id',
       path: `${ctx.at}/groupId`,
-      message: `Patch "${groupId}" already exists with a different bed or crop, so a ${crop.name} in "${bed.name}" can't join it.`,
+      message: `Patch "${groupId}" already exists in a different bed, so a ${crop.name} in "${bed.name}" can't join it.`,
       details: { groupId },
     });
     ok = false;
@@ -246,6 +256,123 @@ function movePatch(ctx: Ctx, c: Extract<Command, { type: 'movePatch' }>): Outcom
   return { actions: [{ type: 'moveGroup', groupId, dx: c.dx, dy: c.dy }], result: { type: 'movePatch', groupId } };
 }
 
+/** The plants the ids name, or null (each missing one reported). */
+function plantsTarget(ctx: Ctx, ids: string[], field: string): PlantInstance[] | null {
+  if (ids.length === 0) {
+    ctx.report({ code: 'invalid_command', path: `${ctx.at}/${field}`, message: 'Name at least one plant.' });
+    return null;
+  }
+  const found: PlantInstance[] = [];
+  const seen = new Set<string>();
+  let ok = true;
+  ids.forEach((id, k) => {
+    const plant = plantTarget(ctx, id, `${field}/${k}`);
+    if (!plant) ok = false;
+    else if (seen.has(plant.id)) {
+      ctx.report({ code: 'duplicate_id', path: `${ctx.at}/${field}/${k}`, message: `Plant "${plant.id}" is named twice.`, details: { id: plant.id } });
+      ok = false;
+    } else {
+      seen.add(plant.id);
+      found.push(plant);
+    }
+  });
+  return ok ? found : null;
+}
+
+function movePlants(ctx: Ctx, c: MovePlantsCommand): Outcome {
+  const plants = plantsTarget(ctx, c.moves.map((m) => m.id), 'moves');
+  if (!plants) return null;
+  const moved = new Map<string, PlantInstance>();
+  let ok = true;
+  c.moves.forEach((m, k) => {
+    const plant = plants[k];
+    const bed = m.bedId === undefined ? findBed(ctx, plant.bedId) : findBed(ctx, m.bedId, `moves/${k}/bedId`);
+    if (!bed) return void (ok = false);
+    const at = { x: m.x, y: m.y };
+    if (!isInsideOutline(at, bedOutline(bed))) {
+      outsideError(ctx, bed, at, `${ctx.at}/moves/${k}`);
+      return void (ok = false);
+    }
+    moved.set(plant.id, { ...plant, bedId: bed.id, x: m.x, y: m.y });
+  });
+  if (!ok) return null;
+
+  // A patch lives in one bed: where its members now span several, the bed holding the ones that
+  // didn't move (or, failing that, the most of them) keeps the patch and the rest split off.
+  const after = ctx.plan.plants.map((p) => moved.get(p.id) ?? p);
+  const touched = new Set([...moved.values()].map((m) => m.groupId));
+  const updated = new Map(moved);
+  for (const groupId of touched) {
+    const members = after.filter((p) => p.groupId === groupId);
+    const beds = [...new Set(members.map((m) => m.bedId))];
+    if (beds.length < 2) continue;
+    const count = (b: string) => members.filter((m) => m.bedId === b).length;
+    const home = members.find((m) => !moved.has(m.id))?.bedId ?? beds.reduce((best, b) => (count(b) > count(best) ? b : best));
+    for (const b of beds.filter((x) => x !== home)) {
+      const split = ctx.newId();
+      for (const m of members.filter((x) => x.bedId === b)) updated.set(m.id, { ...m, groupId: split });
+    }
+  }
+  return { actions: [{ type: 'updatePlants', plants: [...updated.values()] }], result: { type: 'movePlants', plantIds: plants.map((p) => p.id) } };
+}
+
+function groupPlants(ctx: Ctx, c: GroupPlantsCommand): Outcome {
+  const plants = plantsTarget(ctx, c.ids, 'ids');
+  if (!plants) return null;
+  const bedId = plants[0].bedId;
+  if (plants.some((p) => p.bedId !== bedId)) {
+    ctx.report({ code: 'invalid_command', path: `${ctx.at}/ids`, message: 'A patch lives in one bed; these plants are in different beds.' });
+    return null;
+  }
+  const groupId = c.groupId ?? ctx.newId();
+  const existing = ctx.plan.plants.filter((p) => p.groupId === groupId);
+  if (existing.some((p) => p.bedId !== bedId)) {
+    ctx.report({ code: 'duplicate_id', path: `${ctx.at}/groupId`, message: `Patch "${groupId}" already exists in a different bed.`, details: { groupId } });
+    return null;
+  }
+  return {
+    actions: [{ type: 'updatePlants', plants: plants.map((p) => ({ ...p, groupId })) }],
+    result: { type: 'groupPlants', plantIds: plants.map((p) => p.id), groupId },
+  };
+}
+
+function ungroupPlants(ctx: Ctx, c: UngroupPlantsCommand): Outcome {
+  const plants = plantsTarget(ctx, c.ids, 'ids');
+  if (!plants) return null;
+  const size = (g: string) => ctx.plan.plants.filter((p) => p.groupId === g).length;
+  // The plants of a patch are all named only if the whole patch is dissolving; one is left holding the old id.
+  const named = new Set(plants.map((p) => p.id));
+  const keeps = new Set<string>();
+  for (const g of new Set(plants.map((p) => p.groupId))) {
+    const rest = ctx.plan.plants.filter((p) => p.groupId === g && !named.has(p.id));
+    if (rest.length === 0 && size(g) > 0) keeps.add(plants.find((p) => p.groupId === g)!.id);
+  }
+  const split = plants.filter((p) => size(p.groupId) > 1 && !keeps.has(p.id)).map((p) => ({ ...p, groupId: ctx.newId() }));
+  return { actions: [{ type: 'updatePlants', plants: split }], result: { type: 'ungroupPlants', plantIds: plants.map((p) => p.id) } };
+}
+
+function restorePlants(ctx: Ctx, c: RestorePlantsCommand): Outcome {
+  let ok = true;
+  const ids = new Set<string>();
+  c.plants.forEach((p, k) => {
+    const at = `${ctx.at}/plants/${k}`;
+    if (!ctx.plan.beds.some((b) => b.id === p.bedId)) {
+      ctx.report({ code: 'unknown_bed', path: `${at}/bedId`, message: `There is no bed with id "${p.bedId}".`, details: { bedId: p.bedId } });
+      ok = false;
+    }
+    if (!CROPS.some((cr) => cr.id === p.cropId)) {
+      ctx.report({ code: 'unknown_crop', path: `${at}/cropId`, message: `There is no crop with id "${p.cropId}".`, details: { cropId: p.cropId } });
+      ok = false;
+    }
+    if (ids.has(p.id)) {
+      ctx.report({ code: 'duplicate_id', path: `${at}/id`, message: `Plant id "${p.id}" appears twice.`, details: { id: p.id } });
+      ok = false;
+    }
+    ids.add(p.id);
+  });
+  return ok ? { actions: [{ type: 'setPlants', plants: c.plants }], result: { type: 'restorePlants', plantIds: c.plants.map((p) => p.id) } } : null;
+}
+
 function existingWarningId(ctx: Ctx, id: string): string | null {
   if (!computeWarnings(ctx.plan).some((w) => w.id === id)) {
     ctx.report({ code: 'unknown_id', path: `${ctx.at}/id`, message: `There is no current warning with id "${id}".`, details: { id } });
@@ -284,6 +411,14 @@ function applyOne(ctx: Ctx, c: Command, scope: ApplyOptions['scope']): Outcome {
     }
     case 'movePatch':
       return movePatch(ctx, c);
+    case 'movePlants':
+      return movePlants(ctx, c);
+    case 'groupPlants':
+      return groupPlants(ctx, c);
+    case 'ungroupPlants':
+      return ungroupPlants(ctx, c);
+    case 'restorePlants':
+      return restorePlants(ctx, c);
     case 'setVariety': {
       const plant = plantTarget(ctx, c.id, 'id');
       return plant ? { actions: [{ type: 'setVariety', id: plant.id, variety: c.variety ?? undefined }], result: { type: 'setVariety' } } : null;

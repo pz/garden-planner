@@ -130,6 +130,9 @@ export type Action =
   | { type: 'restoreLayout'; beds: Bed[]; plants: PlantInstance[] }
   | { type: 'addPlants'; plants: PlantInstance[] }
   | { type: 'moveGroup'; groupId: string; dx: number; dy: number }
+  /** Replaces the plants that have the same ids as these (moved, regrouped, …). */
+  | { type: 'updatePlants'; plants: PlantInstance[] }
+  | { type: 'setPlants'; plants: PlantInstance[] }
   | { type: 'removePlant'; id: string }
   | { type: 'removeGroup'; groupId: string }
   | { type: 'setVariety'; id: string; variety: string | undefined }
@@ -204,6 +207,12 @@ export function reducer(state: GardenPlan, action: Action): GardenPlan {
           p.groupId === action.groupId ? { ...p, x: p.x + action.dx, y: p.y + action.dy } : p,
         ),
       };
+    case 'updatePlants': {
+      const next = new Map(action.plants.map((p) => [p.id, p]));
+      return { ...state, plants: state.plants.map((p) => next.get(p.id) ?? p) };
+    }
+    case 'setPlants':
+      return { ...state, plants: action.plants };
     case 'removePlant':
       return { ...state, plants: state.plants.filter((p) => p.id !== action.id) };
     case 'removeGroup':

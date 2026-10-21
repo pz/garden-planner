@@ -48,9 +48,12 @@ Pure functions and types with no React, DOM or storage. This is where the rules 
 - **State machine and file format.** `reducer.ts` (`GardenPlan` state transitions and
   `parsePlan`), `gardenFile.ts` (export/load format and validation), `migration.ts`
   (legacy plan upgrades), `gardenIndex.ts` (the list of saved gardens).
-- **Planting rules.** `spacing.ts` (overlap and fit), `shade.ts` and `companions.ts` (what a neighbor's shadow or an unlucky pairing does), `geometry.ts` (outlines, patch
-  boxes, multiply-drag ghosts), `layout.ts` (bed frames, resizing, relocating plants,
-  cloning).
+- **Planting rules.** `spacing.ts` (overlap warnings), `shade.ts` and `companions.ts` (what a
+  neighbor's shadow or an unlucky pairing does), `geometry.ts` (bed outlines, grids),
+  `layout.ts` (bed frames, resizing, relocating plants, cloning), `planting.ts` (the
+  planting gestures: brush placement, hit testing, selection, stamps),
+  `placement.ts` (which bed a garden point is in and where dragged or stamped plants land),
+  `selectionSummary.ts` (what the selection panel says).
 - **Scheduling.** `dates.ts`, `calendar.ts`.
 - **Location and zones.** `location.ts`, `geoZone.ts`, `zoneMap.ts`, `usdaZones.ts`.
 
@@ -83,6 +86,9 @@ companion warnings, the HTTP/MCP layer), is in [`docs/api-design.md`](docs/api-d
 Everything that needs a browser or React:
 
 - `components/` — thin UI: rendering, gesture wiring and calls into `core`.
+- `planting/` — the planting view: `PlantingView` (camera, gestures, keyboard, undo; all edits
+  go through `GardenApi`), `GardenSvg` (the garden as one SVG in garden inches), the plant list,
+  selection panel, help box and menus.
 - `state/` — React contexts and `localStorage` persistence: `gardenStore` (binds a
   `GardenApi` to React), `gardenApiFactory` (the real, localStorage-backed `GardenApi`), `gardensStore`,
   dismissed tips, storage namespacing for PR previews, editor undo.

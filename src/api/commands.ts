@@ -1,4 +1,5 @@
 import type { Bed, BedShape, PlantInstance, Point, Profile } from '../types';
+import type { PlantMove } from '../core/placement';
 import type { ApiError } from './types';
 
 /** `$name` in an id field refers to the object an earlier command in the same batch created with `ref: "name"`. */
@@ -54,6 +55,31 @@ export interface MovePatchCommand {
   groupId: string;
   dx: number;
   dy: number;
+}
+/**
+ * Puts plants at new places, possibly in other beds. A patch whose members end up in different
+ * beds is split, one patch per bed (the beds' plants that stayed keep the old patch).
+ */
+export interface MovePlantsCommand {
+  type: 'movePlants';
+  moves: (Omit<PlantMove, 'bedId'> & { bedId?: string })[];
+}
+/** Joins plants into one patch (any mix of crops, all in one bed). Reported as `groupId`. */
+export interface GroupPlantsCommand {
+  type: 'groupPlants';
+  ids: string[];
+  /** Normally generated. */
+  groupId?: string;
+}
+/** Gives each plant a patch of its own. */
+export interface UngroupPlantsCommand {
+  type: 'ungroupPlants';
+  ids: string[];
+}
+/** Puts every plant back as it was (the planting view's undo). Leaves beds and dismissals alone. */
+export interface RestorePlantsCommand {
+  type: 'restorePlants';
+  plants: PlantInstance[];
 }
 export interface SetVarietyCommand {
   type: 'setVariety';
@@ -150,6 +176,10 @@ export type PlantingCommand =
   | RemovePlantCommand
   | RemovePatchCommand
   | MovePatchCommand
+  | MovePlantsCommand
+  | GroupPlantsCommand
+  | UngroupPlantsCommand
+  | RestorePlantsCommand
   | SetVarietyCommand
   | DismissWarningCommand
   | RestoreWarningCommand;
@@ -310,6 +340,10 @@ const SCHEMA: Record<CommandType, { required: Record<string, Check>; optional: R
   removePlant: { required: { id: str }, optional: {} },
   removePatch: { required: { groupId: str }, optional: {} },
   movePatch: { required: { groupId: str, dx: num, dy: num }, optional: {} },
+  movePlants: { required: { moves: arrayOf(shaped({ id: str, x: num, y: num }, { bedId: str })) }, optional: {} },
+  groupPlants: { required: { ids: arrayOf(str) }, optional: { groupId: str } },
+  ungroupPlants: { required: { ids: arrayOf(str) }, optional: {} },
+  restorePlants: { required: { plants: arrayOf(plantObject) }, optional: {} },
   setVariety: { required: { id: str, variety: nullableStr }, optional: {} },
   dismissWarning: { required: { id: str }, optional: {} },
   restoreWarning: { required: { id: str }, optional: {} },
