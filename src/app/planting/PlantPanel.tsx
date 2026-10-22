@@ -143,9 +143,8 @@ export function PlantPanel({
         </Row>
       </div>
 
-      <div style={{ flex: 'none', height: 56, display: 'flex', alignItems: 'center', gap: 4, padding: '0 8px' }}>
+      <div style={{ flex: 'none', height: 56, display: 'flex', alignItems: 'center', padding: '0 8px' }}>
         {open ? (
-          <>
           <input
             className="input"
             placeholder="Search plants"
@@ -154,17 +153,6 @@ export function PlantPanel({
             onChange={(e) => setQuery(e.target.value)}
             style={{ background: 'var(--color-bg)' }}
           />
-          <button
-            type="button"
-            aria-label="Keep plant list open"
-            aria-pressed={pinned}
-            title={pinned ? 'Unpin' : 'Keep open'}
-            onClick={togglePin}
-            style={{ flex: 'none', width: 24, height: 24, display: 'grid', placeItems: 'center', border: 'none', borderRadius: 999, background: 'transparent', color: pinned ? 'var(--color-accent)' : 'var(--color-neutral-500)', cursor: 'pointer' }}
-          >
-            <Icon name="pin" size={14} />
-          </button>
-          </>
         ) : (
           <span style={{ width: 48, display: 'grid', placeItems: 'center', color: 'var(--color-neutral-600)' }}>
             <Icon name="search" size={18} />
@@ -230,6 +218,18 @@ export function PlantPanel({
         ))}
         {groups.length === 0 && open && !q && <span style={{ padding: '4px 12px', font: '400 13px Figtree', color: 'var(--color-neutral-700)' }}>No plants match</span>}
       </div>
+      {open && (
+        <button
+          type="button"
+          aria-label="Keep plant list open"
+          aria-pressed={pinned}
+          title={pinned ? 'Unpin' : 'Keep open'}
+          onClick={togglePin}
+          style={{ position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)', zIndex: 1, width: 16, height: 44, display: 'grid', placeItems: 'center', border: 'none', borderRadius: '10px 0 0 10px', background: pinned ? 'var(--color-accent)' : 'var(--color-neutral-200)', color: pinned ? 'var(--color-bg)' : 'var(--color-neutral-600)', cursor: 'pointer', opacity: pinned ? 1 : 0.7 }}
+        >
+          <Icon name="pin" size={11} />
+        </button>
+      )}
     </aside>
   );
 }
