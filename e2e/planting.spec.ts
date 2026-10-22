@@ -366,6 +366,7 @@ test.describe('crowded beds and modifier keys', () => {
     await page.goto('/');
     const panel = page.getByRole('complementary', { name: 'Plants' });
     expect((await panel.boundingBox())!.width).toBeLessThan(100);
+    await panel.hover(); // the pin appears once the list opens
     await page.getByRole('button', { name: 'Keep plant list open' }).click();
     await page.mouse.move(700, 600);
     await page.waitForTimeout(300);

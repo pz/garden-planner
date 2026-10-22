@@ -141,13 +141,11 @@ export function PlantPanel({
         <Row label="Undo" aria="Undo last change" hint={`${MOD}Z`} disabled={!canUndo} open={open} onClick={onUndo}>
           <Icon name="undo" size={18} />
         </Row>
-        <Row label={pinned ? 'Unpin list' : 'Keep list open'} aria="Keep plant list open" active={pinned} open={open} height={34} onClick={togglePin}>
-          <Icon name="pin" size={16} />
-        </Row>
       </div>
 
-      <div style={{ flex: 'none', height: 56, display: 'flex', alignItems: 'center', padding: '0 8px' }}>
+      <div style={{ flex: 'none', height: 56, display: 'flex', alignItems: 'center', gap: 4, padding: '0 8px' }}>
         {open ? (
+          <>
           <input
             className="input"
             placeholder="Search plants"
@@ -156,6 +154,17 @@ export function PlantPanel({
             onChange={(e) => setQuery(e.target.value)}
             style={{ background: 'var(--color-bg)' }}
           />
+          <button
+            type="button"
+            aria-label="Keep plant list open"
+            aria-pressed={pinned}
+            title={pinned ? 'Unpin' : 'Keep open'}
+            onClick={togglePin}
+            style={{ flex: 'none', width: 24, height: 24, display: 'grid', placeItems: 'center', border: 'none', borderRadius: 999, background: 'transparent', color: pinned ? 'var(--color-accent)' : 'var(--color-neutral-500)', cursor: 'pointer' }}
+          >
+            <Icon name="pin" size={14} />
+          </button>
+          </>
         ) : (
           <span style={{ width: 48, display: 'grid', placeItems: 'center', color: 'var(--color-neutral-600)' }}>
             <Icon name="search" size={18} />
