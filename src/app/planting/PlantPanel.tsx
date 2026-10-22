@@ -4,18 +4,7 @@ import { Icon, type IconName } from '../components/Icon';
 import { PlantMark } from '../components/PlantMark';
 import { formatLength } from '../layoutInteraction';
 import { FAMILIES } from '../families';
-import { storageKey } from '../state/storageNamespace';
 import { MOD } from './keys';
-
-const PINNED_KEY = storageKey('planting-panel-pinned');
-
-function readPinned(): boolean {
-  try {
-    return localStorage.getItem(PINNED_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
 
 const COLLAPSED_W = 64;
 const EXPANDED_W = 256;
@@ -95,17 +84,7 @@ export function PlantPanel({
 }) {
   const [hover, setHover] = useState(false);
   const [query, setQuery] = useState('');
-  const [pinned, setPinned] = useState(readPinned);
-  const open = hover || pinned;
-  const togglePin = () => {
-    const next = !pinned;
-    setPinned(next);
-    try {
-      localStorage.setItem(PINNED_KEY, next ? '1' : '');
-    } catch {
-      /* the choice just won't stick */
-    }
-  };
+  const open = hover;
   const q = query.trim().toLowerCase();
   const groups = FAMILIES.map(({ family, label }) => ({
     label,
@@ -218,18 +197,6 @@ export function PlantPanel({
         ))}
         {groups.length === 0 && open && !q && <span style={{ padding: '4px 12px', font: '400 13px Figtree', color: 'var(--color-neutral-700)' }}>No plants match</span>}
       </div>
-      {open && (
-        <button
-          type="button"
-          aria-label="Keep plant list open"
-          aria-pressed={pinned}
-          title={pinned ? 'Unpin' : 'Keep open'}
-          onClick={togglePin}
-          style={{ position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)', zIndex: 1, width: 16, height: 44, display: 'grid', placeItems: 'center', border: 'none', borderRadius: '10px 0 0 10px', background: pinned ? 'var(--color-accent)' : 'var(--color-neutral-200)', color: pinned ? 'var(--color-bg)' : 'var(--color-neutral-600)', cursor: 'pointer', opacity: pinned ? 1 : 0.7 }}
-        >
-          <Icon name="pin" size={11} />
-        </button>
-      )}
     </aside>
   );
 }

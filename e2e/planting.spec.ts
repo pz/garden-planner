@@ -361,21 +361,6 @@ test.describe('crowded beds and modifier keys', () => {
     expect((await garden.plan()).plants.map((p) => p.cropId)).toEqual(['tomato', 'tomato']);
   });
 
-  test('the plant list can be pinned open, and stays pinned after a reload', async ({ page, garden }) => {
-    await garden.seed(gardenWith());
-    await page.goto('/');
-    const panel = page.getByRole('complementary', { name: 'Plants' });
-    expect((await panel.boundingBox())!.width).toBeLessThan(100);
-    await panel.hover(); // the pin appears once the list opens
-    await page.getByRole('button', { name: 'Keep plant list open' }).click();
-    await page.mouse.move(700, 600);
-    await page.waitForTimeout(300);
-    expect((await panel.boundingBox())!.width).toBeGreaterThan(200);
-    await page.reload();
-    await page.waitForTimeout(300);
-    expect((await panel.boundingBox())!.width).toBeGreaterThan(200);
-  });
-
   test('Ctrl-dragging from outside every bed selects the plants it covers', async ({ page, garden }) => {
     await garden.seed(gardenWith([{ id: 'a', cropId: 'kale', x: 20, y: 24 }, { id: 'b', cropId: 'kale', x: 80, y: 24 }]));
     await page.goto('/');
