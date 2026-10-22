@@ -555,3 +555,39 @@ describe('north direction', () => {
     expect(parsePlan(JSON.stringify(basePlan()), TEST_ID).northDeg).toBeUndefined();
   });
 });
+
+describe('lines', () => {
+  const l1 = { id: 'l1', a: { x: 0, y: 0 }, b: { x: 10, y: 0 } };
+  const l2 = { id: 'l2', a: { x: 0, y: 5 }, b: { x: 10, y: 5 } };
+
+  it('addLine and removeLine change only the lines, and an emptied list leaves no key', () => {
+    const plan = basePlan();
+    const one = reducer(plan, { type: 'addLine', line: l1 });
+    expect(one.lines).toEqual([l1]);
+    expect(one.beds).toBe(plan.beds);
+    const two = reducer(one, { type: 'addLine', line: l2 });
+    expect(reducer(two, { type: 'removeLine', id: 'l1' }).lines).toEqual([l2]);
+    expect('lines' in reducer(one, { type: 'removeLine', id: 'l1' })).toBe(false);
+  });
+
+  it('removing an unknown line returns the same state', () => {
+    const one = reducer(basePlan(), { type: 'addLine', line: l1 });
+    expect(reducer(one, { type: 'removeLine', id: 'zzz' })).toBe(one);
+    const none = basePlan();
+    expect(reducer(none, { type: 'removeLine', id: 'l1' })).toBe(none);
+  });
+
+  it('restoreLayout replaces lines only when it carries them', () => {
+    const one = reducer(basePlan(), { type: 'addLine', line: l1 });
+    expect(reducer(one, { type: 'restoreLayout', beds: one.beds, plants: [] }).lines).toEqual([l1]);
+    expect(reducer(one, { type: 'restoreLayout', beds: one.beds, plants: [], lines: [l2] }).lines).toEqual([l2]);
+    expect('lines' in reducer(one, { type: 'restoreLayout', beds: one.beds, plants: [], lines: [] })).toBe(false);
+  });
+
+  it('parsePlan keeps good lines, drops bad ones, and a plan without lines stays without', () => {
+    const raw = JSON.stringify({ ...basePlan(), lines: [l1, { id: 'bad', a: { x: 1, y: 1 }, b: { x: 1, y: 1 } }, 'x'] });
+    expect(parsePlan(raw, TEST_ID).lines).toEqual([l1]);
+    expect('lines' in parsePlan(JSON.stringify({ ...basePlan(), lines: 'oops' }), TEST_ID)).toBe(false);
+    expect('lines' in parsePlan(JSON.stringify(basePlan()), TEST_ID)).toBe(false);
+  });
+});

@@ -15,6 +15,8 @@ export interface CommandResult {
   removed?: string[];
   /** The bed it created or acted on. */
   bedId?: string;
+  /** The line it created or acted on. */
+  lineId?: string;
   /** Points `clip` dropped for being outside the bed. */
   skipped?: Point[];
 }

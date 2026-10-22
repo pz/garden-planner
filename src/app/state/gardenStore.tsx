@@ -3,7 +3,7 @@ import type { ApplyResult } from '../../api/apply';
 import { addBedCommand, type Command } from '../../api/commands';
 import type { ApplyOptions, GardenApi } from '../../api/gardenApi';
 import type { Warning } from '../../api/types';
-import type { Bed, GardenPlan, PlantInstance, Profile } from '../../types';
+import type { Bed, GardenLine, GardenPlan, PlantInstance, Profile } from '../../types';
 import type { BedGeometry } from '../../core/layout';
 import { createGardenApi, isMock } from './gardenApiFactory';
 
@@ -26,7 +26,9 @@ interface GardenContextValue {
   rotateBed: (id: string, rotationDeg: number) => void;
   pasteBed: (bed: Bed, plants: PlantInstance[]) => void;
   removeBed: (id: string) => void;
-  restoreLayout: (beds: Bed[], plants: PlantInstance[]) => void;
+  restoreLayout: (beds: Bed[], plants: PlantInstance[], lines?: GardenLine[]) => void;
+  addLine: (line: GardenLine) => void;
+  removeLine: (id: string) => void;
 }
 
 /**
@@ -76,7 +78,9 @@ export function GardenProvider({ gardenId, api: injected, children }: { gardenId
       rotateBed: (id, rotationDeg) => run(api, [{ type: 'rotateBed', id, rotationDeg }]),
       pasteBed: (bed, plants) => run(api, [{ type: 'pasteBed', bed, plants }]),
       removeBed: (id) => run(api, [{ type: 'removeBed', id }]),
-      restoreLayout: (beds, plants) => run(api, [{ type: 'restoreLayout', beds, plants }]),
+      restoreLayout: (beds, plants, lines) => run(api, [{ type: 'restoreLayout', beds, plants, ...(lines ? { lines } : {}) }]),
+      addLine: (line) => run(api, [{ type: 'addLine', id: line.id, a: line.a, b: line.b }]),
+      removeLine: (id) => run(api, [{ type: 'removeLine', id }]),
     }),
     [api, snapshot],
   );

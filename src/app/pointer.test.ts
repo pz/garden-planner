@@ -3,14 +3,18 @@ import { isContextPress, isReleasedMove, polygonClipPath } from './pointer';
 
 describe('isContextPress', () => {
   it('treats the secondary button as a context press', () => {
-    expect(isContextPress({ button: 2, ctrlKey: false })).toBe(true);
+    expect(isContextPress({ button: 2, ctrlKey: false }, false)).toBe(true);
+    expect(isContextPress({ button: 2, ctrlKey: false }, true)).toBe(true);
   });
-  it('treats a primary press with Ctrl held (macOS Ctrl-click) as a context press', () => {
-    expect(isContextPress({ button: 0, ctrlKey: true })).toBe(true);
+  it('treats a primary press with Ctrl held on macOS as a context press', () => {
+    expect(isContextPress({ button: 0, ctrlKey: true }, true)).toBe(true);
+  });
+  it('lets Ctrl-click through off macOS, where it selects more instead', () => {
+    expect(isContextPress({ button: 0, ctrlKey: true }, false)).toBe(false);
   });
   it('does not treat a plain primary or middle press as one', () => {
-    expect(isContextPress({ button: 0, ctrlKey: false })).toBe(false);
-    expect(isContextPress({ button: 1, ctrlKey: false })).toBe(false);
+    expect(isContextPress({ button: 0, ctrlKey: false }, true)).toBe(false);
+    expect(isContextPress({ button: 1, ctrlKey: false }, false)).toBe(false);
   });
 });
 

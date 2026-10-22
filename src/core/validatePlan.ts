@@ -1,4 +1,5 @@
 import { allCrops } from '../data/crops';
+import { isValidLine } from './lines';
 import { isValidBed } from './reducer';
 
 /**
@@ -86,6 +87,16 @@ export function validatePlan(plan: unknown, extraCropIds: Iterable<string> = [])
   for (const [i, p] of plan.plants.entries()) {
     const found = plantProblem(p, i, bedIds, cropIds);
     if (found) problems.push(found);
+  }
+  if (plan.lines !== undefined) {
+    if (!Array.isArray(plan.lines)) problems.push(problem('invalid_garden_file', '/lines', 'the list of lines is invalid'));
+    else {
+      for (const [i, l] of plan.lines.entries()) {
+        if (!isValidLine(l)) problems.push(problem('invalid_garden_file', `/lines/${i}`, `line ${i + 1} is malformed`));
+      }
+      const ids = plan.lines.map((l) => (isRecord(l) ? l.id : undefined));
+      if (new Set(ids).size !== ids.length) problems.push(problem('invalid_garden_file', '/lines', 'two lines share the same id'));
+    }
   }
   if (!Array.isArray(plan.dismissedConflictKeys) || plan.dismissedConflictKeys.some((k) => typeof k !== 'string')) {
     problems.push(problem('invalid_garden_file', '/dismissedConflictKeys', 'the dismissed-warnings list is invalid'));

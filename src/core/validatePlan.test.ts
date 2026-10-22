@@ -100,3 +100,17 @@ describe('validatePlan', () => {
     expect(validatePlan({ ...createPlan('g'), dismissedWarnings: 'x' }).map((p) => p.path)).toEqual(['/dismissedWarnings']);
   });
 });
+
+describe('validatePlan: lines', () => {
+  const plan = { version: 3, id: 'g', name: 'g', profile: {}, beds: [{ id: 'b', name: 'b', shape: 'rect', cx: 1, cy: 1, widthIn: 2, heightIn: 2, rotationDeg: 0 }], plants: [], dismissedConflictKeys: [] };
+  const line = (id: string, bx = 5) => ({ id, a: { x: 0, y: 0 }, b: { x: bx, y: 0 } });
+
+  it('accepts a plan with good lines or none', () => {
+    expect(validatePlan({ ...plan, lines: [line('a'), line('b')] })).toEqual([]);
+  });
+  it('reports a malformed line, a shared id and a non-list', () => {
+    expect(validatePlan({ ...plan, lines: [line('a', 0)] }).map((p) => p.path)).toEqual(['/lines/0']);
+    expect(validatePlan({ ...plan, lines: [line('a'), line('a', 6)] }).map((p) => p.path)).toEqual(['/lines']);
+    expect(validatePlan({ ...plan, lines: {} }).map((p) => p.path)).toEqual(['/lines']);
+  });
+});

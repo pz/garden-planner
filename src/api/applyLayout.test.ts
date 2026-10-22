@@ -37,6 +37,8 @@ describe('scope', () => {
     { type: 'removeBed', id: 'bed-1' },
     { type: 'pasteBed', bed: bed2, plants: [] },
     { type: 'restoreLayout', beds: [], plants: [] },
+    { type: 'addLine', a: { x: 0, y: 0 }, b: { x: 10, y: 0 } },
+    { type: 'removeLine', id: 'l' },
     { type: 'setGardenName', name: 'x' },
     { type: 'setNorth', northDeg: 90 },
     { type: 'setProfile', profile: { zoneId: '6', sunExposure: 'shade', onboarded: true } },
@@ -270,5 +272,38 @@ describe('setGardenName and setProfile', () => {
     expect(apply(planWith(), [at(90)]).ok).toBe(true);
     expect(apply(planWith(), [at(-90)]).ok).toBe(true);
     expect(apply(planWith(), [at(90.01)]).ok).toBe(false);
+  });
+});
+
+describe('lines', () => {
+  const a = { x: 0, y: 0 };
+  const b = { x: 24, y: 0 };
+
+  it('addLine draws a line with a generated or given id, and removeLine takes it away', () => {
+    const drawn = ok(apply(planWith(), [{ type: 'addLine', a, b }]));
+    expect(drawn.plan.lines).toEqual([{ id: 'n1', a, b }]);
+    expect(drawn.results[0]).toMatchObject({ type: 'addLine', lineId: 'n1' });
+    const gone = ok(apply(drawn.plan, [{ type: 'removeLine', id: 'n1' }]));
+    expect(gone.plan.lines).toBeUndefined();
+  });
+
+  it('refuses a zero-length line, a reused id and an unknown id', () => {
+    const plan = ok(apply(planWith(), [{ type: 'addLine', id: 'l', a, b }])).plan;
+    expect(codes(apply(plan, [{ type: 'addLine', a, b: a }]))).toEqual(['invalid_command']);
+    expect(codes(apply(plan, [{ type: 'addLine', id: 'l', a, b }]))).toEqual(['duplicate_id']);
+    expect(codes(apply(plan, [{ type: 'removeLine', id: 'nope' }]))).toEqual(['unknown_id']);
+  });
+
+  it('restoreLayout puts lines back when given, and leaves them alone when not', () => {
+    const plan = ok(apply(planWith(), [{ type: 'addLine', id: 'l', a, b }])).plan;
+    const cleared = ok(apply(plan, [{ type: 'restoreLayout', beds: plan.beds, plants: [], lines: [] }])).plan;
+    expect(cleared.lines).toBeUndefined();
+    const kept = ok(apply(plan, [{ type: 'restoreLayout', beds: plan.beds, plants: [] }])).plan;
+    expect(kept.lines).toHaveLength(1);
+  });
+
+  it('restoreLayout refuses malformed lines', () => {
+    const plan = planWith();
+    expect(errorsOf(apply(plan, [{ type: 'restoreLayout', beds: plan.beds, plants: [], lines: [{ id: 'l', a, b: a }] }])).length).toBeGreaterThan(0);
   });
 });
