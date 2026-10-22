@@ -6,8 +6,7 @@ import type { Command } from '../../api/commands';
 import { bedOutline, bedToGarden, gardenBounds, gardenToBed, type Bounds } from '../../core/layout';
 import { bedAt, discsOf, planMove, planStamp, radiusOf } from '../../core/placement';
 import {
-  brushSpots,
-  canPlantAt,
+  extendStroke,
   hitPlant,
   marqueeSelect,
   selectOnPress,
@@ -25,7 +24,7 @@ import { GardenSvg, type DrawnPlant, type Ghost, type Tag } from './GardenSvg';
 import { Inspector } from './Inspector';
 import { PlantPanel } from './PlantPanel';
 import { ContextMenu, HelpBox, ModeChip, ZoomControls, type MenuItem } from './overlays';
-import { MOD, hasMod } from './keys';
+import { IS_MAC, MOD, hasMod, isSelectModifierKey } from './keys';
 import { CustomPlantDialog, customCropFrom } from './CustomPlantDialog';
 import { deleteCustomCrop, saveCustomCrop, useCustomCrops } from '../state/customCropsStore';
 import { newCustomCropId } from '../state/customCrops';
@@ -288,17 +287,7 @@ export function PlantingView() {
   const brushPoints = (d: Extract<Drag, { kind: 'brush' }>, to: Point) => {
     if (!armed) return d.spots;
     const bed = bedsById.get(d.bedId)!;
-    const r = radiusOf(armed);
-    const outline = bedOutline(bed);
-    const spots = [...d.spots];
-    const painted = spots.map((s) => ({ x: s.x, y: s.y, r }));
-    for (const s of brushSpots(d.anchor, d.last, to, r * 2)) {
-      if (canPlantAt(s, r, outline, [...localDiscs(d.bedId), ...painted])) {
-        spots.push(s);
-        painted.push({ x: s.x, y: s.y, r });
-      }
-    }
-    return spots;
+    return extendStroke(d.spots, d.anchor, d.last, to, radiusOf(armed), bedOutline(bed), localDiscs(d.bedId));
   };
 
   // --- pointer --------------------------------------------------------------------------
@@ -311,7 +300,7 @@ export function PlantingView() {
   function onPointerDown(e: React.PointerEvent) {
     if (!camera) return;
     setMenu(null);
-    if (isContextPress(e) || (e.button !== 0 && e.button !== 1)) return;
+    if (isContextPress(e, IS_MAC) || (e.button !== 0 && e.button !== 1)) return;
     const px = localPx(e);
     pointers.current.set(e.pointerId, px);
     viewportRef.current?.setPointerCapture(e.pointerId);
@@ -480,7 +469,7 @@ export function PlantingView() {
     function onKeyDown(e: KeyboardEvent) {
       if (typing(e)) return;
       const k = e.key.toLowerCase();
-      if (e.key === 'Meta' || e.key === 'Control' || e.key === 'Shift') return setModDown(true);
+      if (isSelectModifierKey(e.key)) return setModDown(true);
       if (hasMod(e)) {
         if (k === 'z') {
           e.preventDefault();
@@ -531,7 +520,7 @@ export function PlantingView() {
     }
     function onKeyUp(e: KeyboardEvent) {
       if (e.key === ' ') setSpaceDown(false);
-      if (e.key === 'Meta' || e.key === 'Control' || e.key === 'Shift') setModDown(false);
+      if (isSelectModifierKey(e.key)) setModDown(false);
     }
     const blur = () => {
       setSpaceDown(false);
@@ -659,6 +648,7 @@ export function PlantingView() {
             camera={camera}
             size={size}
             beds={beds}
+            lines={plan.lines}
             plants={drawn}
             selected={new Set(selection)}
             hoverId={hoverId}

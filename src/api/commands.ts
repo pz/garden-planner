@@ -1,4 +1,4 @@
-import type { Bed, BedShape, PlantInstance, Point, Profile } from '../types';
+import type { Bed, BedShape, GardenLine, PlantInstance, Point, Profile } from '../types';
 import type { PlantMove } from '../core/placement';
 import type { ApiError } from './types';
 
@@ -150,11 +150,24 @@ export interface RemoveBedCommand {
   type: 'removeBed';
   id: string;
 }
-/** Puts the beds and plants back as they were (the layout editor's undo). Leaves dismissals alone. */
+/** Puts the beds and plants (and, when given, the lines) back as they were (the layout editor's undo). Leaves dismissals alone. */
 export interface RestoreLayoutCommand {
   type: 'restoreLayout';
   beds: Bed[];
   plants: PlantInstance[];
+  lines?: GardenLine[];
+}
+/** Draws a straight line on the layout, in garden coordinates (inches). */
+export interface AddLineCommand {
+  type: 'addLine';
+  /** Normally generated. */
+  id?: string;
+  a: Point;
+  b: Point;
+}
+export interface RemoveLineCommand {
+  type: 'removeLine';
+  id: string;
 }
 export interface SetGardenNameCommand {
   type: 'setGardenName';
@@ -194,6 +207,8 @@ export type LayoutCommand =
   | PasteBedCommand
   | RemoveBedCommand
   | RestoreLayoutCommand
+  | AddLineCommand
+  | RemoveLineCommand
   | SetGardenNameCommand
   | SetNorthCommand
   | SetProfileCommand;
@@ -203,7 +218,7 @@ export type Command = PlantingCommand | LayoutCommand;
 export type CommandType = Command['type'];
 
 const LAYOUT_TYPES: ReadonlySet<string> = new Set<LayoutCommand['type']>([
-  'addBed', 'renameBed', 'moveBed', 'reshapeBed', 'rotateBed', 'pasteBed', 'removeBed', 'restoreLayout', 'setGardenName', 'setNorth', 'setProfile',
+  'addBed', 'renameBed', 'moveBed', 'reshapeBed', 'rotateBed', 'pasteBed', 'removeBed', 'restoreLayout', 'addLine', 'removeLine', 'setGardenName', 'setNorth', 'setProfile',
 ]);
 
 /** Whether a command only plants, moves, removes or annotates plants (what an agent may do), rather than changing beds or the profile. */
@@ -321,6 +336,7 @@ const bedObject = shaped(
   { points, cornerRadiusIn: num },
 );
 const plantObject = shaped({ id: str, bedId: str, cropId: str, groupId: str, x: num, y: num }, { variety: str });
+const lineObject = shaped({ id: str, a: point, b: point }, {});
 const profileObject = shaped(
   { zoneId: str, sunExposure: oneOf('full-sun', 'part-shade', 'shade'), onboarded: bool },
   { location: shaped({ lat: num, lng: num }, { label: text }) },
@@ -357,7 +373,9 @@ const SCHEMA: Record<CommandType, { required: Record<string, Check>; optional: R
   rotateBed: { required: { id: str, rotationDeg: num }, optional: {} },
   pasteBed: { required: { bed: bedObject, plants: arrayOf(plantObject) }, optional: {} },
   removeBed: { required: { id: str }, optional: {} },
-  restoreLayout: { required: { beds: arrayOf(bedObject), plants: arrayOf(plantObject) }, optional: {} },
+  restoreLayout: { required: { beds: arrayOf(bedObject), plants: arrayOf(plantObject) }, optional: { lines: arrayOf(lineObject) } },
+  addLine: { required: { a: point, b: point }, optional: { id: str } },
+  removeLine: { required: { id: str }, optional: {} },
   setGardenName: { required: { name: text }, optional: {} },
   setNorth: { required: { northDeg: num }, optional: {} },
   setProfile: { required: { profile: profileObject }, optional: {} },

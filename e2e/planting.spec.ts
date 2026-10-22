@@ -350,3 +350,41 @@ test.describe('shade and companion warnings', () => {
     await expect(page.getByText('! Usually kept apart')).toHaveCount(0);
   });
 });
+
+test.describe('crowded beds and modifier keys', () => {
+  test('a click plants even where a plant already is, and the spacing warning follows', async ({ page, garden }) => {
+    await garden.seed(gardenWith([{ id: 'a', cropId: 'tomato', x: 40, y: 24 }]));
+    await page.goto('/');
+    await arm(page, 'Tomato');
+    const at = await garden.bedPoint('bed-1', 54, 24); // clear of the tomato's hit area but well inside its spacing
+    await page.mouse.click(at.x, at.y);
+    expect((await garden.plan()).plants.map((p) => p.cropId)).toEqual(['tomato', 'tomato']);
+  });
+
+  test('the plant list can be pinned open, and stays pinned after a reload', async ({ page, garden }) => {
+    await garden.seed(gardenWith());
+    await page.goto('/');
+    const panel = page.getByRole('complementary', { name: 'Plants' });
+    expect((await panel.boundingBox())!.width).toBeLessThan(100);
+    await page.getByRole('button', { name: 'Keep plant list open' }).click();
+    await page.mouse.move(700, 600);
+    await page.waitForTimeout(300);
+    expect((await panel.boundingBox())!.width).toBeGreaterThan(200);
+    await page.reload();
+    await page.waitForTimeout(300);
+    expect((await panel.boundingBox())!.width).toBeGreaterThan(200);
+  });
+
+  test('Ctrl-dragging from outside every bed selects the plants it covers', async ({ page, garden }) => {
+    await garden.seed(gardenWith([{ id: 'a', cropId: 'kale', x: 20, y: 24 }, { id: 'b', cropId: 'kale', x: 80, y: 24 }]));
+    await page.goto('/');
+    const a = await garden.plantPoint('a');
+    const b = await garden.plantPoint('b');
+    await page.keyboard.down('Control');
+    await garden.drag({ x: a.x - 60, y: a.y - 200 }, { x: b.x + 60, y: b.y + 60 });
+    await page.keyboard.up('Control');
+    await expect(page.getByText(/2 plants|Kale/).first()).toBeVisible();
+    await page.keyboard.press('Delete');
+    expect((await garden.plan()).plants).toHaveLength(0);
+  });
+});

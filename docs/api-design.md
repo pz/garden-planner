@@ -103,7 +103,9 @@ Bed, layout and profile commands (not available to an agent-scoped request, see 
 | `reshapeBed` | `id, cx, cy, widthIn, heightIn, points?, cornerRadiusIn?` | Plants keep their place in the garden; any the new shape no longer contains are removed and listed in the result's `removed`. A polygon must be given its corners. Use `dryRun` to see `removed` before committing. |
 | `removeBed` | `id` | Its plants go too, listed in `removed`. |
 | `pasteBed` | `bed, plants` | A whole bed with its plants, all ids the caller's; plants must be inside it. |
-| `restoreLayout` | `beds, plants` | Puts the beds and plants back as they were (the layout editor's undo). Validated as a well-formed garden but lenient about where plants sit. |
+| `restoreLayout` | `beds, plants, lines?` | Puts the beds and plants (and the lines, when given) back as they were (the layout editor's undo). Validated as a well-formed garden but lenient about where plants sit. |
+| `addLine` | `a, b, id?` | Draws a straight line on the layout (garden inches). The two ends must differ. Result: `lineId`. |
+| `removeLine` | `id` | `unknown_id` if there is no such line. |
 | `setGardenName` / `setProfile` | `name` / `profile` | `setProfile` checks the zone and normalizes the location. |
 | `setNorth` | `northDeg` | Which way north points on the layout, degrees clockwise from straight up the screen; normalized to 0…360. Shade prediction reads it. |
 

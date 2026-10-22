@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { LAYOUT_HISTORY_LIMIT, popSnapshot, pushSnapshot, type LayoutSnapshot } from './layoutHistory';
 
 function snap(n: number): LayoutSnapshot {
-  return { beds: [{ id: `b${n}`, name: `Bed ${n}`, shape: 'rect', cx: 0, cy: 0, widthIn: 12, heightIn: 12, rotationDeg: 0 }], plants: [] };
+  return { beds: [{ id: `b${n}`, name: `Bed ${n}`, shape: 'rect', cx: 0, cy: 0, widthIn: 12, heightIn: 12, rotationDeg: 0 }], plants: [], lines: [] };
 }
 
 describe('pushSnapshot', () => {

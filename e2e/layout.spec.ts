@@ -139,3 +139,34 @@ test.describe('layout editor', () => {
     expect(editor.y + editor.height).toBeCloseTo(viewport.height, 0);
   });
 });
+
+test.describe('lines', () => {
+  test('the Line tool draws a line that is saved, can be selected and deleted, and undone', async ({ page, garden }) => {
+    await garden.seed(gardenWith());
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Edit layout' }).click();
+    const from = await insideBed(page);
+    await page.getByRole('button', { name: 'Line (L)' }).click();
+    await garden.drag(from, { x: from.x + 200, y: from.y });
+
+    const lines = (await garden.plan()).lines!;
+    expect(lines).toHaveLength(1);
+    expect(lines[0].b.y).toBe(lines[0].a.y);
+    expect(lines[0].b.x).toBeGreaterThan(lines[0].a.x);
+
+    await page.keyboard.press('Escape'); // back to Select
+    await page.locator('[data-line-id] line').nth(1).click({ force: true });
+    await page.keyboard.press('Delete');
+    expect((await garden.plan()).lines).toBeUndefined();
+
+    await page.keyboard.press('Control+z');
+    expect((await garden.plan()).lines).toHaveLength(1);
+  });
+
+  test('a line shows in the planting view too', async ({ page, garden }) => {
+    const plan = { ...gardenWith(), lines: [{ id: 'l1', a: { x: 0, y: 60 }, b: { x: 96, y: 60 } }] };
+    await garden.seed(plan);
+    await page.goto('/');
+    await expect(page.locator('[data-testid="garden-viewport"] svg line')).toHaveCount(1);
+  });
+});

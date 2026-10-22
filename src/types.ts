@@ -124,6 +124,13 @@ export interface Bed {
   cornerRadiusIn?: number;
 }
 
+/** A straight line drawn on the layout (a path, fence, hose…), in garden coordinates. */
+export interface GardenLine {
+  id: string;
+  a: Point;
+  b: Point;
+}
+
 export interface GardenPlan {
   version: 3;
   /** Identifies this garden among the user's saved gardens; also its localStorage key. */
@@ -138,6 +145,8 @@ export interface GardenPlan {
   northDeg?: number;
   beds: Bed[];
   plants: PlantInstance[];
+  /** Lines drawn on the layout. Absent means none. */
+  lines?: GardenLine[];
   /** Canonical (sorted, "::"-joined) groupId pairs whose overlap warning the user dismissed. */
   dismissedConflictKeys: string[];
   /** Ids of dismissed shade and companion warnings (spacing ones are in `dismissedConflictKeys`). Absent means none. */

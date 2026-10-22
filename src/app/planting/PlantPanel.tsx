@@ -4,7 +4,18 @@ import { Icon, type IconName } from '../components/Icon';
 import { PlantMark } from '../components/PlantMark';
 import { formatLength } from '../layoutInteraction';
 import { FAMILIES } from '../families';
+import { storageKey } from '../state/storageNamespace';
 import { MOD } from './keys';
+
+const PINNED_KEY = storageKey('planting-panel-pinned');
+
+function readPinned(): boolean {
+  try {
+    return localStorage.getItem(PINNED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 const COLLAPSED_W = 64;
 const EXPANDED_W = 256;
@@ -84,7 +95,17 @@ export function PlantPanel({
 }) {
   const [hover, setHover] = useState(false);
   const [query, setQuery] = useState('');
-  const open = hover;
+  const [pinned, setPinned] = useState(readPinned);
+  const open = hover || pinned;
+  const togglePin = () => {
+    const next = !pinned;
+    setPinned(next);
+    try {
+      localStorage.setItem(PINNED_KEY, next ? '1' : '');
+    } catch {
+      /* the choice just won't stick */
+    }
+  };
   const q = query.trim().toLowerCase();
   const groups = FAMILIES.map(({ family, label }) => ({
     label,
@@ -119,6 +140,9 @@ export function PlantPanel({
         </Row>
         <Row label="Undo" aria="Undo last change" hint={`${MOD}Z`} disabled={!canUndo} open={open} onClick={onUndo}>
           <Icon name="undo" size={18} />
+        </Row>
+        <Row label={pinned ? 'Unpin list' : 'Keep list open'} aria="Keep plant list open" active={pinned} open={open} height={34} onClick={togglePin}>
+          <Icon name="pin" size={16} />
         </Row>
       </div>
 

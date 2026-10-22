@@ -1,6 +1,7 @@
-import type { Bed, GardenPlan, PlantInstance, Profile } from '../types';
+import type { Bed, GardenLine, GardenPlan, PlantInstance, Profile } from '../types';
 import { findCrop } from '../data/crops';
 import { parseGardenLocation } from './location';
+import { cleanLines } from './lines';
 import { normalizeAngle, relocatePlants, type BedGeometry } from './layout';
 
 /** Template for a fresh garden; always used via createPlan so every garden gets its own id. */
@@ -101,7 +102,7 @@ export function parsePlan(raw: string | null, id: string, extraCropIds: Readonly
     const bedIds = new Set(parsed.beds.map((b) => b.id));
     // A plant of a user-made plant that has since been deleted has nothing to be drawn or spaced by.
     const plants = Array.isArray(parsed.plants) ? parsed.plants.filter((p) => bedIds.has(p.bedId) && (findCrop(p.cropId) || extraCropIds.has(p.cropId))) : [];
-    parsed = cleanDismissedWarnings({ ...parsed, id, plants });
+    parsed = withLines(cleanDismissedWarnings({ ...parsed, id, plants }), cleanLines(parsed.lines));
     // `northDeg` is optional and newer than v3 itself: a bad value falls back to north-up.
     if (parsed.northDeg !== undefined) {
       const { northDeg, ...rest } = parsed;
@@ -129,7 +130,10 @@ export type Action =
   | { type: 'rotateBed'; id: string; rotationDeg: number }
   | { type: 'pasteBed'; bed: Bed; plants: PlantInstance[] }
   | { type: 'removeBed'; id: string }
-  | { type: 'restoreLayout'; beds: Bed[]; plants: PlantInstance[] }
+  /** `lines` left out means the lines stay as they are. */
+  | { type: 'restoreLayout'; beds: Bed[]; plants: PlantInstance[]; lines?: GardenLine[] }
+  | { type: 'addLine'; line: GardenLine }
+  | { type: 'removeLine'; id: string }
   | { type: 'addPlants'; plants: PlantInstance[] }
   | { type: 'moveGroup'; groupId: string; dx: number; dy: number }
   /** Replaces the plants that have the same ids as these (moved, regrouped, …). */
@@ -141,6 +145,12 @@ export type Action =
   | { type: 'setConflictDismissed'; key: string; dismissed: boolean }
   | { type: 'setWarningDismissed'; id: string; dismissed: boolean }
   | { type: 'reset' };
+
+/** The plan with these lines; none at all means no `lines` key, like a garden that never had any. */
+function withLines(state: GardenPlan, lines: GardenLine[]): GardenPlan {
+  const { lines: _old, ...rest } = state;
+  return lines.length ? { ...rest, lines } : rest;
+}
 
 export function reducer(state: GardenPlan, action: Action): GardenPlan {
   switch (action.type) {
@@ -198,8 +208,15 @@ export function reducer(state: GardenPlan, action: Action): GardenPlan {
         beds: state.beds.filter((b) => b.id !== action.id),
         plants: state.plants.filter((p) => p.bedId !== action.id),
       };
-    case 'restoreLayout':
-      return { ...state, beds: action.beds, plants: action.plants };
+    case 'restoreLayout': {
+      const next = { ...state, beds: action.beds, plants: action.plants };
+      return action.lines === undefined ? next : withLines(next, action.lines);
+    }
+    case 'addLine':
+      return withLines(state, [...(state.lines ?? []), action.line]);
+    case 'removeLine':
+      if (!state.lines?.some((l) => l.id === action.id)) return state;
+      return withLines(state, state.lines.filter((l) => l.id !== action.id));
     case 'addPlants':
       return { ...state, plants: [...state.plants, ...action.plants] };
     case 'moveGroup':

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useGarden } from '../state/gardenStore';
 import { popSnapshot, pushSnapshot, type LayoutSnapshot } from '../state/layoutHistory';
 import { storageKey } from '../state/storageNamespace';
@@ -32,7 +32,7 @@ const C = {
 const FIT_INSETS: Insets = { left: 80, right: 330, top: 40, bottom: 110 };
 const HELP_HIDDEN_KEY = storageKey('garden-planner-layout-help-hidden');
 
-type Tool = 'select' | 'rect' | 'ellipse' | 'polygon';
+type Tool = 'select' | 'rect' | 'ellipse' | 'polygon' | 'line';
 
 
 type Drag =
@@ -41,7 +41,8 @@ type Drag =
   | { kind: 'resize'; bedId: string; handle: Handle; draft: Bed; guides: Guide[] }
   | { kind: 'corner'; bedId: string; index: number; draft: Bed }
   | { kind: 'rotate'; bedId: string; rotationDeg: number }
-  | { kind: 'draw'; a: Point; b: Point };
+  | { kind: 'draw'; a: Point; b: Point }
+  | { kind: 'line'; a: Point; b: Point };
 
 type Pending =
   | { kind: 'resize'; bedId: string; draft: Bed; plantIds: string[]; change: 'size' | 'corner' | 'radius' }
@@ -72,6 +73,7 @@ const SHORTCUTS: [string, string][] = [
   ['R', 'Rectangle'],
   ['E', 'Ellipse'],
   ['P', 'Polygon'],
+  ['L', 'Line'],
   ['Space + drag', 'Pan'],
   [`${MOD}scroll`, 'Zoom'],
   ['0', 'Fit'],
@@ -100,8 +102,9 @@ function isTyping(target: EventTarget | null): boolean {
 }
 
 export function LayoutEditor() {
-  const { plan, setNorth, addBed, renameBed, moveBed, reshapeBed, rotateBed, pasteBed, removeBed, restoreLayout } = useGarden();
+  const { plan, setNorth, addBed, renameBed, moveBed, reshapeBed, rotateBed, pasteBed, removeBed, restoreLayout, addLine, removeLine } = useGarden();
   const { beds, plants } = plan;
+  const lines = useMemo(() => plan.lines ?? [], [plan.lines]);
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -109,6 +112,7 @@ export function LayoutEditor() {
   const [view, setView] = useState<View | null>(null);
   const [tool, setTool] = useState<Tool>('select');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
@@ -127,6 +131,7 @@ export function LayoutEditor() {
   const [editingNameId, setEditingNameId] = useState<string | null>(null);
 
   const selected = beds.find((b) => b.id === selectedId) ?? null;
+  const selectedLine = lines.find((l) => l.id === selectedLineId) ?? null;
 
   const fit = useCallback(() => {
     if (size) setView(fitView(gardenBounds(beds), size.w, size.h, FIT_INSETS));
@@ -191,7 +196,7 @@ export function LayoutEditor() {
 
   /** Records the current layout as an undo step, then applies an edit. */
   function commit(edit: () => void) {
-    setHistory((h) => pushSnapshot(h, { beds, plants }));
+    setHistory((h) => pushSnapshot(h, { beds, plants, lines }));
     edit();
   }
 
@@ -199,10 +204,11 @@ export function LayoutEditor() {
     if (pending) return;
     const popped = popSnapshot(history);
     if (!popped) return;
-    restoreLayout(popped.snapshot.beds, popped.snapshot.plants);
+    restoreLayout(popped.snapshot.beds, popped.snapshot.plants, popped.snapshot.lines);
     setHistory(popped.rest);
+    if (selectedLineId && !popped.snapshot.lines.some((l) => l.id === selectedLineId)) setSelectedLineId(null);
     if (selectedId && !popped.snapshot.beds.some((b) => b.id === selectedId)) setSelectedId(null);
-  }, [pending, history, restoreLayout, selectedId]);
+  }, [pending, history, restoreLayout, selectedId, selectedLineId]);
 
   /** Applies a new size/position, asking first if it would leave plants outside the bed. */
   function applyGeometry(bed: Bed, draft: Bed, change: 'size' | 'corner' | 'radius' = 'size') {
@@ -257,7 +263,10 @@ export function LayoutEditor() {
     setTool(t);
     setCursor(null);
     setCorners([]);
-    if (t !== 'select') setSelectedId(null);
+    if (t !== 'select') {
+      setSelectedId(null);
+      setSelectedLineId(null);
+    }
   }
 
   /** Turns the corners placed so far into a polygon bed, or drops them if they don't make one. */
@@ -343,10 +352,15 @@ export function LayoutEditor() {
       if (corners.length) setCorners([]);
       else {
         setSelectedId(null);
+        setSelectedLineId(null);
         pickTool('select');
       }
     } else if (e.key === 'Enter' && tool === 'polygon') {
       finishPolygon();
+    } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedLine) {
+      e.preventDefault();
+      commit(() => removeLine(selectedLine.id));
+      setSelectedLineId(null);
     } else if ((e.key === 'Delete' || e.key === 'Backspace') && selected) {
       e.preventDefault();
       requestDelete(selected);
@@ -354,6 +368,7 @@ export function LayoutEditor() {
     else if (e.key === 'r' || e.key === 'R') pickTool('rect');
     else if (e.key === 'e' || e.key === 'E') pickTool('ellipse');
     else if (e.key === 'p' || e.key === 'P') pickTool('polygon');
+    else if (e.key === 'l' || e.key === 'L') pickTool('line');
     else if (selected && e.key.startsWith('Arrow')) {
       e.preventDefault();
       const step = e.shiftKey ? 1 : LAYOUT_SNAP_IN;
@@ -397,6 +412,7 @@ export function LayoutEditor() {
     if (!p) return;
     const snapped = { x: snapTo(p.x), y: snapTo(p.y) };
     setSelectedId(null);
+    if (tool === 'line') return setDrag({ kind: 'line', a: snapped, b: snapped });
     if (tool === 'polygon') {
       // Polygons are clicked out corner by corner rather than dragged.
       if (closesPolygon(corners, snapped, view.zoom)) {
@@ -417,6 +433,7 @@ export function LayoutEditor() {
     if (!p) return;
     capture(e);
     setSelectedId(bed.id);
+    setSelectedLineId(null);
     setDrag({ kind: 'move', bedId: bed.id, start: p, dx: 0, dy: 0, guides: [] });
   }
 
@@ -474,7 +491,7 @@ export function LayoutEditor() {
       }
       return;
     }
-    if (drag.kind === 'draw') {
+    if (drag.kind === 'draw' || drag.kind === 'line') {
       setDrag({ ...drag, b: { x: snapTo(p.x), y: snapTo(p.y) } });
       setCursor({ x: snapTo(p.x), y: snapTo(p.y) });
     } else if (drag.kind === 'move') {
@@ -508,7 +525,15 @@ export function LayoutEditor() {
     setDrag(null);
     if (!d) return;
     if (d.kind === 'pan') {
-      if (d.deselectOnClick && !d.moved) setSelectedId(null);
+      if (d.deselectOnClick && !d.moved) {
+        setSelectedId(null);
+        setSelectedLineId(null);
+      }
+    } else if (d.kind === 'line') {
+      setCursor(null);
+      if (d.a.x === d.b.x && d.a.y === d.b.y) return;
+      const id = crypto.randomUUID();
+      commit(() => addLine({ id, a: d.a, b: d.b }));
     } else if (d.kind === 'draw') {
       const geometry = rectFromCorners(d.a, d.b);
       setCursor(null);
@@ -644,7 +669,11 @@ export function LayoutEditor() {
     drag?.kind === 'pan' && drag.moved ? 'grabbing' : spaceHeld ? 'grab' : tool !== 'select' ? 'crosshair' : 'default';
 
   const hint =
-    tool === 'rect'
+    tool === 'line'
+      ? `Drag to draw a line (a path, fence or hose). Ends snap to ${formatLength(LAYOUT_SNAP_IN)}. Esc when done.`
+      : selectedLine
+        ? 'Press Delete to remove the line.'
+        : tool === 'rect'
       ? `Drag to draw a bed. Sides snap to ${formatLength(LAYOUT_SNAP_IN)}.`
       : tool === 'ellipse'
         ? `Drag to draw an ellipse. Its box snaps to ${formatLength(LAYOUT_SNAP_IN)}.`
@@ -797,6 +826,37 @@ export function LayoutEditor() {
             );
           })}
 
+
+          {lines.map((l) => {
+            const isSel = l.id === selectedLineId;
+            const pickable = tool === 'select' && !pending && !spaceHeld;
+            return (
+              <g key={l.id} data-line-id={l.id}>
+                <line x1={l.a.x} y1={l.a.y} x2={l.b.x} y2={l.b.y} style={{ stroke: isSel ? 'var(--color-accent)' : C.muted, strokeWidth: px(isSel ? 3.5 : 2.5), strokeLinecap: 'round', pointerEvents: 'none' }} />
+                <line
+                  x1={l.a.x}
+                  y1={l.a.y}
+                  x2={l.b.x}
+                  y2={l.b.y}
+                  onPointerDown={(e) => {
+                    if (!pickable || e.button !== 0) return;
+                    e.stopPropagation();
+                    setSelectedId(null);
+                    setSelectedLineId(l.id);
+                  }}
+                  style={{ stroke: 'transparent', strokeWidth: px(14), pointerEvents: pickable ? 'stroke' : 'none', cursor: pickable ? 'pointer' : undefined }}
+                />
+              </g>
+            );
+          })}
+          {selectedLine && edgePills('line-sel', [selectedLine.a, selectedLine.b], false, true)}
+          {drag?.kind === 'line' && (
+            <g style={{ pointerEvents: 'none' }}>
+              <line x1={drag.a.x} y1={drag.a.y} x2={drag.b.x} y2={drag.b.y} style={{ stroke: 'var(--color-accent)', strokeWidth: px(2.5), strokeLinecap: 'round' }} />
+              <circle cx={drag.a.x} cy={drag.a.y} r={px(4.5)} style={{ fill: 'var(--color-accent)' }} />
+              {edgePills('line-draw', [drag.a, drag.b], false, true)}
+            </g>
+          )}
 
           {beds.flatMap((bed) => {
             const isSel = bed.id === selectedId;
@@ -1009,6 +1069,7 @@ export function LayoutEditor() {
         <ToolButton icon="rect" title="Rectangle bed (R)" active={tool === 'rect'} onClick={() => pickTool('rect')} />
         <ToolButton icon="ellipse" title="Ellipse bed (E)" active={tool === 'ellipse'} onClick={() => pickTool('ellipse')} />
         <ToolButton icon="polygon" title="Polygon bed (P)" active={tool === 'polygon'} onClick={() => pickTool('polygon')} />
+        <ToolButton icon="line" title="Line (L)" active={tool === 'line'} onClick={() => pickTool('line')} />
         <div style={{ height: 8 }} />
         <ToolButton icon="undo" title={`Undo (${MOD}Z)`} disabled={!history.length || !!pending} onClick={undo} />
       </div>

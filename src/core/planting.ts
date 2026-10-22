@@ -33,6 +33,34 @@ export function canPlantAt(p: Point, r: number, outline: Outline, existing: Pick
   return isInsideOutline(p, outline) && !isOccupied(p, r, existing);
 }
 
+/**
+ * The spots a brush stroke has covered once it reaches `to`: `spots` so far, plus each grid node
+ * between `from` and `to` that is inside the bed and not on a plant (an existing one or one
+ * painted already). The exception is the node the stroke began on (`anchor`): the gardener
+ * pressed exactly there, so it is planted even if it is crowded — the spacing warnings then say
+ * so — rather than the press doing nothing.
+ */
+export function extendStroke(
+  spots: Point[],
+  anchor: Point,
+  from: Point,
+  to: Point,
+  r: number,
+  outline: Outline,
+  existing: Pick<Disc, 'x' | 'y' | 'r'>[],
+): Point[] {
+  const next = [...spots];
+  const painted = next.map((s) => ({ x: s.x, y: s.y, r }));
+  for (const s of brushSpots(anchor, from, to, r * 2)) {
+    const first = s.x === anchor.x && s.y === anchor.y && next.length === 0;
+    const ok = first ? isInsideOutline(s, outline) : canPlantAt(s, r, outline, [...existing, ...painted]);
+    if (!ok) continue;
+    next.push(s);
+    painted.push({ x: s.x, y: s.y, r });
+  }
+  return next;
+}
+
 /** The grid of spacing `spacing` that passes through `anchor`, and the node of it nearest `p`. */
 export function snapToGrid(p: Point, anchor: Point, spacing: number): Point {
   return {

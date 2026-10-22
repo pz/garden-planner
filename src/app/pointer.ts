@@ -1,10 +1,11 @@
 /**
- * Whether a press is a "context click": a secondary-button press, or on macOS a Ctrl-click, which
- * the browser reports as the primary button with ctrlKey held and follows with a contextmenu
+ * Whether a press is a "context click": a secondary-button press, or on macOS (`mac`) a Ctrl-click,
+ * which the browser reports as the primary button with ctrlKey held and follows with a contextmenu
  * event. Context clicks open the plant menu; they must never start a pan, drag or long-press.
+ * Elsewhere Ctrl-click is no context click (nothing follows it), it is the select-more modifier.
  */
-export function isContextPress(e: { button: number; ctrlKey: boolean }): boolean {
-  return e.button === 2 || (e.button === 0 && e.ctrlKey);
+export function isContextPress(e: { button: number; ctrlKey: boolean }, mac: boolean): boolean {
+  return e.button === 2 || (mac && e.button === 0 && e.ctrlKey);
 }
 
 /**

@@ -1,5 +1,5 @@
 import { memo, type ReactNode } from 'react';
-import type { Bed, CropLook, Point } from '../../types';
+import type { Bed, CropLook, GardenLine, Point } from '../../types';
 import { findCrop } from '../../data/crops';
 import { bedOutline, drawnCornerRadius } from '../../core/layout';
 import { extent, type Disc } from '../../core/planting';
@@ -37,6 +37,8 @@ export interface GardenSvgProps {
   camera: View;
   size: { w: number; h: number };
   beds: Bed[];
+  /** Lines drawn on the layout; shown here, edited in the layout editor. */
+  lines?: GardenLine[];
   plants: DrawnPlant[];
   selected: ReadonlySet<string>;
   hoverId: string | null;
@@ -156,6 +158,10 @@ export function GardenSvg(p: GardenSvgProps) {
           </g>
         );
       })}
+
+      {p.lines?.map((l) => (
+        <line key={l.id} x1={l.a.x} y1={l.a.y} x2={l.b.x} y2={l.b.y} stroke="var(--color-neutral-600)" strokeWidth={px(2.5)} strokeLinecap="round" />
+      ))}
 
       {patches}
 

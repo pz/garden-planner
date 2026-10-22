@@ -6,6 +6,7 @@ import {
   canPlantAt,
   centroid,
   extent,
+  extendStroke,
   hitPlant,
   isOccupied,
   marqueeSelect,
@@ -146,5 +147,25 @@ describe('centroid and extent', () => {
   it('wraps the rings of plants, and is null for none', () => {
     expect(extent([disc('a', 0, 0, 2), disc('b', 10, 4, 3)])).toEqual({ x0: -2, y0: -2, x1: 13, y1: 7 });
     expect(extent([])).toBeNull();
+  });
+});
+
+describe('extendStroke', () => {
+  const outline = rectOutline(100, 100);
+  const r = 6;
+
+  it('plants the press even when an existing plant is on it', () => {
+    const crowded = [{ x: 50, y: 50, r }];
+    expect(extendStroke([], { x: 50, y: 50 }, { x: 50, y: 50 }, { x: 50, y: 50 }, r, outline, crowded)).toEqual([{ x: 50, y: 50 }]);
+  });
+  it('still keeps the press inside the bed', () => {
+    expect(extendStroke([], { x: 101, y: 50 }, { x: 101, y: 50 }, { x: 101, y: 50 }, r, outline, [])).toEqual([]);
+  });
+  it('skips crowded nodes later in the stroke and never lists a node twice', () => {
+    const first = extendStroke([], { x: 20, y: 20 }, { x: 20, y: 20 }, { x: 20, y: 20 }, r, outline, []);
+    const again = extendStroke(first, { x: 20, y: 20 }, { x: 20, y: 20 }, { x: 20, y: 20 }, r, outline, []);
+    expect(again).toEqual(first);
+    const blocked = extendStroke(first, { x: 20, y: 20 }, { x: 20, y: 20 }, { x: 32, y: 20 }, r, outline, [{ x: 32, y: 20, r }]);
+    expect(blocked).toEqual([{ x: 20, y: 20 }]);
   });
 });

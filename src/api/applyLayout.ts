@@ -1,12 +1,13 @@
 import { findCrop } from '../data/crops';
 import { ZONES } from '../data/zones';
-import type { Bed, PlantInstance, Profile } from '../types';
+import type { Bed, GardenLine, PlantInstance, Profile } from '../types';
 import { clampToOutline, isInsideOutline } from '../core/geometry';
 import { bedOutline, bedProblems, nextBedName, relocatePlants, type BedGeometry } from '../core/layout';
 import { parseGardenLocation } from '../core/location';
 import type { Action } from '../core/reducer';
 import { validatePlan } from '../core/validatePlan';
-import type { LayoutCommand, PasteBedCommand, ReshapeBedCommand, RestoreLayoutCommand, SetProfileCommand } from './commands';
+import { isValidLine } from '../core/lines';
+import type { AddLineCommand, LayoutCommand, PasteBedCommand, ReshapeBedCommand, RestoreLayoutCommand, SetProfileCommand } from './commands';
 import { fmt, round, type Ctx, type Outcome } from './applyShared';
 
 function bedById(ctx: Ctx, id: string, field = 'id'): Bed | null {
@@ -90,12 +91,26 @@ function pasteBed(ctx: Ctx, c: PasteBedCommand): Outcome {
  * must still be a well-formed garden: known beds and crops, unique ids, finite positions.
  */
 function restoreLayout(ctx: Ctx, c: RestoreLayoutCommand): Outcome {
-  const problems = validatePlan({ ...ctx.plan, beds: c.beds, plants: c.plants });
+  const problems = validatePlan({ ...ctx.plan, beds: c.beds, plants: c.plants, ...(c.lines ? { lines: c.lines } : {}) });
   for (const p of problems) {
     ctx.report({ code: p.code === 'invalid_garden_file' ? 'invalid_command' : p.code, path: `${ctx.at}${p.path}`, message: `The layout to restore isn't valid: ${p.message}.` });
   }
   if (problems.length) return null;
-  return { actions: [{ type: 'restoreLayout', beds: c.beds, plants: c.plants }], result: { type: 'restoreLayout' } };
+  return { actions: [{ type: 'restoreLayout', beds: c.beds, plants: c.plants, ...(c.lines ? { lines: c.lines } : {}) }], result: { type: 'restoreLayout' } };
+}
+
+function addLine(ctx: Ctx, c: AddLineCommand): Outcome {
+  const id = c.id ?? ctx.newId();
+  const line: GardenLine = { id, a: { x: c.a.x, y: c.a.y }, b: { x: c.b.x, y: c.b.y } };
+  if (!isValidLine(line)) {
+    ctx.report({ code: 'invalid_command', path: ctx.at, message: 'A line needs two different end points.' });
+    return null;
+  }
+  if (ctx.plan.lines?.some((l) => l.id === id)) {
+    ctx.report({ code: 'duplicate_id', path: `${ctx.at}/id`, message: `A line with id "${id}" already exists.`, details: { lineId: id } });
+    return null;
+  }
+  return { actions: [{ type: 'addLine', line }], result: { type: 'addLine', lineId: id } };
 }
 
 function setProfile(ctx: Ctx, c: SetProfileCommand): Outcome {
@@ -166,6 +181,13 @@ export function applyLayoutCommand(ctx: Ctx, c: LayoutCommand): Outcome {
       return pasteBed(ctx, c);
     case 'restoreLayout':
       return restoreLayout(ctx, c);
+    case 'addLine':
+      return addLine(ctx, c);
+    case 'removeLine': {
+      if (ctx.plan.lines?.some((l) => l.id === c.id)) return { actions: [{ type: 'removeLine', id: c.id }], result: { type: 'removeLine', lineId: c.id } };
+      ctx.report({ code: 'unknown_id', path: `${ctx.at}/id`, message: `There is no line with id "${c.id}".`, details: { lineId: c.id } });
+      return null;
+    }
     case 'setGardenName':
       return { actions: [{ type: 'setGardenName', name: c.name }], result: { type: 'setGardenName' } };
     case 'setNorth':
