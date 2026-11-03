@@ -100,6 +100,7 @@ Bed, layout and profile commands (not available to an agent-scoped request, see 
 | `addBed` | `id?, name?, shape, cx, cy, widthIn, heightIn, rotationDeg?, points?, cornerRadiusIn?` | `name` defaults to "Bed N", `id` is generated. The bed must pass `bedProblems`: sides of at least 12 in, a polygon's corners inside its box and enclosing area, `points` only on polygons, a corner radius only on rectangles and no more than they can curve. Each problem is its own `invalid_bed` error. |
 | `renameBed` | `id, name` | |
 | `moveBed` / `rotateBed` | `id, dx, dy` / `id, rotationDeg` | Plants are bed-local, so they come along untouched. |
+| `setLabelShift` | `id, shift` | Moves a bed's name `shift` ({x, y} inches, garden axes) from its default place so labels don't collide; `null` puts it back. It travels with the bed when the bed moves. |
 | `reshapeBed` | `id, cx, cy, widthIn, heightIn, points?, cornerRadiusIn?` | Plants keep their place in the garden; any the new shape no longer contains are removed and listed in the result's `removed`. A polygon must be given its corners. Use `dryRun` to see `removed` before committing. |
 | `removeBed` | `id` | Its plants go too, listed in `removed`. |
 | `pasteBed` | `bed, plants` | A whole bed with its plants, all ids the caller's; plants must be inside it. |

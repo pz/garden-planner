@@ -6,7 +6,7 @@ import { extent, type Disc } from '../../core/planting';
 import { radiusOf } from '../../core/placement';
 import { CROP_COLORS } from '../components/PlantMark';
 import { SpriteArt, hasSprite } from '../components/PlantSprite';
-import { labelAnchor } from '../layoutInteraction';
+import { labelPosition } from '../layoutInteraction';
 import { spriteRotation } from '../spriteGeometry';
 import type { View } from '../viewport';
 
@@ -138,7 +138,7 @@ export function GardenSvg(p: GardenSvgProps) {
       </defs>
 
       {p.beds.map((bed) => {
-        const label = labelAnchor(bed);
+        const label = labelPosition(bed);
         return (
           <g key={bed.id}>
             <g transform={bedTransform(bed)}>

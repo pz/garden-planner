@@ -165,6 +165,10 @@ export function applyLayoutCommand(ctx: Ctx, c: LayoutCommand): Outcome {
       const bed = bedById(ctx, c.id);
       return bed ? { actions: [{ type: 'moveBed', id: bed.id, dx: c.dx, dy: c.dy }], result: { type: 'moveBed', bedId: bed.id } } : null;
     }
+    case 'setLabelShift': {
+      const bed = bedById(ctx, c.id);
+      return bed ? { actions: [{ type: 'setLabelShift', id: bed.id, shift: c.shift }], result: { type: 'setLabelShift', bedId: bed.id } } : null;
+    }
     case 'rotateBed': {
       const bed = bedById(ctx, c.id);
       return bed ? { actions: [{ type: 'rotateBed', id: bed.id, rotationDeg: c.rotationDeg }], result: { type: 'rotateBed', bedId: bed.id } } : null;

@@ -30,6 +30,31 @@ test.describe('layout editor', () => {
     expect(after.plants).toEqual(before.plants);
   });
 
+  test('dragging a bed name moves only the name; a plain click still edits it', async ({ page, garden }) => {
+    await garden.seed(planted());
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Edit layout' }).click();
+    const before = await garden.plan();
+    const name = page.locator('[data-bed-name]');
+    const box = (await name.boundingBox())!;
+    const from = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    await garden.drag(from, { x: from.x + 80, y: from.y - 40 });
+
+    const after = await garden.plan();
+    expect(after.beds[0].labelShift!.x).toBeGreaterThan(0);
+    expect(after.beds[0].labelShift!.y).toBeLessThan(0);
+    expect({ ...after.beds[0], labelShift: undefined }).toEqual({ ...before.beds[0], labelShift: undefined });
+    const moved = (await name.boundingBox())!;
+    expect(moved.x).toBeGreaterThan(box.x + 40);
+
+    // Reset puts it back; a click without moving opens the name editor.
+    await page.getByRole('button', { name: 'Reset name position' }).click();
+    expect((await garden.plan()).beds[0].labelShift).toBeUndefined();
+    const home = (await name.boundingBox())!;
+    await page.mouse.click(home.x + home.width / 2, home.y + home.height / 2);
+    await expect(page.getByRole('textbox').first()).toBeFocused();
+  });
+
   test('widening a bed keeps plants where they were in the garden', async ({ page, garden }) => {
     await garden.seed(planted());
     await page.goto('/');

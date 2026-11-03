@@ -155,6 +155,20 @@ describe('reshapeBed', () => {
   });
 });
 
+describe('setLabelShift', () => {
+  it('shifts a bed\'s name and clears it again with null', () => {
+    const moved = ok(apply(planWith(), [{ type: 'setLabelShift', id: 'bed-1', shift: { x: 10, y: -20 } }]));
+    expect(moved.plan.beds[0].labelShift).toEqual({ x: 10, y: -20 });
+    expect(moved.results[0]).toEqual({ type: 'setLabelShift', bedId: 'bed-1' });
+    const cleared = ok(apply(moved.plan, [{ type: 'setLabelShift', id: 'bed-1', shift: null }]));
+    expect(cleared.plan.beds[0].labelShift).toBeUndefined();
+  });
+
+  it('is an unknown_bed error for a bed that does not exist', () => {
+    expect(codes(apply(planWith(), [{ type: 'setLabelShift', id: 'x', shift: null }]))).toEqual(['unknown_bed']);
+  });
+});
+
 describe('removeBed', () => {
   it('removes the bed and its plants, reports them, and leaves the other bed alone', () => {
     const plan = planWith([plant('a'), plant('b'), plant('c', { bedId: 'bed-2' })], [bed2]);

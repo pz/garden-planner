@@ -7,6 +7,8 @@ import {
   edgeLabels,
   formatLength,
   labelAnchor,
+  labelPosition,
+  dragLabel,
   labelOffset,
   magneticAngle,
   moveCorner,
@@ -474,6 +476,21 @@ describe('resizeSnapped', () => {
     const r = resizeSnapped(bed(), { sx: 1, sy: 0 }, { x: 139, y: 0 }, { xs: [140], ys: [] }, { zoom: 7, free: true });
     expect(r.bed.widthIn).toBe(139);
     expect(r.guides).toEqual([]);
+  });
+});
+
+describe('labelPosition and dragLabel', () => {
+  it('is the default anchor until the name is shifted, then moves by the shift', () => {
+    expect(labelPosition(bed())).toEqual(labelAnchor(bed()));
+    expect(labelPosition(bed({ labelShift: { x: 10, y: -4 } }))).toEqual({ x: 10, y: -4, align: 'start' });
+  });
+
+  it('adds a drag to the existing shift by the inch, and a drag back to nothing clears it', () => {
+    const once = dragLabel(bed(), 10.4, -3.6);
+    expect(once.labelShift).toEqual({ x: 10, y: -4 });
+    expect(dragLabel(once, 5, 0).labelShift).toEqual({ x: 15, y: -4 });
+    expect('labelShift' in dragLabel(once, -10, 4)).toBe(false);
+    expect('labelShift' in dragLabel(bed(), 0.4, -0.4)).toBe(false);
   });
 });
 

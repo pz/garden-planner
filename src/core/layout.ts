@@ -292,6 +292,9 @@ export function bedProblems(bed: Bed): string[] {
   } else if (bed.points !== undefined) {
     problems.push('only a polygon has corner points');
   }
+  if (bed.labelShift !== undefined && !(finite(bed.labelShift?.x) && finite(bed.labelShift?.y))) {
+    problems.push('its label shift must be a point of finite numbers');
+  }
   if (bed.cornerRadiusIn !== undefined) {
     if (bed.shape !== 'rect') problems.push('only a rectangle has rounded corners');
     else if (!finite(bed.cornerRadiusIn) || bed.cornerRadiusIn < 0) problems.push('its corner radius must be zero or more');

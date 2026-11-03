@@ -1,4 +1,4 @@
-import type { Bed, GardenLine, GardenPlan, PlantInstance, Profile } from '../types';
+import type { Bed, GardenLine, GardenPlan, PlantInstance, Point, Profile } from '../types';
 import { findCrop } from '../data/crops';
 import { parseGardenLocation } from './location';
 import { cleanLines } from './lines';
@@ -74,6 +74,15 @@ export function isValidBed(b: unknown): b is Bed {
   return true;
 }
 
+/** `labelShift` is optional and newer than v3 itself: a malformed one just puts the name back in its default place. */
+function cleanLabelShift(bed: Bed): Bed {
+  const { labelShift, ...rest } = bed;
+  if (labelShift === undefined) return bed;
+  return typeof labelShift === 'object' && labelShift !== null && isNum(labelShift.x) && isNum(labelShift.y)
+    ? { ...rest, labelShift: { x: labelShift.x, y: labelShift.y } }
+    : rest;
+}
+
 /** `dismissedWarnings` is optional and newer than v3 itself: keep it only if it is a list of strings. */
 function cleanDismissedWarnings(plan: GardenPlan): GardenPlan {
   const { dismissedWarnings, ...rest } = plan;
@@ -98,7 +107,7 @@ export function parsePlan(raw: string | null, id: string, extraCropIds: Readonly
     else if (stored?.version === 3) parsed = stored as GardenPlan;
     else return createPlan(id);
     if (!parsed || !Array.isArray(parsed.beds)) return createPlan(id);
-    parsed = { ...parsed, beds: parsed.beds.filter(isValidBed) };
+    parsed = { ...parsed, beds: parsed.beds.filter(isValidBed).map(cleanLabelShift) };
     const bedIds = new Set(parsed.beds.map((b) => b.id));
     // A plant of a user-made plant that has since been deleted has nothing to be drawn or spaced by.
     const plants = Array.isArray(parsed.plants) ? parsed.plants.filter((p) => bedIds.has(p.bedId) && (findCrop(p.cropId) || extraCropIds.has(p.cropId))) : [];
@@ -126,6 +135,8 @@ export type Action =
   | { type: 'addBed'; bed: Bed }
   | { type: 'renameBed'; id: string; name: string }
   | { type: 'moveBed'; id: string; dx: number; dy: number }
+  /** `shift` is from the name's default place; null (or no shift at all) puts it back there. */
+  | { type: 'setLabelShift'; id: string; shift: Point | null }
   | { type: 'reshapeBed'; id: string; geometry: BedGeometry }
   | { type: 'rotateBed'; id: string; rotationDeg: number }
   | { type: 'pasteBed'; bed: Bed; plants: PlantInstance[] }
@@ -174,6 +185,15 @@ export function reducer(state: GardenPlan, action: Action): GardenPlan {
         ...state,
         beds: state.beds.map((b) => (b.id === action.id ? { ...b, cx: b.cx + action.dx, cy: b.cy + action.dy } : b)),
       };
+    case 'setLabelShift': {
+      const prev = state.beds.find((b) => b.id === action.id);
+      if (!prev) return state;
+      const shift = action.shift && (action.shift.x !== 0 || action.shift.y !== 0) ? { x: action.shift.x, y: action.shift.y } : null;
+      if (shift === null ? prev.labelShift === undefined : prev.labelShift?.x === shift.x && prev.labelShift.y === shift.y) return state;
+      const { labelShift: _old, ...rest } = prev;
+      const next: Bed = shift ? { ...rest, labelShift: shift } : rest; // no shift at all means the default place
+      return { ...state, beds: state.beds.map((b) => (b.id === action.id ? next : b)) };
+    }
     case 'reshapeBed': {
       // Plants stay where they are in the garden as the edges or corners move; any the bed no
       // longer covers are removed. (The editor confirms that with the user before dispatching.)

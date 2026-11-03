@@ -4,7 +4,7 @@ import { popSnapshot, pushSnapshot, type LayoutSnapshot } from '../state/layoutH
 import { storageKey } from '../state/storageNamespace';
 import type { Bed, PlantInstance } from '../../types';
 import type { Point } from '../../core/geometry';
-import { LAYOUT_SNAP_IN, boxBetween, closesPolygon, edgeLabels, formatLength, labelAnchor, labelOffset, moveCorner, parseAngle, parseLength, rectFromCorners, resizeCursor, resizeSnapped, magneticAngle, rotationFromPointer, alignTargets, moveSnapped, type Guide, stepAngle, type SnapOptions, snapTo } from '../layoutInteraction';
+import { LAYOUT_SNAP_IN, boxBetween, closesPolygon, edgeLabels, formatLength, labelPosition, dragLabel, labelOffset, moveCorner, parseAngle, parseLength, rectFromCorners, resizeCursor, resizeSnapped, magneticAngle, rotationFromPointer, alignTargets, moveSnapped, type Guide, stepAngle, type SnapOptions, snapTo } from '../layoutInteraction';
 import { ROTATION_STEP_DEG, bedToGarden, boxCorners, cloneBed, drawnCornerRadius, gardenBounds, geometryOf, nextBedName, normalizeCornerRadius, normalizeSide, plantSummary, polygonFromCorners, relocatePlants, resizeBedTo, type BedPlacement, type Handle } from '../../core/layout';
 import { fitView, gardenToScreen, isDrag, panBy, screenToGarden, wheelZoomFactor, zoomAt, zoomPercent, type Insets, type View } from '../viewport';
 import { CROP_COLORS } from './PlantMark';
@@ -38,6 +38,7 @@ type Tool = 'select' | 'rect' | 'ellipse' | 'polygon' | 'line';
 type Drag =
   | { kind: 'pan'; startX: number; startY: number; view0: View; moved: boolean; deselectOnClick: boolean }
   | { kind: 'move'; bedId: string; start: Point; dx: number; dy: number; guides: Guide[] }
+  | { kind: 'label'; bedId: string; start: Point; dx: number; dy: number; moved: boolean }
   | { kind: 'resize'; bedId: string; handle: Handle; draft: Bed; guides: Guide[] }
   | { kind: 'corner'; bedId: string; index: number; draft: Bed }
   | { kind: 'rotate'; bedId: string; rotationDeg: number }
@@ -102,7 +103,7 @@ function isTyping(target: EventTarget | null): boolean {
 }
 
 export function LayoutEditor() {
-  const { plan, setNorth, addBed, renameBed, moveBed, reshapeBed, rotateBed, pasteBed, removeBed, restoreLayout, addLine, removeLine } = useGarden();
+  const { plan, setNorth, addBed, renameBed, moveBed, setLabelShift, reshapeBed, rotateBed, pasteBed, removeBed, restoreLayout, addLine, removeLine } = useGarden();
   const { beds, plants } = plan;
   const lines = useMemo(() => plan.lines ?? [], [plan.lines]);
 
@@ -437,13 +438,19 @@ export function LayoutEditor() {
     setDrag({ kind: 'move', bedId: bed.id, start: p, dx: 0, dy: 0, guides: [] });
   }
 
-  /** Names are editable by clicking them, with the select tool. */
+  /** Names are editable by clicking them and movable by dragging them, with the select tool. */
   const nameEditable = tool === 'select' && !pending && !spaceHeld;
 
-  function onNameClick(e: React.MouseEvent, bed: Bed) {
+  function onNameDown(e: React.PointerEvent, bed: Bed) {
     if (!nameEditable || e.button !== 0) return;
+    // Stop the press here so it doesn't pan the canvas or deselect the bed.
+    e.stopPropagation();
+    const p = gardenPoint(e.clientX, e.clientY);
+    if (!p) return;
+    capture(e);
     setSelectedId(bed.id);
-    setEditingNameId(bed.id);
+    setSelectedLineId(null);
+    setDrag({ kind: 'label', bedId: bed.id, start: p, dx: 0, dy: 0, moved: false });
   }
 
   function finishNameEdit(bed: Bed, name: string | null) {
@@ -506,6 +513,11 @@ export function LayoutEditor() {
         snapOf(e),
       );
       setDrag({ ...drag, dx: moved.dx, dy: moved.dy, guides: moved.guides });
+    } else if (drag.kind === 'label') {
+      const dx = p.x - drag.start.x;
+      const dy = p.y - drag.start.y;
+      // A press that barely moves is a click (edit the name), not a drag.
+      setDrag({ ...drag, dx, dy, moved: drag.moved || isDrag(dx * (view?.zoom ?? 1), dy * (view?.zoom ?? 1)) });
     } else if (drag.kind === 'resize') {
       const bed = beds.find((b) => b.id === drag.bedId);
       if (!bed) return;
@@ -543,6 +555,12 @@ export function LayoutEditor() {
       commit(() => addBed(bed));
       setSelectedId(bed.id);
       setTool('select');
+    } else if (d.kind === 'label') {
+      const bed = beds.find((b) => b.id === d.bedId);
+      if (!bed) return;
+      if (!d.moved) return setEditingNameId(bed.id);
+      const shift = dragLabel(bed, d.dx, d.dy).labelShift ?? null;
+      commit(() => setLabelShift(bed.id, shift));
     } else if (d.kind === 'move') {
       if (d.dx !== 0 || d.dy !== 0) commit(() => moveBed(d.bedId, d.dx, d.dy));
     } else if (d.kind === 'resize') {
@@ -562,6 +580,7 @@ export function LayoutEditor() {
   /** A bed as it should look right now, with any in-progress drag or pending resize applied. */
   function displayed(bed: Bed): Bed {
     if (drag?.kind === 'move' && drag.bedId === bed.id) return { ...bed, cx: bed.cx + drag.dx, cy: bed.cy + drag.dy };
+    if (drag?.kind === 'label' && drag.moved && drag.bedId === bed.id) return dragLabel(bed, drag.dx, drag.dy);
     if ((drag?.kind === 'resize' || drag?.kind === 'corner') && drag.bedId === bed.id) return drag.draft;
     if (drag?.kind === 'rotate' && drag.bedId === bed.id) return { ...bed, rotationDeg: drag.rotationDeg };
     if (pending?.kind === 'resize' && pending.bedId === bed.id) return pending.draft;
@@ -803,7 +822,7 @@ export function LayoutEditor() {
 
           {beds.map((bed) => {
             if (bed.id === editingNameId) return null;
-            const at = labelAnchor(displayed(bed));
+            const at = labelPosition(displayed(bed));
             return (
               <text
                 key={`name-${bed.id}`}
@@ -811,14 +830,12 @@ export function LayoutEditor() {
                 y={at.y - px(7)}
                 textAnchor={at.align}
                 data-bed-name={bed.id}
-                // Stop the press here so it doesn't pan the canvas or deselect the bed.
-                onPointerDown={(e) => nameEditable && e.button === 0 && e.stopPropagation()}
-                onClick={(e) => onNameClick(e, bed)}
+                onPointerDown={(e) => onNameDown(e, bed)}
                 style={{
                   font: `600 ${px(12)}px Figtree`,
                   fill: C.muted,
                   pointerEvents: nameEditable ? 'all' : 'none',
-                  cursor: nameEditable ? 'text' : undefined,
+                  cursor: nameEditable ? (drag?.kind === 'label' && drag.moved ? 'grabbing' : 'grab') : undefined,
                 }}
               >
                 {bed.name}
@@ -1035,7 +1052,7 @@ export function LayoutEditor() {
         (() => {
           const bed = beds.find((b) => b.id === editingNameId);
           if (!bed) return null;
-          const anchor = labelAnchor(displayed(bed));
+          const anchor = labelPosition(displayed(bed));
           const at = gardenToScreen(view, anchor);
           const centered = anchor.align === 'middle';
           return (
@@ -1182,6 +1199,7 @@ export function LayoutEditor() {
             onSize={(w, h) => setSizeFromPanel(selected, w, h)}
             onRadius={(r) => setRadiusFromPanel(selected, r)}
             onRotate={(deg) => setRotation(selected, deg)}
+            onResetLabel={() => commit(() => setLabelShift(selected.id, null))}
             onDelete={() => requestDelete(selected)}
           />
         ) : (
@@ -1375,6 +1393,7 @@ function BedPanel({
   onSize,
   onRadius,
   onRotate,
+  onResetLabel,
   onDelete,
 }: {
   bed: Bed;
@@ -1384,6 +1403,7 @@ function BedPanel({
   onSize: (widthIn: number, heightIn: number) => void;
   onRadius: (inches: number) => void;
   onRotate: (deg: number) => void;
+  onResetLabel: () => void;
   onDelete: () => void;
 }) {
   const nameRef = useRef<HTMLInputElement>(null);
@@ -1506,6 +1526,11 @@ function BedPanel({
             up={{ icon: 'cw', title: `Rotate right ${ROTATION_STEP_DEG}°`, onClick: () => onRotate(stepAngle(bed.rotationDeg, 1)) }}
           />
         </div>
+        {bed.labelShift && (
+          <button className="btn btn-secondary" onClick={onResetLabel} style={{ width: '100%', justifyContent: 'center' }}>
+            Reset name position
+          </button>
+        )}
         <p style={{ font: '400 13px Figtree', color: C.muted }}>
           {plantCount
             ? `${plantCount} ${plantCount === 1 ? 'plant moves' : 'plants move'} with this bed.`

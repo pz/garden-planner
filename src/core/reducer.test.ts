@@ -354,6 +354,41 @@ describe('reducer: bed layout', () => {
     expect(reducer(state, { type: 'moveBed', id: 'bed-1', dx: 0, dy: 0 })).toBe(state);
   });
 
+  describe('setLabelShift', () => {
+    it('moves only that bed\'s name, leaving the other bed and the plants alone', () => {
+      const state = twoBeds([]);
+      const next = reducer(state, { type: 'setLabelShift', id: 'bed-1', shift: { x: 12, y: -30 } });
+      expect(next.beds[0]).toEqual({ ...state.beds[0], labelShift: { x: 12, y: -30 } });
+      expect(next.beds[1]).toBe(state.beds[1]);
+      expect(next.plants).toBe(state.plants);
+    });
+
+    it('puts the name back with null or a zero shift, dropping the field', () => {
+      const shifted = reducer(basePlan(), { type: 'setLabelShift', id: 'bed-1', shift: { x: 5, y: 5 } });
+      for (const shift of [null, { x: 0, y: 0 }]) {
+        const back = reducer(shifted, { type: 'setLabelShift', id: 'bed-1', shift });
+        expect('labelShift' in back.beds[0]).toBe(false);
+      }
+    });
+
+    it('returns the same state for a no-op or an unknown bed', () => {
+      const state = basePlan();
+      expect(reducer(state, { type: 'setLabelShift', id: 'bed-1', shift: null })).toBe(state);
+      expect(reducer(state, { type: 'setLabelShift', id: 'nope', shift: { x: 1, y: 1 } })).toBe(state);
+      const shifted = reducer(state, { type: 'setLabelShift', id: 'bed-1', shift: { x: 1, y: 2 } });
+      expect(reducer(shifted, { type: 'setLabelShift', id: 'bed-1', shift: { x: 1, y: 2 } })).toBe(shifted);
+    });
+
+    it('survives a round trip through storage, and a malformed stored shift is dropped', () => {
+      const shifted = reducer(basePlan(), { type: 'setLabelShift', id: 'bed-1', shift: { x: 7, y: -3 } });
+      expect(parsePlan(JSON.stringify(shifted), TEST_ID).beds[0].labelShift).toEqual({ x: 7, y: -3 });
+      for (const bad of ['x', { x: 1 }, { x: 'a', y: 2 }, null]) {
+        const stored = JSON.stringify({ ...shifted, beds: [{ ...shifted.beds[0], labelShift: bad }] });
+        expect(parsePlan(stored, TEST_ID).beds[0]).toEqual(basePlan().beds[0]);
+      }
+    });
+  });
+
   describe('reshapeBed', () => {
     it('sets a rectangle\'s corner radius and removes plants the rounder corner drops', () => {
       const base = createPlan('g');
