@@ -96,6 +96,25 @@ describe('serializeGardenFile / parseGardenFile', () => {
   });
 });
 
+describe('label position in a garden file', () => {
+  it('round-trips a moved bed label through export and load', () => {
+    const plan = samplePlan();
+    plan.beds = plan.beds.map((b) => (b.id === 'bed-2' ? { ...b, labelShift: { x: 14, y: -9 } } : b));
+    const parsed = parseGardenFile(serializeGardenFile(plan, meta));
+    if (!parsed.ok) throw new Error(parsed.error);
+    expect(parsed.plan.beds.find((b) => b.id === 'bed-2')?.labelShift).toEqual({ x: 14, y: -9 });
+    expect(parsed.plan.beds.find((b) => b.id === 'bed-3')).not.toHaveProperty('labelShift');
+  });
+
+  it('ignores a malformed shift in a file rather than rejecting the garden', () => {
+    const plan = samplePlan();
+    const bad = { ...plan, beds: plan.beds.map((b) => ({ ...b, labelShift: { x: 'left' } })) };
+    const parsed = parseGardenFile(JSON.stringify(bad));
+    if (!parsed.ok) throw new Error(parsed.error);
+    expect(parsed.plan.beds.every((b) => b.labelShift === undefined)).toBe(true);
+  });
+});
+
 describe('parseGardenFile rejection', () => {
   it('rejects non-JSON', () => expect(errorOf('not json')).toMatch(/valid JSON/));
   it('rejects non-object content', () => expect(errorOf('[]')).toMatch(/no garden/));

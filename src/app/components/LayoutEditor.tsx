@@ -10,6 +10,7 @@ import { fitView, gardenToScreen, isDrag, panBy, screenToGarden, wheelZoomFactor
 import { CROP_COLORS } from './PlantMark';
 import { Icon, type IconName } from './Icon';
 import { Compass } from './Compass';
+import { BedLabel } from './BedLabel';
 
 /** Palette from the layout editor design; the app's shared tokens don't have these steps yet. */
 const C = {
@@ -130,6 +131,8 @@ export function LayoutEditor() {
   const [helpHidden, setHelpHidden] = useState(readHelpHidden);
   /** The bed whose name is being edited in place on the canvas. */
   const [editingNameId, setEditingNameId] = useState<string | null>(null);
+  /** The bed whose name the pointer is over, which shows the name's outline and grip. */
+  const [hoverLabelId, setHoverLabelId] = useState<string | null>(null);
 
   const selected = beds.find((b) => b.id === selectedId) ?? null;
   const selectedLine = lines.find((l) => l.id === selectedLineId) ?? null;
@@ -438,12 +441,17 @@ export function LayoutEditor() {
     setDrag({ kind: 'move', bedId: bed.id, start: p, dx: 0, dy: 0, guides: [] });
   }
 
-  /** Names are editable by clicking them and movable by dragging them, with the select tool. */
+  /** Names are editable by clicking them and movable by their grip, with the select tool. */
   const nameEditable = tool === 'select' && !pending && !spaceHeld;
 
-  function onNameDown(e: React.PointerEvent, bed: Bed) {
+  function onNameClick(bed: Bed) {
+    if (!nameEditable) return;
+    setSelectedId(bed.id);
+    setEditingNameId(bed.id);
+  }
+
+  function onGripDown(e: React.PointerEvent, bed: Bed) {
     if (!nameEditable || e.button !== 0) return;
-    // Stop the press here so it doesn't pan the canvas or deselect the bed.
     e.stopPropagation();
     const p = gardenPoint(e.clientX, e.clientY);
     if (!p) return;
@@ -558,7 +566,7 @@ export function LayoutEditor() {
     } else if (d.kind === 'label') {
       const bed = beds.find((b) => b.id === d.bedId);
       if (!bed) return;
-      if (!d.moved) return setEditingNameId(bed.id);
+      if (!d.moved) return;
       const shift = dragLabel(bed, d.dx, d.dy).labelShift ?? null;
       commit(() => setLabelShift(bed.id, shift));
     } else if (d.kind === 'move') {
@@ -821,28 +829,32 @@ export function LayoutEditor() {
           })}
 
           {beds.map((bed) => {
-            if (bed.id === editingNameId) return null;
             const at = labelPosition(displayed(bed));
+            const moving = drag?.kind === 'label' && drag.bedId === bed.id;
+            const editing = bed.id === editingNameId;
             return (
-              <text
+              <BedLabel
                 key={`name-${bed.id}`}
+                bedId={bed.id}
+                name={bed.name}
                 x={at.x}
                 y={at.y - px(7)}
-                textAnchor={at.align}
-                data-bed-name={bed.id}
-                onPointerDown={(e) => onNameDown(e, bed)}
-                style={{
-                  font: `600 ${px(12)}px Figtree`,
-                  fill: C.muted,
-                  pointerEvents: nameEditable ? 'all' : 'none',
-                  cursor: nameEditable ? (drag?.kind === 'label' && drag.moved ? 'grabbing' : 'grab') : undefined,
-                }}
-              >
-                {bed.name}
-              </text>
+                align={at.align}
+                zoom={zoom}
+                interactive={nameEditable}
+                active={bed.id === hoverLabelId || bed.id === selectedId || editing || moving}
+                strong={editing || moving}
+                hidden={editing}
+                gripCursor="move"
+                onEdit={() => onNameClick(bed)}
+                onGripDown={(e) => onGripDown(e, bed)}
+                onHover={(on) => setHoverLabelId((h) => (on ? bed.id : h === bed.id ? null : h))}
+                fill={C.muted}
+                outline={C.faint}
+                accent="var(--color-accent)"
+              />
             );
           })}
-
 
           {lines.map((l) => {
             const isSel = l.id === selectedLineId;
