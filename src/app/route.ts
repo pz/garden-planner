@@ -6,3 +6,8 @@
 export function isSpritesRoute(pathname: string, hash: string): boolean {
   return pathname.replace(/\/+$/, '').endsWith('/_sprites') || hash.replace(/\/+$/, '') === '#/_sprites';
 }
+
+/** Whether the address is the solver viewer (development builds only): `/_solver` or `#/_solver`, like the sprite sheet. */
+export function isSolverRoute(pathname: string, hash: string): boolean {
+  return pathname.replace(/\/+$/, '').endsWith('/_solver') || hash.replace(/\/+$/, '') === '#/_solver';
+}

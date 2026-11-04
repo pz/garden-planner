@@ -120,6 +120,9 @@ export function loadGarden(name: string): LoadedGarden {
 export interface LoadedScenario {
   name: string;
   description?: string;
+  /** Names of the garden and spec fixtures it was built from. */
+  gardenName: string;
+  specName: string;
   plan: GardenPlan;
   spec: PlantingSpec;
   options: ScenarioRunOptions;
@@ -136,5 +139,5 @@ export function loadScenario(name: string): LoadedScenario {
   if (!Object.hasOwn(SPEC_FILES, scenario.spec)) throw new Error(`Scenario "${name}": no spec fixture named "${scenario.spec}"`);
   const spec = parseSpec(SPEC_FILES[scenario.spec], plan);
   if (!spec.ok) throw new Error(`Scenario "${name}", spec "${scenario.spec}":\n${spec.errors.map((e) => `  ${e.message}`).join('\n')}`);
-  return { name, description: scenario.description, plan, spec: spec.spec, options: scenario.options ?? {}, expect: scenario.expect };
+  return { name, description: scenario.description, gardenName: scenario.garden, specName: scenario.spec, plan, spec: spec.spec, options: scenario.options ?? {}, expect: scenario.expect };
 }

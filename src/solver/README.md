@@ -18,7 +18,7 @@ been built and every decision made while building it that the doc left open or c
 | 3. Greedy solve, end to end (fill) | done: `normalize`, `allocate`, `evaluator`, `greedy`, `emit`, `verify`, `results`, `solve`, the CLI and `check.ts` |
 | 4. Scoring and local search | done: `pairRules`, the remaining score terms, `anneal`, `--sweep` |
 | 5. Adjust and replace modes | done: classification in `normalize`, the change term, move/remove/resize emission |
-| 6. Viewer (`#/solver`) | not started |
+| 6. Viewer (`/_solver`) | done: `session.ts`, `src/app/solver/`, `e2e/solver.spec.ts` |
 
 ## Layout
 
@@ -26,6 +26,7 @@ been built and every decision made while building it that the doc left open or c
 - `scenario.ts`: the scenario file type and `parseScenario`.
 - `catalog.ts`: the fixture registry plus `loadGarden` and `loadScenario`.
 - `fixtures/{gardens,specs,scenarios}/`: plain JSON. A garden is the app's Export file, so a garden made in the app can be dropped in.
+- `session.ts`: what the dev-only viewer does around `solve` (parse a typed spec and solve, which plants are new, score-trace points).
 - `cli.node.ts`: `npm run solve -- --list | <scenario> | --all`.
 
 ## Decisions
@@ -69,3 +70,7 @@ Numbered so later milestones can refer to them.
 35. **Command order and shape.** Removals first (replaced or excluded patches, dropped patches, and reshaped ones), then `movePatch` for patches that only slid within their bed (plant ids survive), then `addPatch` for new blocks and reshaped ones. A patch that is resized or moved to another bed becomes `removePatch` + `addPatch`, because the API has no resize or cross-bed move.
 36. **Over-target planting.** The demand curve still pays 0.05 per extra plant past the target, so once the targets are met the search may keep growing a crop that has room (replace-bed-2 plants 16 basil against a target of 9 because the cucumbers cannot use the space). The `met` status stands; `placed` reports what was planted.
 37. **Invariant: a patch outside the scope is never named in a command**, in addition to the doc's "fixed and locked plants are byte-identical".
+38. **Viewer route is `/_solver` (or `#/_solver`)**, matching the sprite sheet's `/_sprites`, not the doc's `#/solver`, so one convention covers PR previews on hosts that 404 unknown paths.
+39. **Compiled out like the mock API.** `App.tsx` imports the page with `import.meta.env.DEV ? lazy(() => import('./solver/SolverPage')) : null`; in a production build that is `false`, so the page, the solver and its fixtures are dropped (the bundle is byte-identical in size to before). CI's existing grep for the mock API now also greps for `solver-viewer`, the page's test id.
+40. **Sources and apply.** A scenario's garden is held in an in-memory `GardenApi` (nothing is saved); "Current garden" uses the real stored garden. Either way "Apply to this garden" calls `apply(commands, { ifRev, scope: 'planting' })` through the same `GardenProvider` the app uses, so a stale revision or a refusal shows up exactly as it would for a real client. Fixtures are imported by name (decision 6), not with `import.meta.glob`, which still works here.
+41. **Before and after use the app's sprite art** (`SpriteArt`) in each bed's own frame, read-only, with a dashed ring on plants the proposal adds. Beds are not drawn turned, since the solver plans in the bed's own frame.
