@@ -15,7 +15,7 @@ been built and every decision made while building it that the doc left open or c
 | --- | --- |
 | 1. Scaffolding and spec | done: lint/tsconfig rules, `core/random.ts`, `tsx`, `spec.ts`, fixtures and loaders |
 | 2. Geometry primitives | done: `block.ts`, `discIndex.ts`, `rules.ts`, `fastSpacing.ts` |
-| 3. Greedy solve, end to end (fill) | not started |
+| 3. Greedy solve, end to end (fill) | done: `normalize`, `allocate`, `evaluator`, `greedy`, `emit`, `verify`, `results`, `solve`, the CLI and `check.ts` |
 | 4. Scoring and local search | not started |
 | 5. Adjust and replace modes | not started |
 | 6. Viewer (`#/solver`) | not started |
@@ -48,3 +48,12 @@ Numbered so later milestones can refer to them.
 14. **Rules mirror core exactly.** `rules.ts` uses the same distance formula (`sqrt(dx²+dy²)`), the same average-of-spacings gap and the same strict comparisons as `core/spacing.ts` and `api/warnings.ts`, so the solver and the warnings cannot disagree by a rounding error. The one deliberate difference: the hard limit is `HARD_SLACK_IN` (1e-9 in) conservative, so a placement exactly on the 0.7 line is refused rather than left to floating point.
 15. **Grid tolerance.** `asBlock` accepts coordinates within 0.01 in of a grid line (what the UI's rounding can produce) and nothing looser. A patch that fails is fixed, never reshaped.
 16. **Edge spill samples** are written out as eight exact offsets rather than computed with `cos`/`sin`, so a plant flush with a straight wall does not count the sample along the wall as outside (`cos(π/2)` is not exactly 0).
+17. **Fixed plants never count toward a demand.** `placed`, a demand's `min`/`max` and the demand curve all count only plants the solver places or keeps (blocks). In adjust mode a demand means "the desired total", and the existing patches of that crop are blocks, so they are included; locked or non-grid patches are fixed and are not. This settles the doc's open question about whether the free area `A` and the count `n` use the same base.
+18. **Allocation area is per crop.** A crop's `A` is the free area (bed area minus the growing rooms of fixed plants) of the beds it may use. `Σw` is over every demand that survived the filters. A crop asked for always gets a target of at least 1; whether even one fits is for the search to find out.
+19. **Candidate blocks.** From each lattice anchor, for each width, the tallest block that satisfies the hard constraints, cut to land on the remaining count (rounded down, or up if that overshoots by at most one plant). Feasibility only shrinks as a block grows, so trying the tallest is enough. Candidates are tried best demand-gain first and the search stops when no remaining one can beat the best found, since every penalty only lowers a score.
+20. **Greedy tie-breaks.** The doc says seeded random. Equal scores prefer the block nearest the bed's top-left corner (then the earlier bed), which packs far better, and only exact remaining ties use the seeded random choice. Annealing (milestone 4) supplies the diversity.
+21. **A block must gain more than `MIN_GAIN` (1e-9) to be added.** So the greedy pass never adds a block whose crowding or spill costs more than it earns, even below the target.
+22. **No `iterations`/timing in the greedy result yet, and no clock in `solve`.** Timing is measured by the CLI, so `solve` stays deterministic. The season check takes `options.year` (default: this year); tests and the CLI pass 2026.
+23. **Season fixture.** In the zone table, a watermelon (transplant 1 week after the last frost, 80 days) still ripens in zone 3 (Aug 25 against a Sep 1 frost), so `fill-short-season` uses an artichoke (150 days) for the "too short" case and keeps the watermelon as a control.
+24. **A tiny bed is not "no room".** The doc lets a plant's growing room spill past the bed edge as long as its center is inside, so a 24 in bed always takes one squash. `insufficient_space` therefore comes from fixed plants crowding a spot out (see `solve.test.ts`), and `fill-tiny-bed` now expects one squash, one tomato and radishes for the rest.
+25. **Pending scenarios.** `scenarios.test.ts` lists the scenarios that need a later milestone (shade terms, adjust and replace) with `it.skip` and the reason; each milestone removes its entries.
