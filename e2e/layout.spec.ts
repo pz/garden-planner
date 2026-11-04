@@ -30,35 +30,54 @@ test.describe('layout editor', () => {
     expect(after.plants).toEqual(before.plants);
   });
 
-  test('dragging a bed name moves only the name; a plain click still edits it', async ({ page, garden }) => {
+  test('a bed name can be dragged by its text or its hint, and a plain click still edits it', async ({ page, garden }) => {
     await garden.seed(planted());
     await page.goto('/');
     await page.getByRole('button', { name: 'Edit layout' }).click();
     const before = await garden.plan();
     const name = page.locator('[data-bed-name]');
+    const hint = page.locator('[data-bed-label-hint]');
+    const center = async (loc: typeof name) => {
+      const b = (await loc.boundingBox())!;
+      return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+    };
     const box = (await name.boundingBox())!;
-    // The grip only appears once the label is hovered; it's what drags.
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    const grip = page.locator('[data-bed-label-grip]');
-    await expect(grip).toBeVisible();
-    expect(await grip.evaluate((el) => getComputedStyle(el).cursor)).toBe('move');
-    const g = (await grip.boundingBox())!;
-    const from = { x: g.x + g.width / 2, y: g.y + g.height / 2 };
-    await garden.drag(from, { x: from.x + 80, y: from.y + 40 });
 
-    const after = await garden.plan();
+    // Hovering the text shows the hint, and the pointer can travel on to it without it going away.
+    const onText = await center(name);
+    await page.mouse.move(onText.x, onText.y);
+    await expect(page.locator('[data-bed-label] circle').first()).toBeVisible();
+    expect(await name.evaluate((el) => getComputedStyle(el).cursor)).toBe('text');
+    expect(await hint.evaluate((el) => getComputedStyle(el).cursor)).toBe('move');
+    const onHint = await center(hint);
+    await page.mouse.move(onHint.x, onHint.y, { steps: 10 });
+    await expect(page.locator('[data-bed-label] circle').first()).toBeVisible();
+
+    // Drag from the hint.
+    await garden.drag(onHint, { x: onHint.x + 80, y: onHint.y + 40 });
+    let after = await garden.plan();
     expect(after.beds[0].labelShift!.x).toBeGreaterThan(0);
     expect(after.beds[0].labelShift!.y).toBeGreaterThan(0);
     expect({ ...after.beds[0], labelShift: undefined }).toEqual({ ...before.beds[0], labelShift: undefined });
-    const moved = (await name.boundingBox())!;
-    expect(moved.x).toBeGreaterThan(box.x + 40);
+    expect((await name.boundingBox())!.x).toBeGreaterThan(box.x + 40);
+    await expect(page.getByTestId('bed-name-input')).toHaveCount(0); // dragging didn't open the editor
 
-    // Dragging the grip didn't open the name editor. Reset puts the label back; a click on it opens the editor.
+    // Drag from the text itself, back the way it came.
+    const shifted = after.beds[0].labelShift!;
+    const t = await center(name);
+    await garden.drag(t, { x: t.x - 40, y: t.y - 20 });
+    after = await garden.plan();
+    expect(after.beds[0].labelShift!.x).toBeLessThan(shifted.x);
+    await expect(page.getByTestId('bed-name-input')).toHaveCount(0);
+
+    // Reset puts the label back; a click on it opens the editor, which replaces the label entirely.
     await page.getByRole('button', { name: 'Reset name position' }).click();
     expect((await garden.plan()).beds[0].labelShift).toBeUndefined();
-    const home = (await name.boundingBox())!;
-    await page.mouse.click(home.x + home.width / 2, home.y + home.height / 2);
-    await expect(page.getByRole('textbox').first()).toBeFocused();
+    const home = await center(name);
+    await page.mouse.click(home.x, home.y);
+    await expect(page.getByTestId('bed-name-input')).toBeFocused();
+    await expect(page.locator('[data-bed-label] circle')).toHaveCount(0);
+    await expect(page.locator('[data-bed-label]').first()).toHaveCSS('visibility', 'hidden');
   });
 
   test('widening a bed keeps plants where they were in the garden', async ({ page, garden }) => {

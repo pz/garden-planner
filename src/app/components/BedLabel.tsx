@@ -1,10 +1,13 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 
 /**
- * A bed's name on the layout canvas. Clicking it edits the name (text cursor); when the label is
- * hovered, its bed is selected, or it is being renamed or moved, it gets a dashed outline and a
- * grip on its right that drags it (the left is often under the tool rail). `x`/`y` are the text's anchor and baseline in garden inches;
- * `zoom` keeps the outline and grip a constant size on screen.
+ * A bed's name on the layout canvas. Pressing it and letting go edits the name (text cursor);
+ * pressing and dragging moves it. While the label is hovered, its bed is selected or it is being
+ * moved, a hairline dashed outline and a small dotted hint at its end say it can be dragged. The
+ * text, outline and hint share one hover area with no gaps, so the pointer can travel from the
+ * text to the hint. While the name is being renamed nothing is drawn (an input stands in for it).
+ * `x`/`y` are the text's anchor and baseline in garden inches; `zoom` keeps the outline and hint
+ * a constant size on screen.
  */
 export function BedLabel({
   bedId,
@@ -15,11 +18,9 @@ export function BedLabel({
   zoom,
   interactive,
   active,
-  strong,
+  moving,
   hidden,
-  gripCursor,
-  onEdit,
-  onGripDown,
+  onPress,
   onHover,
   fill,
   outline,
@@ -33,15 +34,14 @@ export function BedLabel({
   zoom: number;
   /** Whether the label can be edited and moved right now (the select tool, no dialog open). */
   interactive: boolean;
-  /** Show the outline and grip. */
+  /** Show the outline and hint. */
   active: boolean;
-  /** Draw the outline in the accent colour (renaming or moving). */
-  strong: boolean;
-  /** The text is replaced by an input; keep the outline and grip, but don't draw the text. */
+  /** Being dragged: draw the outline in the accent colour. */
+  moving: boolean;
+  /** The name is being edited in an input, so draw nothing. */
   hidden: boolean;
-  gripCursor: string;
-  onEdit: () => void;
-  onGripDown: (e: React.PointerEvent) => void;
+  /** A left press on the label; `onHint` when it landed on the dotted hint, which only ever drags. */
+  onPress: (e: React.PointerEvent, onHint: boolean) => void;
   onHover: (hovering: boolean) => void;
   fill: string;
   outline: string;
@@ -59,59 +59,68 @@ export function BedLabel({
   }, [name, zoom, y]);
 
   const pad = px(4);
+  const hintW = px(14);
   const left = (align === 'middle' ? x - box.w / 2 : x) - pad;
   const top = y + box.dy - pad;
-  const w = box.w + pad * 2;
+  const textW = box.w + pad * 2;
   const h = box.h + pad * 2;
-  const gripW = px(14);
-  const show = interactive && active && box.w > 0;
+  const measured = box.w > 0;
+  const live = interactive && !hidden;
+  const show = live && active && measured;
+  const down = (onHint: boolean) => (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    // Stop the press here so it doesn't pan the canvas or deselect the bed.
+    e.stopPropagation();
+    onPress(e, onHint);
+  };
 
   return (
-    <g data-bed-label={bedId} onPointerEnter={() => onHover(true)} onPointerLeave={() => onHover(false)}>
-      {interactive && box.w > 0 && (
-        // Covers the text and its outline so the label is one hover target; a press here edits the name.
-        <rect
-          x={left}
-          y={top}
-          width={w}
-          height={h}
-          rx={px(4)}
-          data-bed-name={bedId}
-          onPointerDown={(e) => {
-            // Stop the press here so it doesn't pan the canvas or deselect the bed.
-            if (e.button === 0) e.stopPropagation();
-          }}
-          onClick={(e) => e.button === 0 && onEdit()}
-          style={{
-            fill: 'transparent',
-            stroke: show ? (strong ? accent : outline) : 'none',
-            strokeWidth: px(1.5),
-            strokeDasharray: `${px(4)} ${px(3)}`,
-            pointerEvents: 'all',
-            cursor: 'text',
-          }}
-        />
-      )}
-      <text
-        ref={textRef}
-        x={x}
-        y={y}
-        textAnchor={align}
-        style={{ font: `600 ${px(12)}px Figtree`, fill, pointerEvents: 'none', visibility: hidden ? 'hidden' : undefined }}
-      >
+    <g data-bed-label={bedId} onPointerEnter={() => onHover(true)} onPointerLeave={() => onHover(false)} style={{ visibility: hidden ? 'hidden' : undefined }}>
+      <text ref={textRef} x={x} y={y} textAnchor={align} style={{ font: `600 ${px(12)}px Figtree`, fill, pointerEvents: 'none' }}>
         {name}
       </text>
+      {live && measured && (
+        <>
+          {/* One transparent target over the text and the hint, so hovering never falls through between them. */}
+          <rect
+            x={left}
+            y={top}
+            width={textW}
+            height={h}
+            data-bed-name={bedId}
+            onPointerDown={down(false)}
+            style={{ fill: 'transparent', pointerEvents: 'all', cursor: 'text' }}
+          />
+          <rect
+            x={left + textW}
+            y={top}
+            width={hintW}
+            height={h}
+            data-bed-label-hint={bedId}
+            onPointerDown={down(true)}
+            style={{ fill: 'transparent', pointerEvents: 'all', cursor: 'move' }}
+          />
+        </>
+      )}
       {show && (
-        <g
-          data-bed-label-grip={bedId}
-          transform={`translate(${left + w + px(3)} ${top})`}
-          onPointerDown={onGripDown}
-          style={{ cursor: gripCursor }}
-        >
-          <rect width={gripW} height={h} rx={px(4)} style={{ fill: strong ? accent : outline }} />
+        <g style={{ pointerEvents: 'none' }}>
+          <rect
+            x={left}
+            y={top}
+            width={textW + hintW}
+            height={h}
+            rx={px(4)}
+            style={{ fill: 'none', stroke: moving ? accent : outline, strokeWidth: px(1), strokeDasharray: `${px(3)} ${px(3)}` }}
+          />
           {[0.3, 0.5, 0.7].flatMap((fy) =>
             [0.35, 0.65].map((fx) => (
-              <circle key={`${fy}-${fx}`} cx={gripW * fx} cy={h * fy} r={px(1.1)} style={{ fill: '#fff', pointerEvents: 'none' }} />
+              <circle
+                key={`${fy}-${fx}`}
+                cx={left + textW + hintW * fx}
+                cy={top + h * fy}
+                r={px(1)}
+                style={{ fill: moving ? accent : outline }}
+              />
             )),
           )}
         </g>

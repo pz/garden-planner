@@ -39,7 +39,8 @@ type Tool = 'select' | 'rect' | 'ellipse' | 'polygon' | 'line';
 type Drag =
   | { kind: 'pan'; startX: number; startY: number; view0: View; moved: boolean; deselectOnClick: boolean }
   | { kind: 'move'; bedId: string; start: Point; dx: number; dy: number; guides: Guide[] }
-  | { kind: 'label'; bedId: string; start: Point; dx: number; dy: number; moved: boolean }
+  /** `edit`: letting go without moving opens the name editor (a press on the text, not the hint). */
+  | { kind: 'label'; bedId: string; start: Point; dx: number; dy: number; moved: boolean; edit: boolean }
   | { kind: 'resize'; bedId: string; handle: Handle; draft: Bed; guides: Guide[] }
   | { kind: 'corner'; bedId: string; index: number; draft: Bed }
   | { kind: 'rotate'; bedId: string; rotationDeg: number }
@@ -441,24 +442,17 @@ export function LayoutEditor() {
     setDrag({ kind: 'move', bedId: bed.id, start: p, dx: 0, dy: 0, guides: [] });
   }
 
-  /** Names are editable by clicking them and movable by their grip, with the select tool. */
+  /** Names are editable by clicking them and movable by dragging them, with the select tool. */
   const nameEditable = tool === 'select' && !pending && !spaceHeld;
 
-  function onNameClick(bed: Bed) {
-    if (!nameEditable) return;
-    setSelectedId(bed.id);
-    setEditingNameId(bed.id);
-  }
-
-  function onGripDown(e: React.PointerEvent, bed: Bed) {
+  function onLabelPress(e: React.PointerEvent, bed: Bed, onHint: boolean) {
     if (!nameEditable || e.button !== 0) return;
-    e.stopPropagation();
     const p = gardenPoint(e.clientX, e.clientY);
     if (!p) return;
     capture(e);
     setSelectedId(bed.id);
     setSelectedLineId(null);
-    setDrag({ kind: 'label', bedId: bed.id, start: p, dx: 0, dy: 0, moved: false });
+    setDrag({ kind: 'label', bedId: bed.id, start: p, dx: 0, dy: 0, moved: false, edit: !onHint });
   }
 
   function finishNameEdit(bed: Bed, name: string | null) {
@@ -566,7 +560,10 @@ export function LayoutEditor() {
     } else if (d.kind === 'label') {
       const bed = beds.find((b) => b.id === d.bedId);
       if (!bed) return;
-      if (!d.moved) return;
+      if (!d.moved) {
+        if (d.edit) setEditingNameId(bed.id);
+        return;
+      }
       const shift = dragLabel(bed, d.dx, d.dy).labelShift ?? null;
       commit(() => setLabelShift(bed.id, shift));
     } else if (d.kind === 'move') {
@@ -842,12 +839,10 @@ export function LayoutEditor() {
                 align={at.align}
                 zoom={zoom}
                 interactive={nameEditable}
-                active={bed.id === hoverLabelId || bed.id === selectedId || editing || moving}
-                strong={editing || moving}
+                active={bed.id === hoverLabelId || bed.id === selectedId || moving}
+                moving={moving}
                 hidden={editing}
-                gripCursor="move"
-                onEdit={() => onNameClick(bed)}
-                onGripDown={(e) => onGripDown(e, bed)}
+                onPress={(e, onHint) => onLabelPress(e, bed, onHint)}
                 onHover={(on) => setHoverLabelId((h) => (on ? bed.id : h === bed.id ? null : h))}
                 fill={C.muted}
                 outline={C.faint}
