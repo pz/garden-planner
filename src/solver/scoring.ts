@@ -19,7 +19,7 @@ export const SPILL_WEIGHT = 0.04;
 /** Times the share of existing plants removed or moved, in adjust mode. */
 export const CHANGE_WEIGHT = 2;
 /** Per full-sun plant in a part-shade garden. */
-export const SUN_WEIGHT = 0.04;
+export const SUN_WEIGHT = 0.02;
 
 /**
  * The value of having `n` of a crop when `t` were wanted: 0 at none, 1 at the target, concave

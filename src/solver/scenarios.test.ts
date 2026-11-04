@@ -5,8 +5,6 @@ import { runScenario } from './check';
 // One test per scenario file: its own expectations plus the invariants every proposal must have.
 // Scenarios that need a feature from a later milestone are listed here until it lands.
 const PENDING: Record<string, string> = {
-  'fill-north-row': 'shade terms (milestone 4)',
-  'fill-north-row-east': 'shade terms (milestone 4)',
   'adjust-more-tomatoes': 'adjust mode (milestone 5)',
   'adjust-locked': 'adjust mode (milestone 5)',
   'adjust-swap-beans': 'adjust mode (milestone 5)',
