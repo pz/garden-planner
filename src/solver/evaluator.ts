@@ -8,7 +8,7 @@ import type { Ctx, DemandInfo, Group } from './model';
 import type { ScoreBreakdown } from './proposal';
 import { companionWeight, shades } from './pairRules';
 import { edgeSpill, requiredGap, spacingPenalty, violatesHardSpacing } from './rules';
-import { CLUSTER_WEIGHT, COMPANION_WEIGHT, SHADE_WEIGHT, SPACING_WEIGHT, SPILL_WEIGHT, SUN_WEIGHT, demandCurve, emptyBreakdown, minMaxPenalty } from './scoring';
+import { CHANGE_WEIGHT, CLUSTER_WEIGHT, COMPANION_WEIGHT, SHADE_WEIGHT, SPACING_WEIGHT, SPILL_WEIGHT, SUN_WEIGHT, demandCurve, emptyBreakdown, minMaxPenalty } from './scoring';
 
 /** The raw (unweighted) sums behind the pair and per-plant terms. */
 interface Raw {
@@ -59,6 +59,11 @@ export class Evaluator {
   private readonly blocksIn = new Map<string, number>();
   private clustering = 0;
   private readonly partShade: boolean;
+  /** The existing patches the search may change, by groupId (adjust mode). */
+  private readonly originals = new Map<string, Block>();
+  /** Plants removed or moved relative to the original patches, summed (see `changeOf`). */
+  private change = 0;
+  private readonly originalPlants: number;
   private demand = 0;
   private minMax = 0;
   private seq = 0;
@@ -72,6 +77,10 @@ export class Evaluator {
     for (const id of ctx.beds.keys()) this.index.set(id, new DiscIndex(ctx.maxSpacingIn));
     for (const g of ctx.fixed) this.insert(g);
     for (const d of ctx.demands) this.counts.set(d.cropId, 0);
+    for (const b of ctx.editable) if (b.source !== 'new') this.originals.set(b.source.groupId, b);
+    this.originalPlants = ctx.editable.reduce((n, b) => n + blockPlantCount(b), 0);
+    // Until a block stands in for an original it counts as removed.
+    this.change = this.originalPlants;
     this.demand = 0;
     this.minMax = ctx.demands.reduce((s, d) => s + minMaxPenalty(0, d.min, d.max), 0);
   }
@@ -173,7 +182,26 @@ export class Evaluator {
     const before = this.cropValue(block.cropId, n);
     const after = this.cropValue(block.cropId, n + blockPlantCount(block));
     const extra = (this.blocksIn.get(`${block.cropId}|${block.bedId}`) ?? 0) > 0 ? 1 : 0;
-    return after.demand - before.demand - (after.minMax - before.minMax) - this.penalty(c) - this.ctx.prefs.clustering * CLUSTER_WEIGHT * extra;
+    const change = this.changePenalty(this.change + this.changeDelta(block)) - this.changePenalty(this.change);
+    return after.demand - before.demand - (after.minMax - before.minMax) - this.penalty(c) - this.ctx.prefs.clustering * CLUSTER_WEIGHT * extra - change;
+  }
+
+  /**
+   * What a block costs relative to the existing patch it stands for, in plants: nothing if it is
+   * that patch unchanged, the whole patch if it was moved, resized or taken to another bed. A new
+   * block costs nothing, and the patch it is not standing in for is counted as removed.
+   */
+  private changeDelta(block: Block): number {
+    if (block.source === 'new') return 0;
+    const o = this.originals.get(block.source.groupId);
+    if (!o) return 0;
+    const n = blockPlantCount(o);
+    const same = block.bedId === o.bedId && block.columns === o.columns && block.rows === o.rows && block.origin.x === o.origin.x && block.origin.y === o.origin.y;
+    return (same ? 0 : n) - n;
+  }
+
+  private changePenalty(change: number): number {
+    return this.originalPlants === 0 ? 0 : this.ctx.prefs.stability * CHANGE_WEIGHT * (change / this.originalPlants);
   }
 
   /** The weighted cost of a set of raw sums. */
@@ -198,6 +226,7 @@ export class Evaluator {
     this.insert(g);
     this.blocks.set(id, block);
     this.addRaw(c, 1);
+    this.change += this.changeDelta(block);
     const key = `${block.cropId}|${block.bedId}`;
     const there = this.blocksIn.get(key) ?? 0;
     if (there > 0) this.clustering++;
@@ -213,6 +242,7 @@ export class Evaluator {
     // What it contributed is what it would contribute against everything that is left: pairs with
     // blocks added after it are counted in the same way as pairs with blocks added before.
     this.addRaw(this.contribution(g), -1);
+    this.change -= this.changeDelta(block);
     const key = `${block.cropId}|${block.bedId}`;
     const there = this.blocksIn.get(key)!;
     if (there > 1) this.clustering--;
@@ -249,6 +279,7 @@ export class Evaluator {
     b.companion = neg(p.companions * COMPANION_WEIGHT * this.raw.companion);
     b.clustering = neg(p.clustering * CLUSTER_WEIGHT * this.clustering);
     b.sun = neg(SUN_WEIGHT * this.raw.sun);
+    b.change = neg(this.changePenalty(this.change));
     b.total = b.demand + b.minMax + b.spacing + b.shade + b.companion + b.clustering + b.spill + b.change + b.sun;
     return b;
   }
