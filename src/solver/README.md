@@ -14,7 +14,7 @@ been built and every decision made while building it that the doc left open or c
 | Milestone | State |
 | --- | --- |
 | 1. Scaffolding and spec | done: lint/tsconfig rules, `core/random.ts`, `tsx`, `spec.ts`, fixtures and loaders |
-| 2. Geometry primitives | not started |
+| 2. Geometry primitives | done: `block.ts`, `discIndex.ts`, `rules.ts`, `fastSpacing.ts` |
 | 3. Greedy solve, end to end (fill) | not started |
 | 4. Scoring and local search | not started |
 | 5. Adjust and replace modes | not started |
@@ -44,3 +44,7 @@ Numbered so later milestones can refer to them.
 10. **Scenario expectations are provisional.** Milestone 1 only checks that scenarios load and validate. The expectations were written from the doc, before a solver exists, and may be tightened or corrected in milestones 3 to 5 when they first run.
 11. **PRNG.** `mulberry32` moved to `src/core/random.ts` with tests (including a pinned value), and `api/simulation.test.ts` imports it.
 12. **`HARD_SPACING_FACTOR`** already exists in `core/spacing.ts` (0.7); the solver will import it rather than define a second copy.
+13. **Blocks are always axis `x`.** A `columns × rows` block on axis `y` is the same points as a `rows × columns` block on axis `x`, and the search tries every shape, so searching both axes would only duplicate candidates. `asBlock` also normalizes to `x`. The field stays in the type so a block round-trips to an `addPatch` grid.
+14. **Rules mirror core exactly.** `rules.ts` uses the same distance formula (`sqrt(dx²+dy²)`), the same average-of-spacings gap and the same strict comparisons as `core/spacing.ts` and `api/warnings.ts`, so the solver and the warnings cannot disagree by a rounding error. The one deliberate difference: the hard limit is `HARD_SLACK_IN` (1e-9 in) conservative, so a placement exactly on the 0.7 line is refused rather than left to floating point.
+15. **Grid tolerance.** `asBlock` accepts coordinates within 0.01 in of a grid line (what the UI's rounding can produce) and nothing looser. A patch that fails is fixed, never reshaped.
+16. **Edge spill samples** are written out as eight exact offsets rather than computed with `cos`/`sin`, so a plant flush with a straight wall does not count the sample along the wall as outside (`cos(π/2)` is not exactly 0).
