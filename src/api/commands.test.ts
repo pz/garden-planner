@@ -132,6 +132,8 @@ describe('parseRequest: bed, layout and profile commands', () => {
     { type: 'renameBed', id: 'b', name: '' },
     { type: 'moveBed', id: 'b', dx: 1, dy: -1 },
     { type: 'reshapeBed', id: 'b', cx: 1, cy: 2, widthIn: 24, heightIn: 24 },
+    { type: 'setLabelShift', id: 'b', shift: { x: 1, y: -2 } },
+    { type: 'setLabelShift', id: 'b', shift: null },
     { type: 'rotateBed', id: 'b', rotationDeg: 90 },
     { type: 'pasteBed', bed, plants: [plant, { ...plant, variety: 'v' }] },
     { type: 'removeBed', id: 'b' },

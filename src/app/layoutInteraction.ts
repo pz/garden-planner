@@ -193,6 +193,18 @@ export function labelAnchor(bed: Bed): LabelAnchor {
   }
   return { x: highest[0].x, y: top, align: 'middle' };
 }
+/** Where a bed's name is drawn: its default place (`labelAnchor`) moved by whatever the user dragged it. */
+export function labelPosition(bed: Bed): LabelAnchor {
+  const at = labelAnchor(bed);
+  return bed.labelShift ? { ...at, x: at.x + bed.labelShift.x, y: at.y + bed.labelShift.y } : at;
+}
+/** The bed with its name's shift changed by a drag of (dx, dy), by the inch; a shift that nets out to nothing is no shift. */
+export function dragLabel(bed: Bed, dx: number, dy: number): Bed {
+  const { labelShift, ...rest } = bed;
+  const x = Math.round((labelShift?.x ?? 0) + dx);
+  const y = Math.round((labelShift?.y ?? 0) + dy);
+  return x === 0 && y === 0 ? rest : { ...rest, labelShift: { x, y } };
+}
 /** The axis-aligned box spanned by two points, whichever way round they are. */
 export function boxBetween(a: Point, b: Point): { x: number; y: number; width: number; height: number } {
   return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(b.x - a.x), height: Math.abs(b.y - a.y) };

@@ -122,6 +122,11 @@ export interface Bed {
   points?: Point[];
   /** Rectangular beds only: how rounded the corners are, in inches. Absent means the default. */
   cornerRadiusIn?: number;
+  /**
+   * How far the bed's name has been dragged from where it sits by default, in garden inches (so
+   * it follows the bed when the bed moves). Absent means the default place.
+   */
+  labelShift?: Point;
 }
 
 /** A straight line drawn on the layout (a path, fence, hose…), in garden coordinates. */

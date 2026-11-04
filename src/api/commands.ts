@@ -129,6 +129,12 @@ export interface MoveBedCommand {
   dx: number;
   dy: number;
 }
+/** Moves a bed's name to `shift` inches from its default place (so it stays clear of other labels); `null` puts it back. */
+export interface SetLabelShiftCommand {
+  type: 'setLabelShift';
+  id: string;
+  shift: Point | null;
+}
 /** Resize or reshape a bed. Plants whose centers the new shape no longer contains are removed, and reported as `removed`. */
 export interface ReshapeBedCommand extends BedGeometryFields {
   type: 'reshapeBed';
@@ -202,6 +208,7 @@ export type LayoutCommand =
   | AddBedCommand
   | RenameBedCommand
   | MoveBedCommand
+  | SetLabelShiftCommand
   | ReshapeBedCommand
   | RotateBedCommand
   | PasteBedCommand
@@ -218,7 +225,7 @@ export type Command = PlantingCommand | LayoutCommand;
 export type CommandType = Command['type'];
 
 const LAYOUT_TYPES: ReadonlySet<string> = new Set<LayoutCommand['type']>([
-  'addBed', 'renameBed', 'moveBed', 'reshapeBed', 'rotateBed', 'pasteBed', 'removeBed', 'restoreLayout', 'addLine', 'removeLine', 'setGardenName', 'setNorth', 'setProfile',
+  'addBed', 'renameBed', 'moveBed', 'setLabelShift', 'reshapeBed', 'rotateBed', 'pasteBed', 'removeBed', 'restoreLayout', 'addLine', 'removeLine', 'setGardenName', 'setNorth', 'setProfile',
 ]);
 
 /** Whether a command only plants, moves, removes or annotates plants (what an agent may do), rather than changing beds or the profile. */
@@ -298,6 +305,9 @@ const nullableStr: Check = (v, path, fail) => {
 const point: Check = (v, path, fail) => {
   if (!isRecord(v) || !isFiniteNumber(v.x) || !isFiniteNumber(v.y)) fail(path, 'must be a point {x, y} of finite numbers');
 };
+const nullablePoint: Check = (v, path, fail) => {
+  if (v !== null) point(v, path, fail);
+};
 const points: Check = (v, path, fail) => {
   if (!Array.isArray(v)) return fail(path, 'must be an array of points');
   v.forEach((p, i) => point(p, `${path}/${i}`, fail));
@@ -333,7 +343,7 @@ const arrayOf =
 const SHAPES = oneOf('rect', 'ellipse', 'polygon');
 const bedObject = shaped(
   { id: str, name: text, shape: SHAPES, cx: num, cy: num, widthIn: num, heightIn: num, rotationDeg: num },
-  { points, cornerRadiusIn: num },
+  { points, cornerRadiusIn: num, labelShift: point },
 );
 const plantObject = shaped({ id: str, bedId: str, cropId: str, groupId: str, x: num, y: num }, { variety: str });
 const lineObject = shaped({ id: str, a: point, b: point }, {});
@@ -369,6 +379,7 @@ const SCHEMA: Record<CommandType, { required: Record<string, Check>; optional: R
   },
   renameBed: { required: { id: str, name: text }, optional: {} },
   moveBed: { required: { id: str, dx: num, dy: num }, optional: {} },
+  setLabelShift: { required: { id: str, shift: nullablePoint }, optional: {} },
   reshapeBed: { required: { id: str, ...geometryFields }, optional: { points, cornerRadiusIn: num } },
   rotateBed: { required: { id: str, rotationDeg: num }, optional: {} },
   pasteBed: { required: { bed: bedObject, plants: arrayOf(plantObject) }, optional: {} },

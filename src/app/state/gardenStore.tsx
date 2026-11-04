@@ -3,7 +3,7 @@ import type { ApplyResult } from '../../api/apply';
 import { addBedCommand, type Command } from '../../api/commands';
 import type { ApplyOptions, GardenApi } from '../../api/gardenApi';
 import type { Warning } from '../../api/types';
-import type { Bed, GardenLine, GardenPlan, PlantInstance, Profile } from '../../types';
+import type { Bed, GardenLine, GardenPlan, PlantInstance, Point, Profile } from '../../types';
 import type { BedGeometry } from '../../core/layout';
 import { createGardenApi, isMock } from './gardenApiFactory';
 
@@ -22,6 +22,7 @@ interface GardenContextValue {
   addBed: (bed: Bed) => void;
   renameBed: (id: string, name: string) => void;
   moveBed: (id: string, dx: number, dy: number) => void;
+  setLabelShift: (id: string, shift: Point | null) => void;
   reshapeBed: (id: string, geometry: BedGeometry) => void;
   rotateBed: (id: string, rotationDeg: number) => void;
   pasteBed: (bed: Bed, plants: PlantInstance[]) => void;
@@ -74,6 +75,7 @@ export function GardenProvider({ gardenId, api: injected, children }: { gardenId
       addBed: (bed) => run(api, [addBedCommand(bed)]),
       renameBed: (id, name) => run(api, [{ type: 'renameBed', id, name }]),
       moveBed: (id, dx, dy) => run(api, [{ type: 'moveBed', id, dx, dy }]),
+      setLabelShift: (id, shift) => run(api, [{ type: 'setLabelShift', id, shift }]),
       reshapeBed: (id, geometry) => run(api, [{ type: 'reshapeBed', id, ...geometry }]),
       rotateBed: (id, rotationDeg) => run(api, [{ type: 'rotateBed', id, rotationDeg }]),
       pasteBed: (bed, plants) => run(api, [{ type: 'pasteBed', bed, plants }]),
