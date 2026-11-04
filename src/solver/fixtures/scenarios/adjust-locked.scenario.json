@@ -1,0 +1,5 @@
+{
+  "description": "A locked patch is never touched in adjust mode.",
+  "garden": "crowded", "spec": "adjust-locked", "options": { "seed": 1 },
+  "expect": [{ "kind": "unchanged", "groupIds": ["g-tomato"] }]
+}

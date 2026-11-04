@@ -1,0 +1,5 @@
+{
+  "description": "Per-demand bedIds keep each crop to its own bed.",
+  "garden": "two-raised-beds", "spec": "fill-bed-restricted", "options": { "seed": 1 },
+  "expect": [{ "kind": "inBeds", "crop": "tomato", "bedIds": ["bed-2"] }, { "kind": "inBeds", "crop": "lettuce", "bedIds": ["bed-1"] }]
+}

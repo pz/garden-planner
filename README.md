@@ -14,6 +14,7 @@ plant and harvest for your USDA zone. There is no backend yet; each garden is sa
 | `npx tsc -b --noEmit` | Typecheck only |
 | `npm run lint` | [oxlint](https://oxc.rs) |
 | `npm run test` / `npm run test:watch` | Unit tests ([vitest](https://vitest.dev), plain Node) |
+| `npm run solve -- --list` | Planting solver CLI (fixtures only so far; see [`src/solver/README.md`](src/solver/README.md)) |
 | `npm run test:e2e` | Browser tests ([Playwright](https://playwright.dev), `e2e/`); starts the dev server itself |
 
 CI (`.github/workflows/ci.yml`) runs typecheck, lint, unit tests and the browser tests on every PR.
@@ -32,6 +33,7 @@ src/
   data/           Static reference data
   core/           The headless engine
   api/            Formal API over core: commands, errors, warnings, layout view — see docs/api-design.md
+  solver/         The planting solver and its test harness — see src/solver/README.md
   app/            The React app and everything browser-specific
 ```
 

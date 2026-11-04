@@ -1,0 +1,5 @@
+{
+  "description": "A low-weight crop with a minimum, a high-weight crop with a maximum.",
+  "garden": "empty-4x8", "spec": "fill-min-max", "options": { "seed": 1 },
+  "expect": [{ "kind": "placed", "crop": "tomato", "gte": 4 }, { "kind": "placed", "crop": "lettuce", "lte": 6 }]
+}

@@ -1,0 +1,11 @@
+{
+  "mode": "fill",
+  "demands": [
+    { "cropId": "tomato", "weight": 1 },
+    { "cropId": "pepper", "weight": 1 },
+    { "cropId": "cucumber", "weight": 1 },
+    { "cropId": "lettuce", "weight": 1 },
+    { "cropId": "melon", "weight": 0.4 },
+    { "cropId": "beans", "weight": 0.4 }
+  ]
+}

@@ -1,0 +1,367 @@
+{
+  "format": "garden-planner-export",
+  "formatVersion": 1,
+  "meta": {
+    "commit": "fixture",
+    "exportedAt": "2026-11-03T00:00:00.000Z"
+  },
+  "plan": {
+    "version": 3,
+    "id": "crowded",
+    "name": "Crowded",
+    "profile": {
+      "zoneId": "6",
+      "sunExposure": "full-sun",
+      "onboarded": true,
+      "location": {
+        "lat": 40,
+        "lng": -100
+      }
+    },
+    "beds": [
+      {
+        "id": "bed-1",
+        "name": "Bed 1",
+        "shape": "rect",
+        "cx": 48,
+        "cy": 24,
+        "widthIn": 96,
+        "heightIn": 48,
+        "rotationDeg": 0
+      },
+      {
+        "id": "bed-2",
+        "name": "Bed 2",
+        "shape": "rect",
+        "cx": 48,
+        "cy": 100,
+        "widthIn": 96,
+        "heightIn": 48,
+        "rotationDeg": 0
+      }
+    ],
+    "plants": [
+      {
+        "id": "p9",
+        "bedId": "bed-1",
+        "cropId": "onion",
+        "x": 6,
+        "y": 6,
+        "groupId": "g-onion"
+      },
+      {
+        "id": "p10",
+        "bedId": "bed-1",
+        "cropId": "onion",
+        "x": 10,
+        "y": 6,
+        "groupId": "g-onion"
+      },
+      {
+        "id": "p11",
+        "bedId": "bed-1",
+        "cropId": "onion",
+        "x": 14,
+        "y": 6,
+        "groupId": "g-onion"
+      },
+      {
+        "id": "p12",
+        "bedId": "bed-1",
+        "cropId": "onion",
+        "x": 18,
+        "y": 6,
+        "groupId": "g-onion"
+      },
+      {
+        "id": "p13",
+        "bedId": "bed-1",
+        "cropId": "onion",
+        "x": 6,
+        "y": 10,
+        "groupId": "g-onion"
+      },
+      {
+        "id": "p14",
+        "bedId": "bed-1",
+        "cropId": "onion",
+        "x": 10,
+        "y": 10,
+        "groupId": "g-onion"
+      },
+      {
+        "id": "p15",
+        "bedId": "bed-1",
+        "cropId": "onion",
+        "x": 14,
+        "y": 10,
+        "groupId": "g-onion"
+      },
+      {
+        "id": "p16",
+        "bedId": "bed-1",
+        "cropId": "onion",
+        "x": 18,
+        "y": 10,
+        "groupId": "g-onion"
+      },
+      {
+        "id": "p17",
+        "bedId": "bed-1",
+        "cropId": "beans",
+        "x": 30,
+        "y": 8,
+        "groupId": "g-beans"
+      },
+      {
+        "id": "p18",
+        "bedId": "bed-1",
+        "cropId": "beans",
+        "x": 34,
+        "y": 8,
+        "groupId": "g-beans"
+      },
+      {
+        "id": "p19",
+        "bedId": "bed-1",
+        "cropId": "beans",
+        "x": 38,
+        "y": 8,
+        "groupId": "g-beans"
+      },
+      {
+        "id": "p20",
+        "bedId": "bed-1",
+        "cropId": "beans",
+        "x": 30,
+        "y": 12,
+        "groupId": "g-beans"
+      },
+      {
+        "id": "p21",
+        "bedId": "bed-1",
+        "cropId": "beans",
+        "x": 34,
+        "y": 12,
+        "groupId": "g-beans"
+      },
+      {
+        "id": "p22",
+        "bedId": "bed-1",
+        "cropId": "beans",
+        "x": 38,
+        "y": 12,
+        "groupId": "g-beans"
+      },
+      {
+        "id": "p23",
+        "bedId": "bed-1",
+        "cropId": "carrot",
+        "x": 8,
+        "y": 30,
+        "groupId": "g-carrot"
+      },
+      {
+        "id": "p24",
+        "bedId": "bed-1",
+        "cropId": "carrot",
+        "x": 11,
+        "y": 30,
+        "groupId": "g-carrot"
+      },
+      {
+        "id": "p25",
+        "bedId": "bed-1",
+        "cropId": "carrot",
+        "x": 14,
+        "y": 30,
+        "groupId": "g-carrot"
+      },
+      {
+        "id": "p26",
+        "bedId": "bed-1",
+        "cropId": "carrot",
+        "x": 17,
+        "y": 30,
+        "groupId": "g-carrot"
+      },
+      {
+        "id": "p27",
+        "bedId": "bed-1",
+        "cropId": "carrot",
+        "x": 20,
+        "y": 30,
+        "groupId": "g-carrot"
+      },
+      {
+        "id": "p28",
+        "bedId": "bed-1",
+        "cropId": "carrot",
+        "x": 23,
+        "y": 30,
+        "groupId": "g-carrot"
+      },
+      {
+        "id": "p29",
+        "bedId": "bed-1",
+        "cropId": "carrot",
+        "x": 8,
+        "y": 33,
+        "groupId": "g-carrot"
+      },
+      {
+        "id": "p30",
+        "bedId": "bed-1",
+        "cropId": "carrot",
+        "x": 11,
+        "y": 33,
+        "groupId": "g-carrot"
+      },
+      {
+        "id": "p31",
+        "bedId": "bed-1",
+        "cropId": "carrot",
+        "x": 14,
+        "y": 33,
+        "groupId": "g-carrot"
+      },
+      {
+        "id": "p32",
+        "bedId": "bed-1",
+        "cropId": "carrot",
+        "x": 17,
+        "y": 33,
+        "groupId": "g-carrot"
+      },
+      {
+        "id": "p33",
+        "bedId": "bed-1",
+        "cropId": "carrot",
+        "x": 20,
+        "y": 33,
+        "groupId": "g-carrot"
+      },
+      {
+        "id": "p34",
+        "bedId": "bed-1",
+        "cropId": "carrot",
+        "x": 23,
+        "y": 33,
+        "groupId": "g-carrot"
+      },
+      {
+        "id": "p35",
+        "bedId": "bed-1",
+        "cropId": "basil",
+        "x": 60,
+        "y": 12,
+        "groupId": "g-basil"
+      },
+      {
+        "id": "p36",
+        "bedId": "bed-1",
+        "cropId": "basil",
+        "x": 72,
+        "y": 12,
+        "groupId": "g-basil"
+      },
+      {
+        "id": "p37",
+        "bedId": "bed-1",
+        "cropId": "lettuce",
+        "x": 62,
+        "y": 34,
+        "groupId": "g-lettuce"
+      },
+      {
+        "id": "p38",
+        "bedId": "bed-1",
+        "cropId": "lettuce",
+        "x": 72,
+        "y": 34,
+        "groupId": "g-lettuce"
+      },
+      {
+        "id": "p39",
+        "bedId": "bed-1",
+        "cropId": "lettuce",
+        "x": 82,
+        "y": 34,
+        "groupId": "g-lettuce"
+      },
+      {
+        "id": "p40",
+        "bedId": "bed-2",
+        "cropId": "tomato",
+        "x": 12,
+        "y": 12,
+        "groupId": "g-tomato"
+      },
+      {
+        "id": "p41",
+        "bedId": "bed-2",
+        "cropId": "tomato",
+        "x": 36,
+        "y": 12,
+        "groupId": "g-tomato"
+      },
+      {
+        "id": "p42",
+        "bedId": "bed-2",
+        "cropId": "tomato",
+        "x": 60,
+        "y": 12,
+        "groupId": "g-tomato"
+      },
+      {
+        "id": "p43",
+        "bedId": "bed-2",
+        "cropId": "marigold",
+        "x": 12,
+        "y": 36,
+        "groupId": "g-marigold"
+      },
+      {
+        "id": "p44",
+        "bedId": "bed-2",
+        "cropId": "marigold",
+        "x": 22,
+        "y": 36,
+        "groupId": "g-marigold"
+      },
+      {
+        "id": "p45",
+        "bedId": "bed-2",
+        "cropId": "marigold",
+        "x": 32,
+        "y": 36,
+        "groupId": "g-marigold"
+      },
+      {
+        "id": "p46",
+        "bedId": "bed-2",
+        "cropId": "marigold",
+        "x": 42,
+        "y": 36,
+        "groupId": "g-marigold"
+      },
+      {
+        "id": "p47",
+        "bedId": "bed-2",
+        "cropId": "pepper",
+        "x": 60,
+        "y": 30,
+        "groupId": "g-pepper"
+      },
+      {
+        "id": "p48",
+        "bedId": "bed-2",
+        "cropId": "pepper",
+        "x": 78,
+        "y": 30,
+        "groupId": "g-pepper"
+      }
+    ],
+    "dismissedConflictKeys": []
+  }
+}

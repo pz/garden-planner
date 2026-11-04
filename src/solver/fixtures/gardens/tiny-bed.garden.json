@@ -1,0 +1,36 @@
+{
+  "format": "garden-planner-export",
+  "formatVersion": 1,
+  "meta": {
+    "commit": "fixture",
+    "exportedAt": "2026-11-03T00:00:00.000Z"
+  },
+  "plan": {
+    "version": 3,
+    "id": "tiny-bed",
+    "name": "Tiny bed",
+    "profile": {
+      "zoneId": "6",
+      "sunExposure": "full-sun",
+      "onboarded": true,
+      "location": {
+        "lat": 40,
+        "lng": -100
+      }
+    },
+    "beds": [
+      {
+        "id": "bed-1",
+        "name": "Bed 1",
+        "shape": "rect",
+        "cx": 12,
+        "cy": 12,
+        "widthIn": 24,
+        "heightIn": 24,
+        "rotationDeg": 0
+      }
+    ],
+    "plants": [],
+    "dismissedConflictKeys": []
+  }
+}

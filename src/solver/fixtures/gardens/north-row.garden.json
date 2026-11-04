@@ -1,0 +1,56 @@
+{
+  "format": "garden-planner-export",
+  "formatVersion": 1,
+  "meta": {
+    "commit": "fixture",
+    "exportedAt": "2026-11-03T00:00:00.000Z"
+  },
+  "plan": {
+    "version": 3,
+    "id": "north-row",
+    "name": "North row",
+    "profile": {
+      "zoneId": "6",
+      "sunExposure": "full-sun",
+      "onboarded": true,
+      "location": {
+        "lat": 40,
+        "lng": -100
+      }
+    },
+    "beds": [
+      {
+        "id": "bed-n",
+        "name": "North bed",
+        "shape": "rect",
+        "cx": 24,
+        "cy": 24,
+        "widthIn": 48,
+        "heightIn": 48,
+        "rotationDeg": 0
+      },
+      {
+        "id": "bed-m",
+        "name": "Middle bed",
+        "shape": "rect",
+        "cx": 24,
+        "cy": 96,
+        "widthIn": 48,
+        "heightIn": 48,
+        "rotationDeg": 0
+      },
+      {
+        "id": "bed-s",
+        "name": "South bed",
+        "shape": "rect",
+        "cx": 24,
+        "cy": 168,
+        "widthIn": 48,
+        "heightIn": 48,
+        "rotationDeg": 0
+      }
+    ],
+    "plants": [],
+    "dismissedConflictKeys": []
+  }
+}

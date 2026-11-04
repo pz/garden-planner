@@ -9,7 +9,7 @@
     {
       "files": ["src/data/**"],
       "rules": {
-        "no-restricted-imports": ["error", { "patterns": [{ "regex": "(^|/)(core|api|app)(/|$)", "message": "src/data is static reference data: it may not import from core, api or app." }] }]
+        "no-restricted-imports": ["error", { "patterns": [{ "regex": "(^|/)(core|api|solver|app)(/|$)", "message": "src/data is static reference data: it may not import from core, api, solver or app." }] }]
       }
     },
     {
@@ -21,13 +21,19 @@
     {
       "files": ["src/api/**"],
       "rules": {
-        "no-restricted-imports": ["error", { "patterns": [{ "regex": "(^|/)app(/|$)", "message": "src/api is headless: it may not import from app." }] }]
+        "no-restricted-imports": ["error", { "patterns": [{ "regex": "(^|/)(solver|app)(/|$)", "message": "src/api is headless: it may not import from solver or app." }] }]
+      }
+    },
+    {
+      "files": ["src/solver/**"],
+      "rules": {
+        "no-restricted-imports": ["error", { "patterns": [{ "regex": "(^|/)app(/|$)", "message": "src/solver is headless: it may not import from app." }] }]
       }
     },
     {
       "files": ["src/core/**"],
       "rules": {
-        "no-restricted-imports": ["error", { "patterns": [{ "regex": "(^|/)(api|app)(/|$)", "message": "src/core is the headless engine: it may not import from api or app." }] }]
+        "no-restricted-imports": ["error", { "patterns": [{ "regex": "(^|/)(api|solver|app)(/|$)", "message": "src/core is the headless engine: it may not import from api, solver or app." }] }]
       }
     }
   ]

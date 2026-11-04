@@ -1,0 +1,5 @@
+{
+  "description": "More tomatoes: the existing patch may move or grow.",
+  "garden": "two-raised-beds", "spec": "adjust-more-tomatoes", "options": { "seed": 1 },
+  "expect": [{ "kind": "placed", "crop": "tomato", "gte": 6 }]
+}

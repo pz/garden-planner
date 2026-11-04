@@ -1,0 +1,1 @@
+{ "mode": "replace", "scope": { "bedIds": ["bed-2"] }, "demands": [{ "cropId": "cucumber", "weight": 1 }, { "cropId": "basil", "weight": 0.5 }] }
