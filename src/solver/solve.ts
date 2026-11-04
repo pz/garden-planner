@@ -38,11 +38,13 @@ export function solve(plan: GardenPlan, spec: PlantingSpec, options: SolveOption
   const rng = mulberry32(seed);
   const ev = new Evaluator(ctx);
 
+  // The existing patches the search may change start where they are.
+  for (const b of ctx.editable) ev.add(b);
   construct(ev, rng);
   const searched = anneal(ev, rng, iterations, options.trace === true);
 
   const blocks = ev.placed().map(([, b]) => b);
-  const commands: Command[] = emitCommands(blocks);
+  const commands: Command[] = emitCommands(ctx, blocks);
   const v = verify(plan, commands, options.newId ?? counterIds(plan));
   return {
     commands,

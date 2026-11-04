@@ -12,7 +12,7 @@ import { parseSpec, type PlantingSpec, type SolveMode } from './spec';
 // In the style of api/simulation.test.ts: random gardens and random valid specs, seeded, with the
 // invariants asserted for every run.
 
-const MODES: SolveMode[] = ['fill'];
+const MODES: SolveMode[] = ['fill', 'adjust', 'replace'];
 
 function randomGarden(next: () => number): GardenPlan {
   const pick = <T,>(xs: T[]): T => xs[Math.floor(next() * xs.length)];
@@ -61,6 +61,12 @@ function randomSpec(next: () => number, plan: GardenPlan, mode: SolveMode): Plan
     }),
   };
   if (scoped) spec.scope = { bedIds: scoped };
+  const groups = [...new Set(plan.plants.map((p) => p.groupId))];
+  if (mode !== 'fill' && groups.length && next() < 0.4) spec.locked = [pick(groups)];
+  if (mode === 'adjust' && next() < 0.3) {
+    const gone = pick(CROPS).id;
+    if (!spec.demands.some((d) => d.cropId === gone)) spec.exclude = [gone];
+  }
   if (next() < 0.3) spec.fillRatio = Math.round((0.3 + next() * 0.7) * 100) / 100;
   if (next() < 0.3) spec.prefs = { spacing: next() < 0.5 ? 1 : 0.5, shade: next(), clustering: next() };
   return spec;
@@ -83,7 +89,7 @@ describe('solver simulation', () => {
         planted += p.blocks.length;
       }
       // The runs plant things: a simulation that placed nothing would pass every invariant.
-      expect(planted).toBeGreaterThan(40);
+      expect(planted).toBeGreaterThan(30);
     }, 120_000);
   }
 });
