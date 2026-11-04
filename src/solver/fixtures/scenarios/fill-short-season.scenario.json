@@ -1,0 +1,5 @@
+{
+  "description": "In zone 3 a watermelon cannot ripen before frost.",
+  "garden": "short-season", "spec": "fill-short-season", "options": { "seed": 1 },
+  "expect": [{ "kind": "status", "crop": "watermelon", "status": "unmet", "reason": "season_too_short" }, { "kind": "placed", "crop": "watermelon", "eq": 0 }]
+}

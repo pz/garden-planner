@@ -1,0 +1,1 @@
+{ "mode": "fill", "demands": [{ "cropId": "tomato", "weight": 1 }, { "cropId": "squash", "weight": 1 }, { "cropId": "radish", "weight": 1 }] }

@@ -1,0 +1,5 @@
+{
+  "description": "The tomatoes, peppers, cukes and lettuces prompt, with melons and beans at lower priority.",
+  "garden": "empty-4x8", "spec": "fill-salad-garden", "options": { "seed": 1 },
+  "expect": [{ "kind": "introducedWarnings", "warningKind": "spacing", "severity": "problem", "max": 0 }]
+}

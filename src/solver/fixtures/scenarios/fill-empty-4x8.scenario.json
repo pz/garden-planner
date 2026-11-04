@@ -1,0 +1,5 @@
+{
+  "description": "Baseline packing: three crops into an empty bed.",
+  "garden": "empty-4x8", "spec": "fill-basic", "options": { "seed": 1 },
+  "expect": [{ "kind": "introducedWarnings", "warningKind": "spacing", "severity": "problem", "max": 0 }]
+}

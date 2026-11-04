@@ -1,0 +1,5 @@
+{
+  "description": "North is to the right: the same garden, so tall crops belong on the other side.",
+  "garden": "north-row-east", "spec": "fill-shade-order", "options": { "seed": 1 },
+  "expect": [{ "kind": "introducedWarnings", "warningKind": "shade", "max": 0 }]
+}
