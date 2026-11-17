@@ -1,5 +1,5 @@
 {
-  "description": "A 24 in bed: squash cannot fit, and the reasons say so.",
+  "description": "A 24 in bed: one tomato and one squash fit only because their growing room spills past the edge, and radishes fill what is left.",
   "garden": "tiny-bed", "spec": "fill-tiny", "options": { "seed": 1 },
-  "expect": [{ "kind": "status", "crop": "squash", "status": "unmet", "reason": "insufficient_space" }]
+  "expect": [{ "kind": "placed", "crop": "squash", "lte": 1 }, { "kind": "placed", "crop": "tomato", "lte": 1 }, { "kind": "placed", "crop": "radish", "gte": 20 }, { "kind": "introducedWarnings", "warningKind": "spacing", "severity": "problem", "max": 0 }]
 }

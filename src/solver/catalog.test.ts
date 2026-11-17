@@ -79,7 +79,7 @@ describe('fixtures', () => {
     expect(specs.some((s) => s.demands.some((d) => d.bedIds))).toBe(true);
     expect(specs.some((s) => s.demands.some((d) => d.min !== undefined || d.max !== undefined))).toBe(true);
     expect(specs.some((s) => s.demands.some((d) => d.cropId.startsWith('custom-')))).toBe(true);
-    expect(specs.some((s) => s.demands.some((d) => d.cropId === 'watermelon'))).toBe(true);
+    expect(specs.some((s) => s.demands.some((d) => d.cropId === 'artichoke'))).toBe(true);
   });
 
   it('names the failing spec when a spec does not fit its garden', () => {

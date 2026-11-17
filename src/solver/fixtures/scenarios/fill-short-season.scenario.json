@@ -1,5 +1,5 @@
 {
-  "description": "In zone 3 a watermelon cannot ripen before frost.",
+  "description": "In zone 3 an artichoke (150 days) cannot ripen before frost, while a watermelon (80 days) still can.",
   "garden": "short-season", "spec": "fill-short-season", "options": { "seed": 1 },
-  "expect": [{ "kind": "status", "crop": "watermelon", "status": "unmet", "reason": "season_too_short" }, { "kind": "placed", "crop": "watermelon", "eq": 0 }]
+  "expect": [{ "kind": "status", "crop": "artichoke", "status": "unmet", "reason": "season_too_short" }, { "kind": "placed", "crop": "artichoke", "eq": 0 }, { "kind": "placed", "crop": "watermelon", "gte": 1 }]
 }
