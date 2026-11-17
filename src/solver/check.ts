@@ -100,3 +100,22 @@ export function runScenario(s: LoadedScenario, overrides: SolveOptions = {}): { 
   const problems = [...checkInvariants(s, proposal, again), ...checkExpectations(s.plan, proposal, s.expect)];
   return { proposal, problems };
 }
+
+export const median = (xs: number[]): number => {
+  const s = [...xs].sort((a, b) => a - b);
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+
+export interface SweepResult {
+  name: string;
+  greedy: number[];
+  searched: number[];
+}
+
+/** Scores of a scenario over `seeds` seeds, with the greedy construction alone and with the local search. */
+export function sweep(s: LoadedScenario, seeds: number, iterations?: number): SweepResult {
+  const run = (seed: number, its: number | undefined) => solve(s.plan, s.spec, { seed, iterations: its, year: 2026 }).score.total;
+  const range = Array.from({ length: seeds }, (_, i) => i + 1);
+  return { name: s.name, greedy: range.map((seed) => run(seed, 0)), searched: range.map((seed) => run(seed, iterations)) };
+}

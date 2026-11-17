@@ -5,6 +5,7 @@ import { readLayout } from '../api/layoutView';
 import { getCrop } from '../data/crops';
 import type { GardenPlan } from '../types';
 import { gardenNames, loadScenario, scenarioNames } from './catalog';
+import { median, sweep } from './check';
 import type { Proposal } from './proposal';
 import { solve } from './solve';
 
@@ -14,7 +15,7 @@ const value = (name: string): string | undefined => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 ? argv[i + 1] : undefined;
 };
-const VALUE_FLAGS = ['seed', 'iterations'];
+const VALUE_FLAGS = ['seed', 'iterations', 'seeds'];
 const positional = argv.filter((a, i) => !a.startsWith('--') && !VALUE_FLAGS.includes(argv[i - 1]?.slice(2) ?? ''));
 
 const f = (n: number) => (Math.round(n * 1000) / 1000).toString();
@@ -35,8 +36,20 @@ function report(name: string, before: GardenPlan, p: Proposal, ms: number): stri
   return lines.join('\n');
 }
 
-if (flag('list') || (positional.length === 0 && !flag('all'))) {
-  console.log(`Gardens:   ${gardenNames().join(', ')}\nScenarios: ${scenarioNames().join(', ')}\n\nUsage: npm run solve -- <scenario>… | --all [--seed N] [--iterations N] [--json]`);
+if (flag('sweep')) {
+  const names = positional.length ? positional : scenarioNames();
+  const seeds = Number(value('seeds') ?? 20);
+  const iterations = value('iterations') !== undefined ? Number(value('iterations')) : undefined;
+  console.log(`${'scenario'.padEnd(24)} ${'greedy'.padStart(8)} ${'searched'.padStart(9)} ${'gain'.padStart(7)}  better`);
+  for (const name of names) {
+    const r = sweep(loadScenario(name), seeds, iterations);
+    const g = median(r.greedy);
+    const a = median(r.searched);
+    const better = r.searched.filter((x, i) => x > r.greedy[i] + 1e-9).length;
+    console.log(`${name.padEnd(24)} ${f(g).padStart(8)} ${f(a).padStart(9)} ${f(a - g).padStart(7)}  ${better}/${seeds}`);
+  }
+} else if (flag('list') || (positional.length === 0 && !flag('all'))) {
+  console.log(`Gardens:   ${gardenNames().join(', ')}\nScenarios: ${scenarioNames().join(', ')}\n\nUsage: npm run solve -- <scenario>… | --all [--seed N] [--iterations N] [--json]\n       npm run solve -- --sweep [<scenario>… | --all] [--seeds 20] [--iterations N]   (median score, greedy alone vs with search)`);
 } else {
   const names = flag('all') ? scenarioNames() : positional;
   const failed: string[] = [];

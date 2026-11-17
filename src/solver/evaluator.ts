@@ -1,20 +1,33 @@
 import type { Point } from '../types';
+import { getCrop } from '../data/crops';
 import { MAX_PATCH_PLANTS, isInsideOutline } from '../core/geometry';
 import { blockPlantCount, blockPoints, blockSpacing, type Block } from './block';
 import { DiscIndex } from './discIndex';
 import { makeGroup } from './groups';
 import type { Ctx, DemandInfo, Group } from './model';
 import type { ScoreBreakdown } from './proposal';
+import { companionWeight, shades } from './pairRules';
 import { edgeSpill, requiredGap, spacingPenalty, violatesHardSpacing } from './rules';
-import { SPACING_WEIGHT, SPILL_WEIGHT, demandCurve, emptyBreakdown, minMaxPenalty } from './scoring';
+import { CLUSTER_WEIGHT, COMPANION_WEIGHT, SHADE_WEIGHT, SPACING_WEIGHT, SPILL_WEIGHT, SUN_WEIGHT, demandCurve, emptyBreakdown, minMaxPenalty } from './scoring';
 
 /** The raw (unweighted) sums behind the pair and per-plant terms. */
 interface Raw {
   spacing: number;
   spill: number;
+  /** Plants of shaded patches, summed over shade conflicts. */
+  shade: number;
+  /** Companion conflicts, weighted by evidence. */
+  companion: number;
+  /** Full-sun plants in a part-shade garden. */
+  sun: number;
 }
 
+const zeroRaw = (): Raw => ({ spacing: 0, spill: 0, shade: 0, companion: 0, sun: 0 });
+
 const PREVIEW = '__preview__';
+
+/** Negation that never yields -0, so a term that is not charged prints as 0. */
+const neg = (x: number): number => (x === 0 ? 0 : -x);
 
 /** A two-level memo keyed by two numbers, for the outline tests the search repeats at the same few spots. */
 class Memo<T> {
@@ -38,11 +51,14 @@ export class Evaluator {
   private readonly groups = new Map<string, Group>();
   private readonly blocks = new Map<string, Block>();
   private readonly counts = new Map<string, number>();
-  private readonly spillOf = new Map<string, number>();
   private readonly demandOf: Map<string, DemandInfo>;
   private readonly insideMemo = new Map<string, Memo<boolean>>();
   private readonly spillMemo = new Map<string, Memo<number>>();
-  private readonly raw: Raw = { spacing: 0, spill: 0 };
+  private readonly raw: Raw = zeroRaw();
+  /** Blocks per crop and bed, for the clustering term. */
+  private readonly blocksIn = new Map<string, number>();
+  private clustering = 0;
+  private readonly partShade: boolean;
   private demand = 0;
   private minMax = 0;
   private seq = 0;
@@ -51,6 +67,7 @@ export class Evaluator {
 
   constructor(ctx: Ctx) {
     this.ctx = ctx;
+    this.partShade = ctx.plan.profile.sunExposure === 'part-shade';
     this.demandOf = new Map(ctx.demands.map((d) => [d.cropId, d]));
     for (const id of ctx.beds.keys()) this.index.set(id, new DiscIndex(ctx.maxSpacingIn));
     for (const g of ctx.fixed) this.insert(g);
@@ -123,17 +140,24 @@ export class Evaluator {
 
   /** The raw sums a group contributes against everything else in the index right now. */
   private contribution(g: Group): Raw {
-    let spacing = 0;
-    let spill = 0;
+    const out = zeroRaw();
     const idx = this.index.get(g.bedId)!;
     for (const p of g.points) {
       idx.forEachNear(p.x, p.y, this.ctx.maxSpacingIn, (d, dist) => {
         if (d.group === g.id) return;
-        spacing += spacingPenalty(dist, requiredGap(g.spacingIn, d.spacingIn));
+        out.spacing += spacingPenalty(dist, requiredGap(g.spacingIn, d.spacingIn));
       });
-      spill += this.spill(g.bedId, p.x, p.y, g.spacingIn);
+      out.spill += this.spill(g.bedId, p.x, p.y, g.spacingIn);
     }
-    return { spacing, spill };
+    const dir = this.ctx.shadowDir;
+    for (const h of this.groups.values()) {
+      if (h.id === g.id) continue;
+      if (shades(g, h, dir)) out.shade += h.points.length;
+      if (shades(h, g, dir)) out.shade += g.points.length;
+      out.companion += companionWeight(g, h);
+    }
+    if (this.partShade && getCrop(g.cropId).sunNeed === 'full') out.sun += g.points.length;
+    return out;
   }
 
   private cropValue(cropId: string, n: number): { demand: number; minMax: number } {
@@ -148,7 +172,14 @@ export class Evaluator {
     const n = this.count(block.cropId);
     const before = this.cropValue(block.cropId, n);
     const after = this.cropValue(block.cropId, n + blockPlantCount(block));
-    return after.demand - before.demand - (after.minMax - before.minMax) - this.ctx.prefs.spacing * SPACING_WEIGHT * c.spacing - SPILL_WEIGHT * c.spill;
+    const extra = (this.blocksIn.get(`${block.cropId}|${block.bedId}`) ?? 0) > 0 ? 1 : 0;
+    return after.demand - before.demand - (after.minMax - before.minMax) - this.penalty(c) - this.ctx.prefs.clustering * CLUSTER_WEIGHT * extra;
+  }
+
+  /** The weighted cost of a set of raw sums. */
+  private penalty(r: Raw): number {
+    const p = this.ctx.prefs;
+    return p.spacing * SPACING_WEIGHT * r.spacing + SPILL_WEIGHT * r.spill + p.shade * SHADE_WEIGHT * r.shade + p.companions * COMPANION_WEIGHT * r.companion + SUN_WEIGHT * r.sun;
   }
 
   /** The best-case gain from adding `plants` plants of a crop: its demand and limits alone, with no penalties. An upper bound on `previewAdd`. */
@@ -166,9 +197,11 @@ export class Evaluator {
     const c = this.contribution(g);
     this.insert(g);
     this.blocks.set(id, block);
-    this.raw.spacing += c.spacing;
-    this.raw.spill += c.spill;
-    this.spillOf.set(id, c.spill);
+    this.addRaw(c, 1);
+    const key = `${block.cropId}|${block.bedId}`;
+    const there = this.blocksIn.get(key) ?? 0;
+    if (there > 0) this.clustering++;
+    this.blocksIn.set(key, there + 1);
     this.setCount(block.cropId, this.count(block.cropId) + blockPlantCount(block));
     return id;
   }
@@ -176,13 +209,24 @@ export class Evaluator {
   remove(id: string): Block {
     const block = this.blocks.get(id)!;
     const g = this.uninsert(id);
-    const c = this.contribution(g);
     this.blocks.delete(id);
-    this.raw.spacing -= c.spacing;
-    this.raw.spill -= this.spillOf.get(id)!;
-    this.spillOf.delete(id);
+    // What it contributed is what it would contribute against everything that is left: pairs with
+    // blocks added after it are counted in the same way as pairs with blocks added before.
+    this.addRaw(this.contribution(g), -1);
+    const key = `${block.cropId}|${block.bedId}`;
+    const there = this.blocksIn.get(key)!;
+    if (there > 1) this.clustering--;
+    this.blocksIn.set(key, there - 1);
     this.setCount(block.cropId, this.count(block.cropId) - blockPlantCount(block));
     return block;
+  }
+
+  private addRaw(r: Raw, sign: 1 | -1): void {
+    this.raw.spacing += sign * r.spacing;
+    this.raw.spill += sign * r.spill;
+    this.raw.shade += sign * r.shade;
+    this.raw.companion += sign * r.companion;
+    this.raw.sun += sign * r.sun;
   }
 
   private setCount(cropId: string, n: number): void {
@@ -197,9 +241,14 @@ export class Evaluator {
   breakdown(): ScoreBreakdown {
     const b = emptyBreakdown();
     b.demand = this.demand;
-    b.minMax = -this.minMax;
-    b.spacing = -this.ctx.prefs.spacing * SPACING_WEIGHT * this.raw.spacing;
-    b.spill = -SPILL_WEIGHT * this.raw.spill;
+    b.minMax = neg(this.minMax);
+    const p = this.ctx.prefs;
+    b.spacing = neg(p.spacing * SPACING_WEIGHT * this.raw.spacing);
+    b.spill = neg(SPILL_WEIGHT * this.raw.spill);
+    b.shade = neg(p.shade * SHADE_WEIGHT * this.raw.shade);
+    b.companion = neg(p.companions * COMPANION_WEIGHT * this.raw.companion);
+    b.clustering = neg(p.clustering * CLUSTER_WEIGHT * this.clustering);
+    b.sun = neg(SUN_WEIGHT * this.raw.sun);
     b.total = b.demand + b.minMax + b.spacing + b.shade + b.companion + b.clustering + b.spill + b.change + b.sun;
     return b;
   }

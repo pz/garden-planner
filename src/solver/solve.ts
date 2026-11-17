@@ -3,9 +3,10 @@ import type { GardenPlan } from '../types';
 import { mulberry32 } from '../core/random';
 import { emitCommands } from './emit';
 import { Evaluator } from './evaluator';
+import { anneal } from './anneal';
 import { construct } from './greedy';
 import { normalize } from './normalize';
-import type { Proposal, SolveOptions } from './proposal';
+import { DEFAULT_ITERATIONS, type Proposal, type SolveOptions } from './proposal';
 import { cropResults } from './results';
 import type { PlantingSpec } from './spec';
 import { verify } from './verify';
@@ -32,11 +33,13 @@ function counterIds(plan: GardenPlan): () => string {
  */
 export function solve(plan: GardenPlan, spec: PlantingSpec, options: SolveOptions = {}): Proposal {
   const seed = options.seed ?? DEFAULT_SEED;
+  const iterations = options.iterations ?? DEFAULT_ITERATIONS;
   const ctx = normalize(plan, spec, options.year ?? new Date().getFullYear());
   const rng = mulberry32(seed);
   const ev = new Evaluator(ctx);
 
   construct(ev, rng);
+  const searched = anneal(ev, rng, iterations, options.trace === true);
 
   const blocks = ev.placed().map(([, b]) => b);
   const commands: Command[] = emitCommands(blocks);
@@ -51,6 +54,7 @@ export function solve(plan: GardenPlan, spec: PlantingSpec, options: SolveOption
     hardViolations: v.violations,
     blocks,
     seed,
-    iterations: 0,
+    iterations,
+    ...(options.trace ? { trace: searched.trace } : {}),
   };
 }

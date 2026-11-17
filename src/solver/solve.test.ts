@@ -148,7 +148,10 @@ describe('filters and reasons', () => {
     expect(p.crops.find((c) => c.cropId === 'tomato')!.reasons).toEqual(['insufficient_sun']);
     expect(p.crops.find((c) => c.cropId === 'lettuce')!.status).toBe('met');
     const part = planOf([bed('b', 96, 48)], [], { profile: { ...createPlan('x').profile, sunExposure: 'part-shade' } });
-    expect(solve(part, fill({ cropId: 'tomato', weight: 1 }), opts).crops[0].status).toBe('met');
+    // Not excluded, but each full-sun plant costs a little, so the last plants may be traded away, and the result says why.
+    const tomato = solve(part, fill({ cropId: 'tomato', weight: 1 }), opts).crops[0];
+    expect(tomato.placed).toBeGreaterThan(3);
+    expect(tomato.status === 'met' || tomato.reasons.includes('insufficient_sun')).toBe(true);
   });
 
   // A 12 in bed with a fixed kale (18 in spacing) in the middle: nothing inside it is 12.6 in from the kale.
