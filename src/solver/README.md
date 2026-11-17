@@ -6,7 +6,7 @@ no LLM in it. It sits between `src/api` and `src/app`: it may import `types`, `d
 `api`; nothing in those layers may import it, and it must not import `app` (enforced in
 `.oxlintrc.json`; `tsconfig.core.json` typechecks it without the DOM lib).
 
-The design is the "Planting Solver & Test Harness — Design" doc. This README records what has
+The design is the [Planting Solver & Test Harness — Design](https://claude.ai/artifact/9Peko4zYhPUAfoHUMdjPmt) doc. This README records what has
 been built and every decision made while building it that the doc left open or changed.
 
 ## Status

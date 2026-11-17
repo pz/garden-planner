@@ -132,7 +132,7 @@ says only *what* you want. Its output is ordinary API commands, checked with a d
 | `npx tsc -b --noEmit` | Typecheck only |
 | `npm run lint` | [oxlint](https://oxc.rs) |
 | `npm run test` / `npm run test:watch` | Unit tests ([vitest](https://vitest.dev), plain Node) |
-| `npm run solve -- --all` | Planting solver CLI: solve fixture scenarios, `--sweep` to compare settings (see [`src/solver/README.md`](src/solver/README.md)) |
+| `npm run solve -- --list` | Planting solver CLI (fixtures only so far; see [`src/solver/README.md`](src/solver/README.md)) |
 | `npm run test:e2e` | Browser tests ([Playwright](https://playwright.dev), `e2e/`); starts the dev server itself |
 
 CI (`.github/workflows/ci.yml`) runs typecheck, lint, unit tests and the browser tests on every PR.
