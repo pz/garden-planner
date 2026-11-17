@@ -3,7 +3,7 @@ import { getZone, zoneFirstFrostDate } from '../data/zones';
 import { scheduleFor } from '../core/dates';
 import { bedOutline } from '../core/layout';
 import { shadowDirection } from '../core/shade';
-import type { Block } from './block';
+import { asBlock, type Block } from './block';
 import { makeGroup, patches } from './groups';
 import { bedArea, plantArea, targetCount } from './allocate';
 import type { Ctx, DemandInfo, Group } from './model';
@@ -39,14 +39,6 @@ export function normalize(plan: Ctx['plan'], spec: PlantingSpec, year: number): 
   const scope = new Set(spec.scope?.bedIds ?? plan.beds.map((b) => b.id));
   const beds: Ctx['beds'] = new Map(plan.beds.map((bed) => [bed.id, { bed, outline: bedOutline(bed), inScope: scope.has(bed.id) }]));
 
-  // Existing plants. Fill mode leaves all of them alone; the other modes arrive with milestone 5.
-  const fixed: Group[] = [];
-  for (const [groupId, members] of patches(plan.plants)) {
-    fixed.push(makeGroup(groupId, members[0].bedId, members[0].cropId, members.map((p) => ({ x: p.x, y: p.y })), beds, true));
-  }
-  const editable: Block[] = [];
-  const removed: string[] = [];
-
   // Pre-solve filters.
   const filtered = new Map<string, UnmetReason[]>();
   const live: Omit<DemandInfo, 'target'>[] = [];
@@ -61,6 +53,28 @@ export function normalize(plan: Ctx['plan'], spec: PlantingSpec, year: number): 
     }
     const bedIds = (d.bedIds ?? [...scope]).filter((id) => scope.has(id));
     live.push({ cropId: d.cropId, crop, weight: d.weight, min: d.min, max: d.max, bedIds });
+  }
+
+  // Existing plants, by patch. Anything outside the scope or locked is fixed, in every mode. In
+  // fill mode so is everything else. In replace mode the rest is removed. In adjust mode a patch of
+  // an excluded crop is removed, a grid-shaped patch of a demanded crop in a bed it may use becomes
+  // a block the search can move, resize or drop, and any other patch stays as it is.
+  const excluded = new Set(spec.exclude ?? []);
+  const locked = new Set(spec.locked ?? []);
+  const fixed: Group[] = [];
+  const editable: Block[] = [];
+  const removed: string[] = [];
+  for (const [groupId, members] of patches(plan.plants)) {
+    const { bedId, cropId } = members[0];
+    const keep = () => fixed.push(makeGroup(groupId, bedId, cropId, members.map((p) => ({ x: p.x, y: p.y })), beds, true));
+    if (spec.mode === 'fill' || !scope.has(bedId) || locked.has(groupId)) keep();
+    else if (spec.mode === 'replace' || excluded.has(cropId)) removed.push(groupId);
+    else {
+      const demand = live.find((d) => d.cropId === cropId);
+      const block = demand?.bedIds.includes(bedId) ? asBlock(members) : null;
+      if (block) editable.push(block);
+      else keep();
+    }
   }
 
   // Allocation: each crop's share of the free area in the beds it may use.

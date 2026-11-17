@@ -94,13 +94,13 @@ describe('shade placement', () => {
 
 describe('Evaluator keeps its score up to date', () => {
   // After any sequence of adds and removes, the incremental totals must equal a fresh evaluator built from the same blocks.
-  it('through random adds and removes, on every fill scenario', () => {
-    for (const name of FILL) {
+  it('through random adds and removes, on every scenario (the existing patches of adjust mode included)', () => {
+    for (const name of scenarioNames()) {
       const s = loadScenario(name);
       const ctx = normalize(s.plan, s.spec, 2026);
       const next = mulberry32(11);
       const ev = new Evaluator(ctx);
-      const ids: string[] = [];
+      const ids: string[] = ctx.editable.map((b) => ev.add(b));
       for (let step = 0; step < 60; step++) {
         if (ids.length > 0 && next() < 0.4) {
           const k = Math.floor(next() * ids.length);

@@ -78,9 +78,12 @@ export function checkInvariants(s: Pick<LoadedScenario, 'plan' | 'spec'>, p: Pro
     if (!samePlants(inGroup(s.plan, g), inGroup(p.plan, g))) problems.push(`patch ${g} changed without a command for it`);
   }
   for (const g of s.spec.locked ?? []) if (touched.has(g)) problems.push(`locked patch ${g} was touched`);
+  const scope = new Set(s.spec.scope?.bedIds ?? s.plan.beds.map((b) => b.id));
+  for (const g of touched) {
+    const bedId = s.plan.plants.find((x) => x.groupId === g)?.bedId;
+    if (bedId !== undefined && !scope.has(bedId)) problems.push(`patch ${g} is outside the scope but was touched`);
+  }
   if (s.spec.mode === 'fill' && p.commands.some((c) => c.type !== 'addPatch')) problems.push('fill mode emitted something other than addPatch');
-  const outside = new Set(s.plan.beds.map((b) => b.id).filter((id) => s.spec.scope?.bedIds && !s.spec.scope.bedIds.includes(id)));
-  for (const plant of s.plan.plants) if (outside.has(plant.bedId) && !p.plan.plants.some((q) => q.id === plant.id)) problems.push(`plant ${plant.id} outside the scope was removed`);
 
   if (JSON.stringify(p.commands) !== JSON.stringify(again.commands)) problems.push('the same inputs and seed gave different commands');
 
