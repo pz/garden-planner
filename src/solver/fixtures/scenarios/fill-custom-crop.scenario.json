@@ -1,0 +1,5 @@
+{
+  "description": "A user-made crop has no schedule, so the season check skips it.",
+  "garden": "custom-crop", "spec": "fill-custom-crop", "options": { "seed": 1 },
+  "expect": [{ "kind": "placed", "crop": "custom-ground-cherry", "gte": 1 }]
+}

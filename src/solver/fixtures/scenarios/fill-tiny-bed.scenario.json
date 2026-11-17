@@ -1,0 +1,5 @@
+{
+  "description": "A 24 in bed: squash cannot fit, and the reasons say so.",
+  "garden": "tiny-bed", "spec": "fill-tiny", "options": { "seed": 1 },
+  "expect": [{ "kind": "status", "crop": "squash", "status": "unmet", "reason": "insufficient_space" }]
+}

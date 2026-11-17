@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Bed, GardenPlan } from '../types';
 import { CROPS } from '../data/crops';
+import { mulberry32 as rng } from '../core/random';
 import { isInsideOutline } from '../core/geometry';
 import { bedOutline } from '../core/layout';
 import { createPlan } from '../core/reducer';
@@ -13,18 +14,6 @@ import { computeWarnings } from './warnings';
 
 // A headless simulation: random batches of commands (valid and not) are thrown at a growing
 // garden, and the invariants that must hold no matter what the batch says are checked each time.
-
-/** Small, fast, seedable PRNG (mulberry32). */
-function rng(seed: number) {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 const OVAL: Bed = { id: 'oval', name: 'Oval', shape: 'ellipse', cx: 200, cy: 30, widthIn: 60, heightIn: 60, rotationDeg: 0 };
 const START = (): GardenPlan => ({ ...createPlan('sim'), beds: [...createPlan('sim').beds, OVAL] });

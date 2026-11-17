@@ -1,0 +1,5 @@
+{
+  "description": "North is up: shade falls on the beds below, so tall crops belong at the top.",
+  "garden": "north-row", "spec": "fill-shade-order", "options": { "seed": 1 },
+  "expect": [{ "kind": "introducedWarnings", "warningKind": "shade", "max": 0 }]
+}

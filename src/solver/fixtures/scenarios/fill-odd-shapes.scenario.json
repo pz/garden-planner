@@ -1,0 +1,5 @@
+{
+  "description": "Ellipse, polygon, rounded and rotated beds: every center stays inside its outline.",
+  "garden": "odd-shapes", "spec": "fill-odd-shapes", "options": { "seed": 1 },
+  "expect": [{ "kind": "introducedWarnings", "warningKind": "spacing", "severity": "problem", "max": 0 }]
+}

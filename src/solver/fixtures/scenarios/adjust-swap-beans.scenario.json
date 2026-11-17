@@ -1,0 +1,5 @@
+{
+  "description": "Swap the beans (which dislike onion) for peas.",
+  "garden": "crowded", "spec": "adjust-swap-beans", "options": { "seed": 1 },
+  "expect": [{ "kind": "removed", "groupIds": ["g-beans"] }, { "kind": "placed", "crop": "beans", "eq": 0 }, { "kind": "introducedWarnings", "warningKind": "companion", "max": 0 }]
+}

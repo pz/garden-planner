@@ -1,0 +1,5 @@
+{
+  "mode": "fill",
+  "scope": { "bedIds": ["bed-1", "bed-2"] },
+  "demands": [{ "cropId": "tomato", "weight": 1, "bedIds": ["bed-2"] }, { "cropId": "lettuce", "weight": 1, "bedIds": ["bed-1"] }]
+}

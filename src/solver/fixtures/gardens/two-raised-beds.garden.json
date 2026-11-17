@@ -1,0 +1,111 @@
+{
+  "format": "garden-planner-export",
+  "formatVersion": 1,
+  "meta": {
+    "commit": "fixture",
+    "exportedAt": "2026-11-03T00:00:00.000Z"
+  },
+  "plan": {
+    "version": 3,
+    "id": "two-raised-beds",
+    "name": "Two raised beds",
+    "profile": {
+      "zoneId": "6",
+      "sunExposure": "full-sun",
+      "onboarded": true,
+      "location": {
+        "lat": 40,
+        "lng": -100
+      }
+    },
+    "beds": [
+      {
+        "id": "bed-1",
+        "name": "Bed 1",
+        "shape": "rect",
+        "cx": 48,
+        "cy": 24,
+        "widthIn": 96,
+        "heightIn": 48,
+        "rotationDeg": 0
+      },
+      {
+        "id": "bed-2",
+        "name": "Bed 2",
+        "shape": "rect",
+        "cx": 48,
+        "cy": 100,
+        "widthIn": 96,
+        "heightIn": 48,
+        "rotationDeg": 0
+      }
+    ],
+    "plants": [
+      {
+        "id": "p1",
+        "bedId": "bed-1",
+        "cropId": "tomato",
+        "x": 12,
+        "y": 12,
+        "groupId": "g-tomato"
+      },
+      {
+        "id": "p2",
+        "bedId": "bed-1",
+        "cropId": "tomato",
+        "x": 36,
+        "y": 12,
+        "groupId": "g-tomato"
+      },
+      {
+        "id": "p3",
+        "bedId": "bed-1",
+        "cropId": "lettuce",
+        "x": 66,
+        "y": 10,
+        "groupId": "g-lettuce"
+      },
+      {
+        "id": "p4",
+        "bedId": "bed-1",
+        "cropId": "lettuce",
+        "x": 76,
+        "y": 10,
+        "groupId": "g-lettuce"
+      },
+      {
+        "id": "p5",
+        "bedId": "bed-1",
+        "cropId": "lettuce",
+        "x": 86,
+        "y": 10,
+        "groupId": "g-lettuce"
+      },
+      {
+        "id": "p6",
+        "bedId": "bed-1",
+        "cropId": "lettuce",
+        "x": 66,
+        "y": 20,
+        "groupId": "g-lettuce"
+      },
+      {
+        "id": "p7",
+        "bedId": "bed-1",
+        "cropId": "lettuce",
+        "x": 76,
+        "y": 20,
+        "groupId": "g-lettuce"
+      },
+      {
+        "id": "p8",
+        "bedId": "bed-1",
+        "cropId": "lettuce",
+        "x": 86,
+        "y": 20,
+        "groupId": "g-lettuce"
+      }
+    ],
+    "dismissedConflictKeys": []
+  }
+}

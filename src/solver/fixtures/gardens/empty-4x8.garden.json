@@ -1,0 +1,36 @@
+{
+  "format": "garden-planner-export",
+  "formatVersion": 1,
+  "meta": {
+    "commit": "fixture",
+    "exportedAt": "2026-11-03T00:00:00.000Z"
+  },
+  "plan": {
+    "version": 3,
+    "id": "empty-4x8",
+    "name": "Empty 4x8",
+    "profile": {
+      "zoneId": "6",
+      "sunExposure": "full-sun",
+      "onboarded": true,
+      "location": {
+        "lat": 40,
+        "lng": -100
+      }
+    },
+    "beds": [
+      {
+        "id": "bed-1",
+        "name": "Bed 1",
+        "shape": "rect",
+        "cx": 48,
+        "cy": 24,
+        "widthIn": 96,
+        "heightIn": 48,
+        "rotationDeg": 0
+      }
+    ],
+    "plants": [],
+    "dismissedConflictKeys": []
+  }
+}

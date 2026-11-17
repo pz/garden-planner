@@ -1,0 +1,1 @@
+{ "mode": "adjust", "demands": [{ "cropId": "tomato", "weight": 2, "min": 6 }, { "cropId": "lettuce", "weight": 1 }] }

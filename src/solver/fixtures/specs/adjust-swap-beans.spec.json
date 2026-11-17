@@ -1,0 +1,1 @@
+{ "mode": "adjust", "exclude": ["beans"], "demands": [{ "cropId": "pea", "weight": 1 }, { "cropId": "onion", "weight": 1 }] }

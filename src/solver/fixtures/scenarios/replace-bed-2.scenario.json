@@ -1,0 +1,5 @@
+{
+  "description": "Start bed 2 over; bed 1 is outside the scope and stays as it is.",
+  "garden": "crowded", "spec": "replace-bed-2", "options": { "seed": 1 },
+  "expect": [{ "kind": "removed", "groupIds": ["g-tomato", "g-marigold", "g-pepper"] }, { "kind": "unchanged", "groupIds": ["g-onion", "g-beans", "g-carrot", "g-basil", "g-lettuce"] }, { "kind": "inBeds", "crop": "cucumber", "bedIds": ["bed-2"] }]
+}

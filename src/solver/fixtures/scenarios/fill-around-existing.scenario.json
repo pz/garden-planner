@@ -1,0 +1,5 @@
+{
+  "description": "Fill around a partly planted bed; existing plants stay put.",
+  "garden": "two-raised-beds", "spec": "fill-basic", "options": { "seed": 1 },
+  "expect": [{ "kind": "unchanged", "groupIds": ["g-tomato", "g-lettuce"] }, { "kind": "introducedWarnings", "warningKind": "spacing", "severity": "problem", "max": 0 }]
+}

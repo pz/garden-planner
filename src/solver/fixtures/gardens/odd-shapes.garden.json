@@ -1,0 +1,81 @@
+{
+  "format": "garden-planner-export",
+  "formatVersion": 1,
+  "meta": {
+    "commit": "fixture",
+    "exportedAt": "2026-11-03T00:00:00.000Z"
+  },
+  "plan": {
+    "version": 3,
+    "id": "odd-shapes",
+    "name": "Odd shapes",
+    "profile": {
+      "zoneId": "6",
+      "sunExposure": "full-sun",
+      "onboarded": true,
+      "location": {
+        "lat": 40,
+        "lng": -100
+      }
+    },
+    "beds": [
+      {
+        "id": "ellipse",
+        "name": "Ellipse",
+        "shape": "ellipse",
+        "cx": 40,
+        "cy": 40,
+        "widthIn": 72,
+        "heightIn": 60,
+        "rotationDeg": 0
+      },
+      {
+        "id": "triangle",
+        "name": "Triangle",
+        "shape": "polygon",
+        "cx": 160,
+        "cy": 40,
+        "widthIn": 72,
+        "heightIn": 60,
+        "rotationDeg": 0,
+        "points": [
+          {
+            "x": 36,
+            "y": 0
+          },
+          {
+            "x": 72,
+            "y": 60
+          },
+          {
+            "x": 0,
+            "y": 60
+          }
+        ]
+      },
+      {
+        "id": "rounded",
+        "name": "Rounded",
+        "shape": "rect",
+        "cx": 100,
+        "cy": 130,
+        "widthIn": 96,
+        "heightIn": 48,
+        "rotationDeg": 0,
+        "cornerRadiusIn": 16
+      },
+      {
+        "id": "rotated",
+        "name": "Rotated 30°",
+        "shape": "rect",
+        "cx": 240,
+        "cy": 130,
+        "widthIn": 72,
+        "heightIn": 48,
+        "rotationDeg": 30
+      }
+    ],
+    "plants": [],
+    "dismissedConflictKeys": []
+  }
+}
