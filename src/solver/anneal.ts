@@ -1,5 +1,5 @@
-import type { Point } from '../types';
-import { LATTICE_IN, blockPlantCount, latticeAnchors, type Block } from './block';
+import { LATTICE_IN, minShape, type Block } from './block';
+import { anchorsFor } from './greedy';
 import type { Evaluator } from './evaluator';
 import type { DemandInfo } from './model';
 import type { TracePoint } from './proposal';
@@ -18,14 +18,6 @@ type Move = (ev: Evaluator, rng: () => number) => { remove: string[]; add: Block
 
 const pickOf = <T,>(rng: () => number, xs: readonly T[]): T => xs[Math.floor(rng() * xs.length)];
 const int = (rng: () => number, lo: number, hi: number): number => lo + Math.floor(rng() * (hi - lo + 1));
-
-const anchors = new WeakMap<object, Point[]>();
-function anchorsOf(ev: Evaluator, bedId: string): Point[] {
-  const info = ev.ctx.beds.get(bedId)!;
-  let a = anchors.get(info);
-  if (!a) anchors.set(info, (a = latticeAnchors(info.outline)));
-  return a;
-}
 
 const demandOf = (ev: Evaluator, cropId: string): DemandInfo => ev.ctx.demands.find((d) => d.cropId === cropId)!;
 
@@ -72,7 +64,7 @@ function relocate(ev: Evaluator, rng: () => number) {
   const [id, b] = pickOf(rng, placed);
   const beds = demandOf(ev, b.cropId).bedIds;
   const bedId = pickOf(rng, beds);
-  const origin = pickOf(rng, anchorsOf(ev, bedId));
+  const origin = pickOf(rng, anchorsFor(ev, bedId, b.cropId));
   if (bedId === b.bedId && origin.x === b.origin.x && origin.y === b.origin.y) return null;
   return { remove: [id], add: [{ ...b, bedId, origin }] };
 }
@@ -83,21 +75,27 @@ function remove(ev: Evaluator, rng: () => number) {
   return { remove: [pickOf(rng, placed)[0]], add: [] };
 }
 
-/** A new block for the crop furthest below its target, at a random anchor, as large as asked for and as fits. */
+/**
+ * A new block of a crop at a random anchor: usually a crop below its target, else any crop, so
+ * that room left over once the targets are met can still be used. As large as asked for and as
+ * fits, never smaller than the crop's smallest group.
+ */
 function addBlock(ev: Evaluator, rng: () => number) {
+  if (ev.ctx.demands.length === 0) return null;
   const under = ev.ctx.demands.filter((d) => ev.count(d.cropId) < d.target);
-  if (under.length === 0) return null;
-  const crop = pickOf(rng, under);
-  const remaining = crop.target - ev.count(crop.cropId);
+  const crop = pickOf(rng, under.length > 0 && rng() < 0.7 ? under : ev.ctx.demands);
+  const remaining = Math.max(1, crop.target - ev.count(crop.cropId));
+  const min = minShape(crop.cropId);
   const bedId = pickOf(rng, crop.bedIds);
-  const origin = pickOf(rng, anchorsOf(ev, bedId));
-  let columns = int(rng, 1, Math.min(remaining, 6));
-  let rows = int(rng, 1, Math.max(1, Math.min(Math.floor(remaining / columns), 6)));
+  const origin = pickOf(rng, anchorsFor(ev, bedId, crop.cropId));
+  let columns = Math.max(min.side, int(rng, 1, Math.min(Math.max(remaining, min.plants), 6)));
+  let rows = Math.max(min.side, int(rng, 1, Math.max(1, Math.min(Math.floor(remaining / columns), 6))), Math.ceil(min.plants / columns));
   let block: Block = { bedId, cropId: crop.cropId, origin, axis: 'x', columns, rows, source: 'new' };
-  // Shrink until it fits; one plant either fits at this anchor or the move is dropped.
-  while (!ev.canPlace(block) && blockPlantCount(block) > 1) {
-    if (columns >= rows && columns > 1) columns--;
-    else rows--;
+  // Shrink toward the smallest group until it fits; if even that does not, the move is dropped when it is checked.
+  while (!ev.canPlace(block) && (columns > min.side || rows > min.side)) {
+    if (columns >= rows && columns > min.side) columns--;
+    else if (rows > min.side) rows--;
+    else columns--;
     block = { ...block, columns, rows };
   }
   return { remove: [], add: [block] };

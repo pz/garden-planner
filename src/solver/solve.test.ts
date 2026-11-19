@@ -15,6 +15,8 @@ const bed = (id: string, w: number, h: number, extra: Partial<Bed> = {}): Bed =>
 const planOf = (beds: Bed[], plants: PlantInstance[] = [], extra: Partial<GardenPlan> = {}): GardenPlan => ({ ...createPlan('t'), beds, plants, ...extra });
 const plant = (id: string, bedId: string, cropId: string, x: number, y: number, groupId = id): PlantInstance => ({ id, bedId, cropId, x, y, groupId });
 const fill = (...demands: PlantingSpec['demands']): PlantingSpec => ({ mode: 'fill', demands });
+/** The same with plants allowed right on the edge, for the tests of the edge itself. */
+const fillToEdge = (...demands: PlantingSpec['demands']): PlantingSpec => ({ mode: 'fill', edgeClearance: 0, demands });
 const opts = { year: 2026 };
 
 /** An evaluator over a plan, to test the hard constraints directly. */
@@ -40,7 +42,7 @@ describe('hard constraints', () => {
   });
 
   it('accepts a center flush with the outline and refuses one just past it', () => {
-    const e = evaluatorFor(planOf([bed('b', 96, 48)]), fill({ cropId: 'lettuce', weight: 1 }));
+    const e = evaluatorFor(planOf([bed('b', 96, 48)]), fillToEdge({ cropId: 'lettuce', weight: 1 }));
     expect(e.pointOk('b', 'lettuce', 0, 0)).toBe(true);
     expect(e.pointOk('b', 'lettuce', 96, 48)).toBe(true);
     expect(e.pointOk('b', 'lettuce', -0.01, 0)).toBe(false);
@@ -48,7 +50,7 @@ describe('hard constraints', () => {
   });
 
   it('caps a block at 1000 plants', () => {
-    const e = evaluatorFor(planOf([bed('big', 600, 600)]), fill({ cropId: 'radish', weight: 1 }));
+    const e = evaluatorFor(planOf([bed('big', 600, 600)]), fillToEdge({ cropId: 'radish', weight: 1 }));
     const block = (columns: number, rows: number) => ({ bedId: 'big', cropId: 'radish', origin: { x: 0, y: 0 }, axis: 'x' as const, columns, rows, source: 'new' as const });
     expect(e.canPlace(block(25, 40))).toBe(true);
     expect(e.canPlace(block(25, 41))).toBe(false);

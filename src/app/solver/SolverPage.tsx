@@ -4,12 +4,12 @@ import { createMemoryGardenApi } from '../../api/gardenApi';
 import { getCrop } from '../../data/crops';
 import { loadScenario, scenarioNames, SPEC_FILES, type LoadedScenario } from '../../solver/catalog';
 import { checkExpectations } from '../../solver/check';
-import type { Proposal } from '../../solver/proposal';
+import { DEFAULT_ITERATIONS, type Proposal } from '../../solver/proposal';
 import { newPlantIds, solveFromText, tracePoints } from '../../solver/session';
 import type { GardenPlan } from '../../types';
 import { GardenProvider, useGarden } from '../state/gardenStore';
 import { GardensProvider, useGardens } from '../state/gardensStore';
-import { BedView } from './BedView';
+import { BedView, Legend } from './BedView';
 
 // The dev-only solver viewer, reached at /_solver. It is only imported in development builds
 // (see App.tsx), so none of this, nor the fixtures, ships.
@@ -57,7 +57,7 @@ function Viewer({ initialSpec, scenario }: { initialSpec: string; scenario?: Loa
   const { plan, rev, apply } = useGarden();
   const [specText, setSpecText] = useState(initialSpec);
   const [seed, setSeed] = useState(scenario?.options.seed ?? 1);
-  const [iterations, setIterations] = useState(scenario?.options.iterations ?? 3000);
+  const [iterations, setIterations] = useState(scenario?.options.iterations ?? DEFAULT_ITERATIONS);
   const [run, setRun] = useState<Run | null>(null);
   const [errors, setErrors] = useState<ApiError[]>([]);
   const [applied, setApplied] = useState<string | null>(null);
@@ -126,6 +126,7 @@ function Viewer({ initialSpec, scenario }: { initialSpec: string; scenario?: Loa
               <BedView key={bed.id} bed={bed} plants={(run ? run.before : plan).plants.filter((q) => q.bedId === bed.id)} />
             ))}
           </div>
+          <Legend plants={(run ? run.before : plan).plants} />
         </Section>
         <Section title="After">
           {p ? (
@@ -133,9 +134,10 @@ function Viewer({ initialSpec, scenario }: { initialSpec: string; scenario?: Loa
               {p.plan.beds.map((bed) => (
                 <BedView key={bed.id} bed={bed} plants={p.plan.plants.filter((q) => q.bedId === bed.id)} outlined={outlined} />
               ))}
+              <Legend plants={p.plan.plants} />
             </div>
           ) : (
-            <p style={muted}>Solve to see the proposal. New patches are outlined.</p>
+            <p style={muted}>Solve to see the proposal. New patches are lightened and ringed.</p>
           )}
         </Section>
       </div>
@@ -241,6 +243,11 @@ export default function SolverPage() {
   const [nonce, setNonce] = useState(0);
   return (
     <main data-testid="solver-viewer" style={{ maxWidth: 1240, margin: '0 auto', padding: '24px 20px 64px' }}>
+      <style>{`
+        .solver-new-ring { transform-box: fill-box; transform-origin: center; animation: solver-ring-turn 40s linear infinite; }
+        @keyframes solver-ring-turn { to { transform: rotate(360deg); } }
+        @media (prefers-reduced-motion: reduce) { .solver-new-ring { animation: none; } }
+      `}</style>
       <header style={{ display: 'flex', alignItems: 'baseline', gap: 16, flexWrap: 'wrap', marginBottom: 12 }}>
         <h1 style={{ font: '700 26px Figtree' }}>Planting solver</h1>
         <span style={muted}>Development only. Pick a scenario, or the garden you are working on, edit the spec, and solve.</span>

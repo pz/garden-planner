@@ -23,6 +23,9 @@ import fillShortSeason from './fixtures/specs/fill-short-season.spec.json';
 import fillShadeOrder from './fixtures/specs/fill-shade-order.spec.json';
 import fillTiny from './fixtures/specs/fill-tiny.spec.json';
 import fillOddShapes from './fixtures/specs/fill-odd-shapes.spec.json';
+import fillTomatoHeavy from './fixtures/specs/fill-tomato-heavy.spec.json';
+import fillWithLittleCorn from './fixtures/specs/fill-with-little-corn.spec.json';
+import fillIgnoreLettuce from './fixtures/specs/fill-ignore-lettuce.spec.json';
 import adjustMoreTomatoes from './fixtures/specs/adjust-more-tomatoes.spec.json';
 import adjustLocked from './fixtures/specs/adjust-locked.spec.json';
 import adjustSwapBeans from './fixtures/specs/adjust-swap-beans.spec.json';
@@ -39,6 +42,9 @@ import sFillTiny from './fixtures/scenarios/fill-tiny-bed.scenario.json';
 import sFillOdd from './fixtures/scenarios/fill-odd-shapes.scenario.json';
 import sFillNorth from './fixtures/scenarios/fill-north-row.scenario.json';
 import sFillNorthEast from './fixtures/scenarios/fill-north-row-east.scenario.json';
+import sFillEdge from './fixtures/scenarios/fill-edge-padding.scenario.json';
+import sFillCorn from './fixtures/scenarios/fill-corn-minimum-group.scenario.json';
+import sFillZero from './fixtures/scenarios/fill-weight-zero.scenario.json';
 import sAdjustMore from './fixtures/scenarios/adjust-more-tomatoes.scenario.json';
 import sAdjustLocked from './fixtures/scenarios/adjust-locked.scenario.json';
 import sAdjustSwap from './fixtures/scenarios/adjust-swap-beans.scenario.json';
@@ -71,6 +77,9 @@ export const SPEC_FILES: Record<string, unknown> = {
   'fill-shade-order': fillShadeOrder,
   'fill-tiny': fillTiny,
   'fill-odd-shapes': fillOddShapes,
+  'fill-tomato-heavy': fillTomatoHeavy,
+  'fill-with-little-corn': fillWithLittleCorn,
+  'fill-ignore-lettuce': fillIgnoreLettuce,
   'adjust-more-tomatoes': adjustMoreTomatoes,
   'adjust-locked': adjustLocked,
   'adjust-swap-beans': adjustSwapBeans,
@@ -89,6 +98,9 @@ export const SCENARIO_FILES: Record<string, unknown> = {
   'fill-odd-shapes': sFillOdd,
   'fill-north-row': sFillNorth,
   'fill-north-row-east': sFillNorthEast,
+  'fill-edge-padding': sFillEdge,
+  'fill-corn-minimum-group': sFillCorn,
+  'fill-weight-zero': sFillZero,
   'adjust-more-tomatoes': sAdjustMore,
   'adjust-locked': sAdjustLocked,
   'adjust-swap-beans': sAdjustSwap,

@@ -63,6 +63,8 @@ export interface Ctx {
   editable: Block[];
   /** Existing patches to remove outright (excluded crops, a replaced scope). */
   removed: string[];
+  /** How far a plant of this crop must stay from a bed's edge, in inches (see `PlantingSpec.edgeClearance`). */
+  clearanceIn: (cropId: string) => number;
   /** The unit vector shadows fall along, in garden coordinates. */
   shadowDir: Point;
   /** Widest spacing of any crop in play, in inches: the neighbour query radius. */

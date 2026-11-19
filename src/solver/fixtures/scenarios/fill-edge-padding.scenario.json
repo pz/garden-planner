@@ -1,0 +1,5 @@
+{
+  "description": "A tomato-heavy fill keeps its plants off the bed edge: each tomato has its whole growing room inside the bed.",
+  "garden": "empty-4x8", "spec": "fill-tomato-heavy", "options": { "seed": 1 },
+  "expect": [{ "kind": "placed", "crop": "tomato", "gte": 4 }, { "kind": "introducedWarnings", "warningKind": "spacing", "severity": "problem", "max": 0 }]
+}

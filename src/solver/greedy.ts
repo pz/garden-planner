@@ -1,5 +1,5 @@
 import type { Point } from '../types';
-import { latticeAnchors, blockSpacing, type Block } from './block';
+import { LATTICE_IN, latticeAnchors, blockSpacing, minShape, type Block } from './block';
 import type { Evaluator } from './evaluator';
 import type { DemandInfo } from './model';
 
@@ -15,12 +15,20 @@ interface Candidate {
   bound: number;
 }
 
-const anchorCache = new WeakMap<object, Point[]>();
+const anchorCache = new WeakMap<object, Map<number, Point[]>>();
 
-function anchorsOf(ev: Evaluator, bedId: string): Point[] {
+/**
+ * The lattice anchors of a bed for a crop. The lattice is shifted so that one of its lines falls
+ * exactly on the crop's edge clearance, which lets a block start right at the margin instead of up
+ * to a step short of it.
+ */
+export function anchorsFor(ev: Evaluator, bedId: string, cropId: string): Point[] {
   const info = ev.ctx.beds.get(bedId)!;
-  let a = anchorCache.get(info);
-  if (!a) anchorCache.set(info, (a = latticeAnchors(info.outline)));
+  const offset = ev.ctx.clearanceIn(cropId) % LATTICE_IN;
+  let byOffset = anchorCache.get(info);
+  if (!byOffset) anchorCache.set(info, (byOffset = new Map()));
+  let a = byOffset.get(offset);
+  if (!a) byOffset.set(offset, (a = latticeAnchors(info.outline, LATTICE_IN, offset)));
   return a;
 }
 
@@ -31,15 +39,18 @@ function anchorsOf(ev: Evaluator, bedId: string): Point[] {
  */
 export function candidateBlocks(ev: Evaluator, crop: DemandInfo, bedIds: string[], remaining: number): Candidate[] {
   const s = blockSpacing(crop);
+  const min = minShape(crop.cropId);
+  // Free cells to look for along each side: enough for what is left, or for the smallest group.
+  const cap = Math.max(remaining, min.plants);
   const out: Candidate[] = [];
   for (const bedId of bedIds) {
-    for (const origin of anchorsOf(ev, bedId)) {
+    for (const origin of anchorsFor(ev, bedId, crop.cropId)) {
       // run[c]: how many cells down column c are free, from the anchor, up to the most worth asking for.
       const run: number[] = [];
-      for (let c = 0; c < remaining; c++) {
+      for (let c = 0; c < cap; c++) {
         const x = origin.x + c * s;
         let r = 0;
-        while (r < remaining && ev.pointOk(bedId, crop.cropId, x, origin.y + r * s)) r++;
+        while (r < cap && ev.pointOk(bedId, crop.cropId, x, origin.y + r * s)) r++;
         if (r === 0) break;
         run.push(r);
       }
@@ -47,13 +58,15 @@ export function candidateBlocks(ev: Evaluator, crop: DemandInfo, bedIds: string[
       for (let k = 1; k <= run.length; k++) {
         rows = Math.min(rows, run[k - 1]);
         // The height that lands on the remaining count: rounded down, or up when that overshoots by at most one plant.
+        // A crop with a smallest group also gets that group's height, even when it overshoots what is left.
         const heights = new Set([Math.floor(remaining / k)]);
         if (k * Math.ceil(remaining / k) - remaining <= 1) heights.add(Math.ceil(remaining / k));
+        if (min.plants > 1) heights.add(Math.max(min.side, Math.ceil(min.plants / k)));
         for (const h of heights) {
           const r = Math.min(rows, h);
-          if (r < 1) continue;
+          if (r < min.side || k < min.side || k * r < min.plants) continue;
           const block: Block = { bedId, cropId: crop.cropId, origin, axis: 'x', columns: k, rows: r, source: 'new' };
-          out.push({ block, plants: k * r, bound: ev.demandGain(crop.cropId, k * r) });
+          out.push({ block, plants: k * r, bound: ev.demandGain(crop.cropId, k * r, bedId) });
         }
       }
     }

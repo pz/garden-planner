@@ -18,6 +18,10 @@ export const CLUSTER_WEIGHT = 0.1;
 export const SPILL_WEIGHT = 0.04;
 /** Times the share of existing plants removed or moved, in adjust mode. */
 export const CHANGE_WEIGHT = 2;
+/** The most the coverage term adds, when every in-scope bed is planted to the fill ratio. */
+export const COVERAGE_WEIGHT = 1;
+/** Per crop in a bed beyond the first. */
+export const MIX_WEIGHT = 0.15;
 /** Per full-sun plant in a part-shade garden. */
 export const SUN_WEIGHT = 0.02;
 
@@ -35,4 +39,4 @@ export function minMaxPenalty(n: number, min: number | undefined, max: number | 
   return BIG * (Math.max(0, (min ?? 0) - n) + Math.max(0, n - (max ?? Infinity)));
 }
 
-export const emptyBreakdown = (): ScoreBreakdown => ({ demand: 0, minMax: 0, spacing: 0, shade: 0, companion: 0, clustering: 0, spill: 0, change: 0, sun: 0, total: 0 });
+export const emptyBreakdown = (): ScoreBreakdown => ({ demand: 0, minMax: 0, spacing: 0, shade: 0, companion: 0, clustering: 0, spill: 0, change: 0, sun: 0, coverage: 0, mixing: 0, total: 0 });

@@ -7,7 +7,7 @@ import type { WarningKind, WarningSeverity } from '../api/types';
 export type CropStatus = 'met' | 'partial' | 'unmet';
 export const CROP_STATUSES: readonly CropStatus[] = ['met', 'partial', 'unmet'];
 
-export const UNMET_REASONS = ['season_too_short', 'insufficient_space', 'insufficient_sun', 'outcompeted', 'limited_by_bed_restriction'] as const;
+export const UNMET_REASONS = ['season_too_short', 'insufficient_space', 'insufficient_sun', 'outcompeted', 'limited_by_bed_restriction', 'below_minimum_group'] as const;
 export type UnmetReason = (typeof UNMET_REASONS)[number];
 
 export type Expectation =

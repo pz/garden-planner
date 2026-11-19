@@ -34,6 +34,17 @@ describe('CROPS data integrity', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  it('gives minBlock only to crops grown in patches, as a whole number of at least 2', () => {
+    for (const crop of CROPS) {
+      if (crop.minBlock === undefined) continue;
+      expect(Number.isInteger(crop.minBlock), crop.id).toBe(true);
+      expect(crop.minBlock, crop.id).toBeGreaterThanOrEqual(2);
+      expect(crop.defaultPatch, crop.id).toBe(true);
+    }
+    // Corn is wind-pollinated and needs a block.
+    expect(getCrop('corn').minBlock).toBe(3);
+  });
+
   it('gives every transplant crop both a start-indoors and transplant offset semantics, and every direct-sow crop a sow offset', () => {
     for (const crop of CROPS) {
       if (crop.sowMethod === 'transplant') {

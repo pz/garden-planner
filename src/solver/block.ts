@@ -24,6 +24,9 @@ export interface Block {
   source: 'new' | { groupId: string };
 }
 
+/** The fewest plants in a block of a crop normally grown in patches (such as lettuce): a patch of one or two reads as a stray. */
+export const MIN_PATCH_PLANTS = 4;
+
 /** Distance between neighbouring block origins the search tries, in inches (fine enough for the smallest crop spacing, 2 in, within a step or two, and coarse enough to search). */
 export const LATTICE_IN = 3;
 
@@ -57,11 +60,15 @@ export function blockBox(b: Block): Box {
   return { x0: b.origin.x, y0: b.origin.y, x1: b.origin.x + w * s, y1: b.origin.y + h * s };
 }
 
-/** Anchor positions: lattice points inside the outline (the bed's own frame, boundary included). */
-export function latticeAnchors(outline: Outline, stepIn = LATTICE_IN): Point[] {
+/**
+ * Anchor positions: lattice points inside the outline (the bed's own frame, boundary included).
+ * `offsetIn` shifts the lattice so that a line of it falls exactly at that distance from the
+ * bed's top and left edges, which lets a block start right at a plant-free margin.
+ */
+export function latticeAnchors(outline: Outline, stepIn = LATTICE_IN, offsetIn = 0): Point[] {
   const out: Point[] = [];
-  for (let x = 0; x <= outline.widthIn; x += stepIn) {
-    for (let y = 0; y <= outline.heightIn; y += stepIn) {
+  for (let x = offsetIn; x <= outline.widthIn; x += stepIn) {
+    for (let y = offsetIn; y <= outline.heightIn; y += stepIn) {
       const p = { x, y };
       if (isInsideOutline(p, outline)) out.push(p);
     }
@@ -99,4 +106,27 @@ export function asBlock(plants: PlantInstance[]): Block | null {
   for (const p of plants) seen.add(cell(xs, p.x) * ys.length + cell(ys, p.y));
   if (seen.size !== plants.length) return null;
   return { bedId, cropId, origin: { x: xs[0], y: ys[0] }, axis: 'x', columns: xs.length, rows: ys.length, source: { groupId } };
+}
+
+/** The smallest shape a block of a crop may have: plants along each side and in all. */
+export interface MinShape {
+  side: number;
+  plants: number;
+}
+
+/**
+ * Crops that need a block (`minBlock`, such as corn) need that many plants along each side; other
+ * crops normally grown in patches need `MIN_PATCH_PLANTS` in all; a crop grown singly (tomato)
+ * needs one.
+ */
+export function minShape(cropId: string): MinShape {
+  const crop = getCrop(cropId);
+  if (crop.minBlock) return { side: crop.minBlock, plants: crop.minBlock * crop.minBlock };
+  return { side: 1, plants: crop.defaultPatch ? MIN_PATCH_PLANTS : 1 };
+}
+
+/** Whether a `columns × rows` block of a crop is at least its minimum shape. */
+export function meetsMinShape(cropId: string, columns: number, rows: number): boolean {
+  const m = minShape(cropId);
+  return columns >= m.side && rows >= m.side && columns * rows >= m.plants;
 }

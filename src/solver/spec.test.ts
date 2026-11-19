@@ -40,7 +40,7 @@ describe('parseSpec', () => {
   });
 
   it('reports every error at once, with JSON pointers', () => {
-    expect(pathsAndCodes({ mode: 'nope', demands: [{ cropId: 'ghost', weight: 0 }, { weight: 1, extra: 1 }], bogus: 1 })).toEqual([
+    expect(pathsAndCodes({ mode: 'nope', demands: [{ cropId: 'ghost', weight: -1 }, { weight: 1, extra: 1 }], bogus: 1 })).toEqual([
       ['invalid_command', '/bogus'],
       ['invalid_command', '/mode'],
       ['unknown_crop', '/demands/0/cropId'],
@@ -65,9 +65,10 @@ describe('parseSpec', () => {
 
   describe('weights, min and max', () => {
     const demand = (d: object) => ({ mode: 'fill', demands: [{ cropId: 'tomato', weight: 1, ...d }] });
-    it('needs a weight above 0', () => {
+    it('takes a weight of 0 (ignore the crop) but not a negative or non-number one', () => {
       expect(parseSpec(demand({ weight: 0.0001 }), plan()).ok).toBe(true);
-      for (const weight of [0, -1, '1', null, Infinity]) expect(pathsAndCodes(demand({ weight }))).toEqual([['invalid_command', '/demands/0/weight']]);
+      expect(parseSpec(demand({ weight: 0 }), plan()).ok).toBe(true);
+      for (const weight of [-0.001, -1, '1', null, Infinity]) expect(pathsAndCodes(demand({ weight }))).toEqual([['invalid_command', '/demands/0/weight']]);
     });
     it('takes whole numbers for min and max, 0 or more', () => {
       expect(parseSpec(demand({ min: 0, max: 0 }), plan()).ok).toBe(true);
@@ -128,6 +129,13 @@ describe('parseSpec', () => {
   it('reports locked groupIds that name no patch as unknown_id', () => {
     expect(parseSpec({ ...ok, locked: ['g1'] }, plan()).ok).toBe(true);
     expect(pathsAndCodes({ ...ok, locked: ['g1', 'nope'] })).toEqual([['unknown_id', '/locked/1']]);
+  });
+
+  describe('edgeClearance', () => {
+    it('takes "room" or 0 to 60 inches', () => {
+      for (const edgeClearance of ['room', 0, 12.5, 60]) expect(parseSpec({ ...ok, edgeClearance }, plan()).ok).toBe(true);
+      for (const edgeClearance of [-1, 60.01, 'edge', null, true]) expect(pathsAndCodes({ ...ok, edgeClearance })).toEqual([['invalid_command', '/edgeClearance']]);
+    });
   });
 
   describe('fillRatio and prefs', () => {

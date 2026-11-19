@@ -1,0 +1,5 @@
+{
+  "description": "Corn is wind-pollinated and needs a block of at least 3 by 3. At a weight of 0.25 it would get only a few plants, so it is left out and says why, rather than being planted singly.",
+  "garden": "two-raised-beds", "spec": "fill-with-little-corn", "options": { "seed": 1 },
+  "expect": [{ "kind": "status", "crop": "corn", "status": "unmet", "reason": "below_minimum_group" }, { "kind": "placed", "crop": "corn", "eq": 0 }, { "kind": "unchanged", "groupIds": ["g-tomato", "g-lettuce"] }]
+}
