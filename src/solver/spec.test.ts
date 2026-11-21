@@ -132,9 +132,9 @@ describe('parseSpec', () => {
   });
 
   describe('edgeClearance', () => {
-    it('takes "room" or 0 to 60 inches', () => {
-      for (const edgeClearance of ['room', 0, 12.5, 60]) expect(parseSpec({ ...ok, edgeClearance }, plan()).ok).toBe(true);
-      for (const edgeClearance of [-1, 60.01, 'edge', null, true]) expect(pathsAndCodes({ ...ok, edgeClearance })).toEqual([['invalid_command', '/edgeClearance']]);
+    it('takes a share of the plant\'s radius, 0 to 2', () => {
+      for (const edgeClearance of [0, 0.5, 1, 2]) expect(parseSpec({ ...ok, edgeClearance }, plan()).ok).toBe(true);
+      for (const edgeClearance of [-0.01, 2.01, 'room', null, true]) expect(pathsAndCodes({ ...ok, edgeClearance })).toEqual([['invalid_command', '/edgeClearance']]);
     });
   });
 

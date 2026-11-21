@@ -114,7 +114,7 @@ says only *what* you want. Its output is ordinary API commands, checked with a d
 | **Scope** | The beds the solver may plant in. Plants outside it are never touched, but still count for spacing and shade. |
 | **Locked / exclude** | Locked patches are never touched. An excluded crop is not planted, and in `adjust` and `replace` its existing patches in scope are removed. |
 | **Fill ratio** | The share of free space to aim to plant (default 0.85). |
-| **Edge clearance** | How far plants stay from a bed's edge: by default a plant's whole growing room stays inside the bed; a number sets the distance from its center, and 0 allows plants right on the edge. |
+| **Edge clearance** | How far in from a bed's edge a plant's center must stay, as a share of the plant's own growing-room radius: 0.5 by default (about a quarter of the plant may overhang), 1 keeps the whole plant inside, 0 allows plants right on the edge. |
 | **Minimum group** | The smallest block a crop is planted in: corn needs at least 3 by 3 (it is wind-pollinated), crops grown in patches at least 4 plants. A crop that would get fewer is left out and says so. |
 | **Preferences** | How much the solver minds each cost: spacing, shade, companions, clustering, coverage (using each bed's share of the space), tidiness (several crops in one bed), and (in `adjust`) disturbing what is there. |
 | **Block** | The solver's unit of planting: a rectangular grid of one crop at its spacing in one bed, which becomes one patch. |

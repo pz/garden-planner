@@ -7,7 +7,7 @@ import { asBlock, blockPoints, minShape, type Block } from './block';
 import { makeGroup, patches } from './groups';
 import { insetArea, plantArea, targetCount } from './allocate';
 import type { Ctx, DemandInfo, Group } from './model';
-import { DEFAULT_FILL_RATIO, DEFAULT_PREFS, type PlantingSpec } from './spec';
+import { DEFAULT_EDGE_CLEARANCE, DEFAULT_FILL_RATIO, DEFAULT_PREFS, type PlantingSpec } from './spec';
 import type { UnmetReason } from './scenario';
 
 /** Whether a crop can ripen before the first fall frost in the garden's zone (crops without a schedule always can). */
@@ -81,7 +81,8 @@ export function normalize(plan: Ctx['plan'], spec: PlantingSpec, year: number): 
   }
 
   // How far a plant of a crop must stay from a bed's edge.
-  const clearanceIn = (cropId: string): number => (typeof spec.edgeClearance === 'number' ? spec.edgeClearance : getCrop(cropId).spacingIn / 2);
+  const edgeClearance = spec.edgeClearance ?? DEFAULT_EDGE_CLEARANCE;
+  const clearanceIn = (cropId: string): number => edgeClearance * (getCrop(cropId).spacingIn / 2);
 
   // Allocation: each crop's share of the free area in the beds it may use. A crop whose target is
   // smaller than the smallest group it is grown in (a lone corn plant) is dropped, and the others'

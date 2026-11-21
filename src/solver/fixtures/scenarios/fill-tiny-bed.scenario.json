@@ -1,5 +1,5 @@
 {
-  "description": "A 24 in bed: a squash needs 18 in of clear room around its center, which the bed does not have; one tomato and radishes fit.",
+  "description": "A 24 in bed with every plant's whole growing room kept inside it: a squash needs 18 in of room around its center, which the bed does not have; one tomato and radishes fit.",
   "garden": "tiny-bed", "spec": "fill-tiny", "options": { "seed": 1 },
   "expect": [{ "kind": "status", "crop": "squash", "status": "unmet", "reason": "insufficient_space" }, { "kind": "placed", "crop": "tomato", "lte": 1 }, { "kind": "placed", "crop": "radish", "gte": 20 }, { "kind": "introducedWarnings", "warningKind": "spacing", "severity": "problem", "max": 0 }]
 }

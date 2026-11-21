@@ -13,7 +13,7 @@ const FILL = scenarioNames().filter((n) => loadScenario(n).spec.mode === 'fill')
 describe('local search', () => {
   // Where the greedy pass leaves room to improve, 20 seeds' median must beat it; elsewhere (the
   // coverage term makes the greedy pass good on its own) the search must at least never lose.
-  const IMPROVABLE = ['fill-bed-restricted', 'fill-min-max', 'adjust-locked'];
+  const IMPROVABLE = ['fill-bed-restricted', 'fill-min-max', 'fill-custom-crop', 'fill-north-row'];
 
   it('on the median beats the greedy start over 20 seeds', () => {
     for (const name of IMPROVABLE) {

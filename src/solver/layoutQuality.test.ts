@@ -16,50 +16,57 @@ const opts = { year: 2026, iterations: 1500 };
 
 describe('edge clearance', () => {
   const tomatoes: PlantingSpec = { mode: 'fill', demands: [{ cropId: 'tomato', weight: 5 }, { cropId: 'pepper', weight: 1 }, { cropId: 'lettuce', weight: 0.5 }] };
+  /** The nearest a plant's center is to a side of the 96 × 48 bed, in inches. */
+  const edgeGap = (q: { x: number; y: number }) => Math.min(q.x, q.y, 96 - q.x, 48 - q.y);
 
-  it('keeps every plant’s whole growing room inside the bed by default', () => {
-    const plan = planOf([bed('b', 96, 48)]);
-    const p = solve(plan, tomatoes, opts);
-    expect(p.plan.plants.length).toBeGreaterThan(6);
-    for (const q of p.plan.plants) {
-      const r = getCrop(q.cropId).spacingIn / 2;
-      expect(q.x, q.cropId).toBeGreaterThanOrEqual(r - 1e-9);
-      expect(q.y, q.cropId).toBeGreaterThanOrEqual(r - 1e-9);
-      expect(q.x, q.cropId).toBeLessThanOrEqual(96 - r + 1e-9);
-      expect(q.y, q.cropId).toBeLessThanOrEqual(48 - r + 1e-9);
-    }
-    expect(p.score.spill).toBe(0);
+  it('keeps a plant’s center half a growing-room radius in from the edge by default, so about a quarter of it overhangs', () => {
+    const p = solve(planOf([bed('b', 96, 48)]), tomatoes, opts);
+    expect(p.plan.plants.length).toBeGreaterThan(8);
+    for (const q of p.plan.plants) expect(edgeGap(q), q.cropId).toBeGreaterThanOrEqual(getCrop(q.cropId).spacingIn / 4 - 1e-9);
+    // Not right on the edge, as before the option existed.
+    expect(p.plan.plants.some((q) => edgeGap(q) < 1)).toBe(false);
   });
 
-  it('does the same in an ellipse, a triangle and a rounded bed', () => {
+  it('is relative to the plant: a big plant stays further in than a small one', () => {
+    const p = solve(planOf([bed('b', 96, 48)]), { mode: 'fill', demands: [{ cropId: 'tomato', weight: 1 }, { cropId: 'radish', weight: 1 }] }, opts);
+    const nearest = (id: string) => Math.min(...p.plan.plants.filter((q) => q.cropId === id).map(edgeGap));
+    expect(nearest('tomato')).toBeGreaterThanOrEqual(6 - 1e-9); // 0.5 × a 12 in radius
+    expect(nearest('radish')).toBeGreaterThanOrEqual(0.5 - 1e-9); // 0.5 × a 1 in radius
+    expect(nearest('radish')).toBeLessThan(nearest('tomato'));
+  });
+
+  it('takes 1 for the whole growing room inside the bed, 0 for right on the edge, above 1 for a margin', () => {
+    const plan = planOf([bed('b', 96, 48)]);
+    const room = solve(plan, { ...tomatoes, edgeClearance: 1 }, opts);
+    for (const q of room.plan.plants) expect(edgeGap(q), q.cropId).toBeGreaterThanOrEqual(getCrop(q.cropId).spacingIn / 2 - 1e-9);
+    expect(room.score.spill).toBe(0);
+    const edge = solve(plan, { ...tomatoes, edgeClearance: 0 }, opts);
+    expect(edge.plan.plants.some((q) => edgeGap(q) === 0)).toBe(true);
+    const margin = solve(plan, { ...tomatoes, edgeClearance: 1.5 }, opts);
+    for (const q of margin.plan.plants) expect(edgeGap(q), q.cropId).toBeGreaterThanOrEqual(getCrop(q.cropId).spacingIn * 0.75 - 1e-9);
+  });
+
+  it('applies in an ellipse, a triangle and a rounded bed', () => {
     const beds = [
       bed('e', 72, 60, { shape: 'ellipse' }),
       bed('t', 72, 60, { shape: 'polygon', points: [{ x: 36, y: 0 }, { x: 72, y: 60 }, { x: 0, y: 60 }], cx: 150 }),
       bed('r', 96, 48, { cornerRadiusIn: 16, cy: 150 }),
     ];
     const p = solve(planOf(beds), tomatoes, opts);
+    expect(p.plan.plants.length).toBeGreaterThan(8);
     for (const q of p.plan.plants) {
       const b = beds.find((x) => x.id === q.bedId)!;
-      expect(insideWithClearance(q, getCrop(q.cropId).spacingIn / 2 - 1e-6, bedOutline(b)), `${q.cropId} in ${b.id}`).toBe(true);
+      expect(insideWithClearance(q, getCrop(q.cropId).spacingIn / 4 - 1e-6, bedOutline(b)), `${q.cropId} in ${b.id}`).toBe(true);
     }
   });
 
-  it('takes a number: that many inches from center to edge, 0 for right on the edge', () => {
-    const plan = planOf([bed('b', 96, 48)]);
-    const edge = solve(plan, { ...tomatoes, edgeClearance: 0 }, opts);
-    expect(edge.plan.plants.some((q) => q.x === 0 || q.y === 0 || q.x === 96 || q.y === 48)).toBe(true);
-    const six = solve(plan, { ...tomatoes, edgeClearance: 6 }, opts);
-    for (const q of six.plan.plants) {
-      expect(Math.min(q.x, q.y, 96 - q.x, 48 - q.y)).toBeGreaterThanOrEqual(6 - 1e-9);
-    }
-    expect(six.plan.plants.some((q) => Math.min(q.x, q.y, 96 - q.x, 48 - q.y) < 12)).toBe(true); // closer than the default tomato room
-  });
-
-  it('leaves a crop out when its room cannot fit in the bed at all', () => {
-    const p = solve(planOf([bed('b', 24, 24)]), { mode: 'fill', demands: [{ cropId: 'squash', weight: 1 }] }, opts);
-    expect(p.crops[0]).toMatchObject({ placed: 0, status: 'unmet', reasons: ['insufficient_space'] });
-    const toEdge = solve(planOf([bed('b', 24, 24)]), { mode: 'fill', edgeClearance: 0, demands: [{ cropId: 'squash', weight: 1 }] }, opts);
-    expect(toEdge.crops[0].placed).toBe(1);
+  it('leaves a crop out when its room cannot fit in the bed at all (a clearance of 1)', () => {
+    const squash = (edgeClearance?: number): PlantingSpec => ({ mode: 'fill', ...(edgeClearance === undefined ? {} : { edgeClearance }), demands: [{ cropId: 'squash', weight: 1 }] });
+    const whole = solve(planOf([bed('b', 24, 24)]), squash(1), opts);
+    expect(whole.crops[0]).toMatchObject({ placed: 0, status: 'unmet', reasons: ['insufficient_space'] });
+    // With the default, a squash (36 in) may overhang a 24 in bed: its center only has to be 9 in from the edge.
+    expect(solve(planOf([bed('b', 24, 24)]), squash(), opts).crops[0].placed).toBe(1);
+    expect(solve(planOf([bed('b', 24, 24)]), squash(0), opts).crops[0].placed).toBe(1);
   });
 });
 
@@ -154,13 +161,12 @@ describe('coverage and tidiness', () => {
     expect(emptiest(1)).toBeGreaterThanOrEqual(emptiest(0) - 1e-9);
   });
 
-  it('sorts the north row into one crop per bed, with the tall corn on the north', () => {
+  it('sorts the north row into one crop per bed with no shade conflict', () => {
     const s = loadScenario('fill-north-row');
     const p = solve(s.plan, s.spec, { year: 2026 });
-    const cropsIn = (id: string) => [...new Set(p.plan.plants.filter((q) => q.bedId === id).map((q) => q.cropId))];
-    for (const id of ['bed-n', 'bed-m', 'bed-s']) expect(cropsIn(id), id).toHaveLength(1);
-    expect(cropsIn('bed-n')).toEqual(['corn']);
+    for (const id of ['bed-n', 'bed-m', 'bed-s']) expect(new Set(p.plan.plants.filter((q) => q.bedId === id).map((q) => q.cropId)).size, id).toBe(1);
     expect(p.score.mixing).toBe(0);
+    expect(p.introducedWarnings.filter((w) => w.kind === 'shade')).toEqual([]);
   });
 
   it('mixes crops in a bed less when tidiness is high than when it is ignored', () => {

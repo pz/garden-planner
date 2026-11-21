@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Bed, GardenPlan, PlantInstance } from '../types';
 import { createPlan } from '../core/reducer';
+import { getCrop } from '../data/crops';
 import { bedToGarden } from '../core/layout';
 import { isInsideOutline } from '../core/geometry';
 import { bedOutline } from '../core/layout';
@@ -180,11 +181,12 @@ describe('filters and reasons', () => {
 });
 
 describe('placement quality', () => {
-  it('lines blocks up on the lattice inside the bed, with the best score a greedy pass finds', () => {
+  it('lines blocks up on the lattice, shifted so one line of it is the crop’s edge clearance', () => {
     const p = solve(planOf([bed('b', 96, 48)]), fill({ cropId: 'pepper', weight: 1 }), opts);
+    const clearance = 0.5 * (getCrop('pepper').spacingIn / 2); // the default: half a growing-room radius
     for (const b of p.blocks) {
-      expect(b.origin.x % 3).toBe(0);
-      expect(b.origin.y % 3).toBe(0);
+      expect(((b.origin.x - clearance) % 3 + 3) % 3).toBeCloseTo(0, 9);
+      expect(((b.origin.y - clearance) % 3 + 3) % 3).toBeCloseTo(0, 9);
     }
     expect(p.score.total).toBeGreaterThan(0.9);
   });

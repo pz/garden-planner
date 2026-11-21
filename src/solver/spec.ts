@@ -47,18 +47,22 @@ export interface PlantingSpec {
   /** Share of the free in-scope area to aim to plant, in (0, 1]. */
   fillRatio?: number;
   /**
-   * How far from a bed's edge a plant must stay. `room` (the default): its whole growing room
-   * (half its spacing) stays inside the bed. A number: its center stays at least that many
-   * inches inside the edge, so 0 lets plants sit right on the edge.
+   * How far a plant's center must stay from a bed's edge, as a fraction of its growing-room
+   * radius (half its spacing), so it scales with the plant. 1: the whole room stays inside the
+   * bed. The default, 0.5: the center sits half a radius in, so about a quarter of the plant
+   * overhangs the edge. 0: plants may sit right on the edge. Above 1 leaves a margin.
    */
-  edgeClearance?: 'room' | number;
+  edgeClearance?: number;
   prefs?: SolvePrefs;
 }
 
 export const DEFAULT_FILL_RATIO = 0.85;
 
-/** The most a numeric `edgeClearance` may be, in inches. */
-export const MAX_EDGE_CLEARANCE_IN = 60;
+/** What `edgeClearance` is when the spec leaves it out: half a growing-room radius. */
+export const DEFAULT_EDGE_CLEARANCE = 0.5;
+
+/** The most `edgeClearance` may be: a margin as wide as a whole plant. */
+export const MAX_EDGE_CLEARANCE = 2;
 
 /** Every preference's value when the spec leaves it out. First guesses, to be tuned with the sweep. */
 export const DEFAULT_PREFS: Readonly<Required<SolvePrefs>> = {
@@ -198,8 +202,8 @@ export function parseSpec(raw: unknown, plan: GardenPlan): ParsedSpec {
     bad('/fillRatio', 'must be a number above 0 and at most 1');
   }
 
-  if (raw.edgeClearance !== undefined && raw.edgeClearance !== 'room' && !(typeof raw.edgeClearance === 'number' && raw.edgeClearance >= 0 && raw.edgeClearance <= MAX_EDGE_CLEARANCE_IN)) {
-    bad('/edgeClearance', `must be "room" or a number of inches from 0 to ${MAX_EDGE_CLEARANCE_IN}`);
+  if (raw.edgeClearance !== undefined && !(typeof raw.edgeClearance === 'number' && raw.edgeClearance >= 0 && raw.edgeClearance <= MAX_EDGE_CLEARANCE)) {
+    bad('/edgeClearance', `must be a number from 0 to ${MAX_EDGE_CLEARANCE}: the share of a plant's growing-room radius its center stays in from the bed edge`);
   }
 
   if (raw.prefs !== undefined) {

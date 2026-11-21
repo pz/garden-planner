@@ -69,7 +69,7 @@ function randomSpec(next: () => number, plan: GardenPlan, mode: SolveMode): Plan
   }
   if (next() < 0.3) spec.fillRatio = Math.round((0.3 + next() * 0.7) * 100) / 100;
   if (next() < 0.3) spec.prefs = { spacing: next() < 0.5 ? 1 : 0.5, shade: next(), clustering: next(), coverage: next(), tidiness: next() };
-  if (next() < 0.25) spec.edgeClearance = next() < 0.5 ? 'room' : Math.round(next() * 12);
+  if (next() < 0.25) spec.edgeClearance = Math.round(next() * 20) / 10;
   return spec;
 }
 
