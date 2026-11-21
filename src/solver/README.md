@@ -98,3 +98,8 @@ Examples of bad outcomes were collected in the design doc's review and fixed tog
 54. **The request rules are pure and in `core`.** `core/adjust.ts` holds what an arrow, a typed number and a cross do (more/fewer are soft directions that leave the count alone; typing sets an exact target; once a target exists the arrows step it; a target equal to the current count asks for nothing; 0 removes). The card only draws rows and reports presses.
 55. **Left out on purpose: the optional note.** The design had a free-text note ("keep the basil near the tomatoes"). The solver cannot read free text, so a field that does nothing would mislead. It can come back if there is something deterministic to attach it to.
 
+### Warnings on the garden
+
+56. **A warning is tied to a plant, not to a corner of its patch.** Each warning links two patches. The garden now rings every plant of a warned patch in the warning color and puts the badge on the plant the warning is about (the one closest to the other patch), where it used to float at the top-right of the patch's box. Selecting or hovering either patch draws a dashed line to the closest plant of the other, with a label ("Too close", "Shade", "Keep apart"), and thickens the other patch's rings. The selection card says what the line is. Dismissed warnings draw nothing.
+57. **Clicking one plant of a multi-plant selection selects just that plant.** Pressing a plant that is already one of several selected, then releasing without dragging, narrows to it (as it already did for a whole patch), so plants left selected after Ungroup, or boxed in, can be picked apart with a click; dragging still moves them all.
+

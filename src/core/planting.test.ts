@@ -97,6 +97,12 @@ describe('selectOnPress', () => {
   it('on a second press in the selected patch, keeps the patch for a drag but drills to one plant on release', () => {
     expect(selectOnPress(discs, discs[1], ['a', 'b'], none)).toEqual({ selection: ['a', 'b'], drill: 'b' });
   });
+  it('drills to one plant on release when several plants are selected, however they came to be (ungrouped, or a box)', () => {
+    const solo = [disc('a', 0, 0, 5, 'a'), disc('b', 10, 0, 5, 'b'), disc('c', 40, 0, 5, 'c')];
+    expect(selectOnPress(solo, solo[1], ['a', 'b', 'c'], none)).toEqual({ selection: ['a', 'b', 'c'], drill: 'b' });
+    // Two patches selected: a plant in one of them narrows to that plant, not to its patch.
+    expect(selectOnPress(discs, discs[0], ['a', 'b', 'c'], none)).toEqual({ selection: ['a', 'b', 'c'], drill: 'a' });
+  });
   it('does not drill into a lone plant', () => {
     expect(selectOnPress(discs, discs[2], ['c'], none)).toEqual({ selection: ['c'], drill: null });
   });

@@ -160,7 +160,10 @@ export function PlantingView() {
   const bedsById = useMemo(() => new Map(beds.map((b) => [b.id, b])), [beds]);
   const selectedPlants = useMemo(() => plants.filter((p) => selection.includes(p.id)), [plants, selection]);
   const summary = useMemo(() => summarizeSelection(plants, beds, selection, baseDiscs), [plants, beds, selection, baseDiscs]);
-  const warnedGroups = useMemo(() => new Set(warnings.filter((w) => !w.dismissed).flatMap((w) => w.subjects)), [warnings]);
+  const warningLinks = useMemo(
+    () => warnings.filter((w) => !w.dismissed && w.subjects.length >= 2).map((w) => ({ a: w.subjects[0], b: w.subjects[1], kind: w.kind })),
+    [warnings],
+  );
   const selectedGroups = new Set(selectedPlants.map((p) => p.groupId));
   const selectionWarnings = warnings.filter((w) => !w.dismissed && w.subjects.some((g) => selectedGroups.has(g)));
 
@@ -736,7 +739,7 @@ export function PlantingView() {
             plants={drawn}
             selected={new Set(selection)}
             hoverId={hoverId}
-            warnedGroups={warnedGroups}
+            warnings={warningLinks}
             ghosts={ghosts}
             marquee={marquee}
             brush={brush}

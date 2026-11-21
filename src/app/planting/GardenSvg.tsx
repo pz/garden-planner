@@ -2,7 +2,7 @@ import { memo, type ReactNode } from 'react';
 import type { Bed, CropLook, GardenLine, Point } from '../../types';
 import { findCrop } from '../../data/crops';
 import { bedOutline, drawnCornerRadius } from '../../core/layout';
-import { extent, type Disc } from '../../core/planting';
+import type { Disc } from '../../core/planting';
 import { radiusOf } from '../../core/placement';
 import { CROP_COLORS } from '../components/PlantMark';
 import { SpriteArt, hasSprite } from '../components/PlantSprite';
@@ -35,6 +35,15 @@ export interface SuggestedChange {
   removed: ReadonlySet<string>;
 }
 
+/** One warning: the two patches it is about (by groupId), and what kind it is. */
+export interface WarningLink {
+  a: string;
+  b: string;
+  kind: 'spacing' | 'shade' | 'companion';
+}
+
+const LINK_LABEL: Record<WarningLink['kind'], string> = { spacing: 'Too close', shade: 'Shade', companion: 'Keep apart' };
+
 export interface Tag {
   at: Point;
   text: string;
@@ -50,7 +59,8 @@ export interface GardenSvgProps {
   plants: DrawnPlant[];
   selected: ReadonlySet<string>;
   hoverId: string | null;
-  warnedGroups: ReadonlySet<string>;
+  /** The warnings to draw (not the dismissed ones). */
+  warnings: readonly WarningLink[];
   ghosts: Ghost[];
   marquee: { a: Point; b: Point } | null;
   /** The brush's ring under the pointer. */
@@ -94,6 +104,34 @@ export function GardenSvg(p: GardenSvgProps) {
   const wholeSelected = (members: DrawnPlant[]) => members.every((m) => p.selected.has(m.id));
   const hoverGroup = p.hoverId ? p.plants.find((q) => q.id === p.hoverId)?.groupId : undefined;
 
+  // Each warning ties two patches together: find the two plants that are closest, so the badge can sit on a plant
+  // (not floating at a corner of the patch) and a line can show which neighbor it is about.
+  interface Link extends WarningLink {
+    pa: DrawnPlant;
+    pb: DrawnPlant;
+  }
+  const links: Link[] = [];
+  for (const w of p.warnings) {
+    const A = groups.get(w.a);
+    const B = groups.get(w.b);
+    if (!A || !B) continue;
+    let best: { pa: DrawnPlant; pb: DrawnPlant; d: number } | null = null;
+    for (const pa of A) for (const pb of B) {
+      const d = Math.hypot(pa.x - pb.x, pa.y - pb.y);
+      if (!best || d < best.d) best = { pa, pb, d };
+    }
+    links.push({ ...w, pa: best!.pa, pb: best!.pb });
+  }
+  const anchors = new Map<string, DrawnPlant>();
+  for (const l of links) {
+    if (!anchors.has(l.a)) anchors.set(l.a, l.pa);
+    if (!anchors.has(l.b)) anchors.set(l.b, l.pb);
+  }
+  /** Selected or hovered: its warnings are drawn in full, with a line to the other plant. */
+  const touched = (groupId: string) => groupId === hoverGroup || (groups.get(groupId) ?? []).some((m) => p.selected.has(m.id));
+  const activeLinks = links.filter((l) => touched(l.a) || touched(l.b));
+  const partners = new Set(activeLinks.flatMap((l) => [l.a, l.b]).filter((g) => !touched(g)));
+
   const patches: ReactNode[] = [];
   const badges: ReactNode[] = [];
   for (const [groupId, members] of groups) {
@@ -110,10 +148,17 @@ export function GardenSvg(p: GardenSvgProps) {
         </g>,
       );
     }
-    if (p.warnedGroups.has(groupId)) {
-      const box = extent(members)!;
+    const anchor = anchors.get(groupId);
+    if (anchor) {
+      // A warned patch is ringed in the warning color, plant by plant, and the badge sits on the plant the warning is about.
+      const strong = partners.has(groupId);
       badges.push(
-        <g key={`w${groupId}`} transform={`translate(${box.x1} ${box.y0})`} style={{ pointerEvents: 'none' }}>
+        <g key={`wr${groupId}`} style={{ pointerEvents: 'none' }}>
+          {members.map((m) => (
+            <circle key={m.id} cx={m.x} cy={m.y} r={m.r + px(2)} fill="none" stroke="var(--color-warning)" strokeWidth={px(strong ? 3 : 1.8)} opacity={strong ? 1 : 0.85} />
+          ))}
+        </g>,
+        <g key={`w${groupId}`} data-warning-badge={groupId} transform={`translate(${anchor.x + anchor.r * 0.72} ${anchor.y - anchor.r * 0.72})`} style={{ pointerEvents: 'none' }}>
           <circle r={px(9)} fill="var(--color-warning)" stroke="#fffdf8" strokeWidth={px(1.5)} />
           <text y={px(4)} textAnchor="middle" style={{ font: `700 ${px(11)}px Figtree`, fill: '#fffdf8' }}>!</text>
         </g>,
@@ -203,6 +248,25 @@ export function GardenSvg(p: GardenSvgProps) {
 
       {rings}
       {badges}
+
+      {activeLinks.map((l, i) => {
+        const mid = { x: (l.pa.x + l.pb.x) / 2, y: (l.pa.y + l.pb.y) / 2 };
+        const text = LINK_LABEL[l.kind];
+        const w = text.length * px(6.6) + px(16);
+        return (
+          <g key={`link${i}`} data-warning-link={l.kind} style={{ pointerEvents: 'none' }}>
+            <line x1={l.pa.x} y1={l.pa.y} x2={l.pb.x} y2={l.pb.y} stroke="var(--color-warning)" strokeWidth={px(2.5)} strokeDasharray={`${px(6)} ${px(4)}`} strokeLinecap="round" />
+            <circle cx={l.pa.x} cy={l.pa.y} r={px(3.5)} fill="var(--color-warning)" />
+            <circle cx={l.pb.x} cy={l.pb.y} r={px(3.5)} fill="var(--color-warning)" />
+            <g transform={`translate(${mid.x} ${mid.y})`}>
+              <rect x={-w / 2} y={-px(10)} width={w} height={px(20)} rx={px(10)} fill="var(--color-warning)" stroke="#fffdf8" strokeWidth={px(1.5)} />
+              <text y={px(4)} textAnchor="middle" style={{ font: `600 ${px(11)}px Figtree`, fill: '#fffdf8' }}>
+                {text}
+              </text>
+            </g>
+          </g>
+        );
+      })}
 
       {p.ghosts.map((g, i) => (
         <g key={i} transform={`translate(${g.x} ${g.y})`} style={{ opacity: g.ok ? 0.6 : 0.35 }}>

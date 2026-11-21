@@ -132,20 +132,21 @@ const uniq = (ids: string[]) => [...new Set(ids)];
 
 /**
  * What pressing on `hit` selects. A plain press picks its whole patch; pressing again on a
- * plant of the selected patch means "just this one" — which only takes effect on release, so
- * that dragging the selected patch still moves all of it. ⌘/Ctrl toggles one plant, shift a patch.
+ * plant that is already one of several selected (a patch, plants left selected after ungrouping,
+ * a box dragged around plants) means "just this one" — which only takes effect on release, so
+ * that dragging the selection still moves all of it. ⌘/Ctrl toggles one plant, shift a patch.
  */
 export function selectOnPress(discs: Disc[], hit: Disc, current: string[], mods: ClickModifiers): ClickSelection {
   const patch = discs.filter((d) => d.groupId === hit.groupId).map((d) => d.id);
-  const whole = patch.every((id) => current.includes(id));
   if (mods.toggle) {
     return { selection: current.includes(hit.id) ? current.filter((id) => id !== hit.id) : [...current, hit.id], drill: null };
   }
   if (mods.shift) {
+    const whole = patch.every((id) => current.includes(id));
     return { selection: whole ? current.filter((id) => !patch.includes(id)) : uniq([...current, ...patch]), drill: null };
   }
   if (!current.includes(hit.id)) return { selection: patch, drill: null };
-  if (whole && patch.length > 1 && current.length === patch.length) return { selection: current, drill: hit.id };
+  if (current.length > 1) return { selection: current, drill: hit.id };
   return { selection: current, drill: null };
 }
 
