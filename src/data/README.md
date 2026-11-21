@@ -19,6 +19,7 @@ this doc explains what each field *means*.
 | `family` | one of `"nightshade" \| "cucurbit" \| "brassica" \| "root" \| "leafy" \| "herb" \| "allium" \| "flower" \| "grain" \| "legume" \| "perennial"` | Groups the crop in plant lists. Must be one of `CropFamily` in `types.ts`. |
 | `spacingIn` | number > 0 | Minimum center-to-center spacing between plants of this crop, in inches. Used for overlap/fit checks (`core/spacing.ts`). |
 | `defaultPatch` | boolean | Whether this crop is normally grown as a multi-plant patch (affects UI defaults, not scheduling). |
+| `minBlock` | optional integer ≥ 2 | For crops that only do well in a block (corn, which is wind-pollinated): the fewest plants a block may have along each side. The planting solver will not plant such a crop in a smaller group. Only for `defaultPatch` crops. |
 | `sowMethod` | `"transplant" \| "direct-sow"` | Which planting-schedule fields below apply — see next row. |
 | `startIndoorsWeeksBeforeLastFrost` | number (weeks) | **Transplant crops only.** Weeks before the zone's last frost to start seeds indoors. |
 | `transplantWeeksAfterLastFrost` | number (weeks, may be negative) | **Transplant crops only.** Weeks after last frost it's safe to move outside; negative means before last frost (e.g. a frost-tolerant crop). |

@@ -57,3 +57,58 @@ export function edgeSpill(center: Point, spacingIn: number, outline: Outline): n
   for (const s of RIM_SAMPLES) if (!isInsideOutline({ x: center.x + s.x * r, y: center.y + s.y * r }, outline)) outside++;
   return outside / RIM_SAMPLES.length;
 }
+
+const distToSegment = (p: Point, a: Point, b: Point): number => {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+};
+
+/** Slack for rounding when a point is exactly the clearance from the edge, in inches. */
+const CLEARANCE_EPS = 1e-9;
+
+/**
+ * Whether a plant center at `p` is inside `outline` and at least `clearance` inches from its edge,
+ * so a circle of that radius around it lies wholly inside the bed. Exact for rectangles (rounded
+ * corners included) and polygons; for an ellipse, a point inside the ellipse shrunk by `clearance`
+ * on both axes that also passes a ring of samples, which is within a hair of exact. With a
+ * clearance of 0 it is the plain inside test.
+ */
+export function insideWithClearance(p: Point, clearance: number, outline: Outline): boolean {
+  if (!isInsideOutline(p, outline)) return false;
+  if (clearance <= 0) return true;
+  const eps = CLEARANCE_EPS;
+  switch (outline.shape) {
+    case 'rect': {
+      const { widthIn: w, heightIn: h, cornerRadiusIn: r } = outline;
+      if (p.x < clearance - eps || p.y < clearance - eps || p.x > w - clearance + eps || p.y > h - clearance + eps) return false;
+      if (r > 0) {
+        const cx = p.x < r ? r : p.x > w - r ? w - r : null;
+        const cy = p.y < r ? r : p.y > h - r ? h - r : null;
+        if (cx !== null && cy !== null) return Math.hypot(p.x - cx, p.y - cy) <= r - clearance + eps;
+      }
+      return true;
+    }
+    case 'ellipse': {
+      const a = outline.widthIn / 2 - clearance;
+      const b = outline.heightIn / 2 - clearance;
+      if (a <= 0 || b <= 0) return false;
+      const nx = (p.x - outline.widthIn / 2) / a;
+      const ny = (p.y - outline.heightIn / 2) / b;
+      if (nx * nx + ny * ny > 1 + eps) return false;
+      for (let i = 0; i < 16; i++) {
+        const t = (i / 16) * 2 * Math.PI;
+        if (!isInsideOutline({ x: p.x + clearance * Math.cos(t) * (1 - 1e-9), y: p.y + clearance * Math.sin(t) * (1 - 1e-9) }, outline)) return false;
+      }
+      return true;
+    }
+    case 'polygon': {
+      const pts = outline.points;
+      for (let i = 0; i < pts.length; i++) if (distToSegment(p, pts[i], pts[(i + 1) % pts.length]) < clearance - eps) return false;
+      return true;
+    }
+  }
+}
+

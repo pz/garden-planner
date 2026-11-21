@@ -34,6 +34,8 @@ export interface CropDef {
   spacingIn: number;
   /** Whether this crop is normally grown as a multi-plant patch. */
   defaultPatch: boolean;
+  /** Crops that need a block to do well (corn must be wind-pollinated): the fewest plants a block may have along each side. Absent means no such need. */
+  minBlock?: number;
   sowMethod: SowMethod;
   /** For transplants: weeks before last frost to start seeds indoors. */
   startIndoorsWeeksBeforeLastFrost?: number;

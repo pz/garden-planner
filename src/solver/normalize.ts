@@ -3,11 +3,11 @@ import { getZone, zoneFirstFrostDate } from '../data/zones';
 import { scheduleFor } from '../core/dates';
 import { bedOutline } from '../core/layout';
 import { shadowDirection } from '../core/shade';
-import { asBlock, type Block } from './block';
+import { asBlock, blockPoints, minShape, type Block } from './block';
 import { makeGroup, patches } from './groups';
-import { bedArea, plantArea, targetCount } from './allocate';
+import { insetArea, plantArea, targetCount } from './allocate';
 import type { Ctx, DemandInfo, Group } from './model';
-import { DEFAULT_FILL_RATIO, DEFAULT_PREFS, type PlantingSpec } from './spec';
+import { DEFAULT_EDGE_CLEARANCE, DEFAULT_FILL_RATIO, DEFAULT_PREFS, type PlantingSpec } from './spec';
 import type { UnmetReason } from './scenario';
 
 /** Whether a crop can ripen before the first fall frost in the garden's zone (crops without a schedule always can). */
@@ -18,9 +18,10 @@ export function fitsSeason(cropId: string, zoneId: string, year: number): boolea
   return scheduleFor(crop, zone, year).harvest.getTime() < zoneFirstFrostDate(zone, year).getTime();
 }
 
-/** Hardest crops first: widest spacing, then tallest, then those that need full sun. */
+/** Crops with a minimum count first (they must find their room before it is taken), then the hardest: widest spacing, tallest, needing full sun. */
 function byDifficulty(a: DemandInfo, b: DemandInfo): number {
   return (
+    Number((b.min ?? 0) > 0) - Number((a.min ?? 0) > 0) ||
     b.crop.spacingIn - a.crop.spacingIn ||
     b.crop.heightIn - a.crop.heightIn ||
     Number(b.crop.sunNeed === 'full') - Number(a.crop.sunNeed === 'full') ||
@@ -43,6 +44,8 @@ export function normalize(plan: Ctx['plan'], spec: PlantingSpec, year: number): 
   const filtered = new Map<string, UnmetReason[]>();
   const live: Omit<DemandInfo, 'target'>[] = [];
   for (const d of spec.demands) {
+    // A weight of 0 means ignore the crop: it is not planted, and its patches are left as they are.
+    if (d.weight === 0) continue;
     const crop = getCrop(d.cropId);
     const reasons: UnmetReason[] = [];
     if (!fitsSeason(d.cropId, plan.profile.zoneId, year)) reasons.push('season_too_short');
@@ -77,17 +80,41 @@ export function normalize(plan: Ctx['plan'], spec: PlantingSpec, year: number): 
     }
   }
 
-  // Allocation: each crop's share of the free area in the beds it may use.
-  const totalWeight = live.reduce((s, d) => s + d.weight, 0);
-  const demands: DemandInfo[] = live.map((d) => {
-    let area = 0;
-    for (const id of d.bedIds) {
-      const bed = beds.get(id)!.bed;
-      const taken = fixed.filter((g) => g.bedId === id).reduce((s, g) => s + g.points.length * plantArea(g.spacingIn), 0);
-      area += Math.max(0, bedArea(bed) - taken);
+  // How far a plant of a crop must stay from a bed's edge.
+  const edgeClearance = spec.edgeClearance ?? DEFAULT_EDGE_CLEARANCE;
+  const clearanceIn = (cropId: string): number => edgeClearance * (getCrop(cropId).spacingIn / 2);
+
+  // Allocation: each crop's share of the free area in the beds it may use. A crop whose target is
+  // smaller than the smallest group it is grown in (a lone corn plant) is dropped, and the others'
+  // shares are worked out again without it; any patch of it the solver could have moved stays put.
+  let active = live;
+  let demands: DemandInfo[] = [];
+  for (;;) {
+    const totalWeight = active.reduce((sum, d) => sum + d.weight, 0);
+    demands = active.map((d) => {
+      // The room the crop's plants may take: the bed with its margin kept clear, beyond the half spacing a growing room needs anyway.
+      const inset = Math.max(0, clearanceIn(d.cropId) - d.crop.spacingIn / 2);
+      let area = 0;
+      for (const id of d.bedIds) {
+        const bed = beds.get(id)!.bed;
+        const taken = fixed.filter((g) => g.bedId === id).reduce((sum, g) => sum + g.points.length * plantArea(g.spacingIn), 0);
+        area += Math.max(0, insetArea(bed, inset) - taken);
+      }
+      return { ...d, target: targetCount(area, fillRatio, d.weight, totalWeight, d.crop.spacingIn, d.min, d.max) };
+    });
+    const small = demands.filter((d) => d.target < minShape(d.cropId).plants);
+    if (small.length === 0) break;
+    for (const d of small) {
+      filtered.set(d.cropId, ['below_minimum_group']);
+      for (let i = editable.length - 1; i >= 0; i--) {
+        const b = editable[i];
+        if (b.cropId !== d.cropId || b.source === 'new') continue;
+        fixed.push(makeGroup(b.source.groupId, b.bedId, b.cropId, blockPoints(b), beds, true));
+        editable.splice(i, 1);
+      }
     }
-    return { ...d, target: targetCount(area, fillRatio, d.weight, totalWeight, d.crop.spacingIn, d.min, d.max) };
-  });
+    active = active.filter((d) => !small.some((x) => x.cropId === d.cropId));
+  }
   demands.sort(byDifficulty);
 
   const crops = [...plan.plants.map((p) => p.cropId), ...spec.demands.map((d) => d.cropId)];
@@ -103,6 +130,7 @@ export function normalize(plan: Ctx['plan'], spec: PlantingSpec, year: number): 
     fixed,
     editable,
     removed,
+    clearanceIn,
     shadowDir: shadowDirection(plan.northDeg ?? 0, plan.profile.location?.lat),
     maxSpacingIn: Math.max(3, ...crops.map((id) => findCrop(id)?.spacingIn ?? 0)),
   };

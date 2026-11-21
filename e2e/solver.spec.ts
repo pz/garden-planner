@@ -19,6 +19,9 @@ test('/_solver: load a scenario, solve, see the new patches outlined, and apply 
   await expect(after.locator('[data-new-plant]')).toHaveCount(planted);
   await expect(page.getByRole('table', { name: 'Crops' }).locator('[data-crop-row="tomato"]')).toContainText('met');
   await expect(page.getByRole('table', { name: 'Score' })).toContainText('total');
+  // Hovering names a plant, and a legend says which icon is which crop.
+  await expect(after.locator('[data-plant-id] title').first()).toHaveText(/ in apart · proposed$/);
+  await expect(page.getByRole('list', { name: 'Legend' }).locator('[data-legend="tomato"]')).toContainText('Tomato');
   await expect(page.locator('[data-panel="before"] [data-plant-id]')).toHaveCount(0);
 
   // Applying goes through the garden API.

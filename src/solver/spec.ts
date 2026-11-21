@@ -11,7 +11,7 @@ export const SOLVE_MODES: readonly SolveMode[] = ['fill', 'adjust', 'replace'];
 
 export interface CropDemand {
   cropId: string;
-  /** Relative share of planted area (> 0). */
+  /** Relative share of planted area, 0 or more. 0 means ignore this crop: it is not planted and its existing patches are left alone. */
   weight: number;
   /** Plants; soft, heavily penalized. */
   min?: number;
@@ -27,6 +27,10 @@ export interface SolvePrefs {
   shade?: number;
   companions?: number;
   clustering?: number;
+  /** How much to value using each bed's share of the space, so beds fill evenly. */
+  coverage?: number;
+  /** How much to mind several crops sharing a bed. */
+  tidiness?: number;
   /** Adjust mode only: the cost of removing or moving existing plants. */
   stability?: number;
 }
@@ -42,10 +46,23 @@ export interface PlantingSpec {
   exclude?: string[];
   /** Share of the free in-scope area to aim to plant, in (0, 1]. */
   fillRatio?: number;
+  /**
+   * How far a plant's center must stay from a bed's edge, as a fraction of its growing-room
+   * radius (half its spacing), so it scales with the plant. 1: the whole room stays inside the
+   * bed. The default, 0.5: the center sits half a radius in, so about a quarter of the plant
+   * overhangs the edge. 0: plants may sit right on the edge. Above 1 leaves a margin.
+   */
+  edgeClearance?: number;
   prefs?: SolvePrefs;
 }
 
 export const DEFAULT_FILL_RATIO = 0.85;
+
+/** What `edgeClearance` is when the spec leaves it out: half a growing-room radius. */
+export const DEFAULT_EDGE_CLEARANCE = 0.5;
+
+/** The most `edgeClearance` may be: a margin as wide as a whole plant. */
+export const MAX_EDGE_CLEARANCE = 2;
 
 /** Every preference's value when the spec leaves it out. First guesses, to be tuned with the sweep. */
 export const DEFAULT_PREFS: Readonly<Required<SolvePrefs>> = {
@@ -53,6 +70,8 @@ export const DEFAULT_PREFS: Readonly<Required<SolvePrefs>> = {
   shade: 1,
   companions: 1,
   clustering: 0.3,
+  coverage: 1,
+  tidiness: 0.5,
   stability: 0.5,
 };
 
@@ -77,7 +96,7 @@ export function parseSpec(raw: unknown, plan: GardenPlan): ParsedSpec {
   const known = (o: Record<string, unknown>, keys: readonly string[], at: string) => {
     for (const k of Object.keys(o)) if (!keys.includes(k)) bad(`${at}/${k}`, 'is not a known field');
   };
-  known(raw, ['mode', 'demands', 'scope', 'locked', 'exclude', 'fillRatio', 'prefs'], '');
+  known(raw, ['mode', 'demands', 'scope', 'locked', 'exclude', 'fillRatio', 'edgeClearance', 'prefs'], '');
 
   const bedIds = new Set(plan.beds.map((b) => b.id));
   const groupIds = new Set(plan.plants.map((p) => p.groupId));
@@ -165,7 +184,7 @@ export function parseSpec(raw: unknown, plan: GardenPlan): ParsedSpec {
         }
       }
       if (d.weight === undefined) bad(`${at}/weight`, 'is required');
-      else if (typeof d.weight !== 'number' || !Number.isFinite(d.weight) || d.weight <= 0) bad(`${at}/weight`, 'must be a number above 0');
+      else if (typeof d.weight !== 'number' || !Number.isFinite(d.weight) || d.weight < 0) bad(`${at}/weight`, 'must be a number, 0 or more (0 ignores the crop)');
       const min = d.min === undefined ? undefined : count(d.min, `${at}/min`);
       const max = d.max === undefined ? undefined : count(d.max, `${at}/max`);
       if (min !== undefined && max !== undefined && min > max) bad(`${at}/min`, `(${min}) is more than max (${max})`);
@@ -181,6 +200,10 @@ export function parseSpec(raw: unknown, plan: GardenPlan): ParsedSpec {
 
   if (raw.fillRatio !== undefined && (typeof raw.fillRatio !== 'number' || !(raw.fillRatio > 0 && raw.fillRatio <= 1))) {
     bad('/fillRatio', 'must be a number above 0 and at most 1');
+  }
+
+  if (raw.edgeClearance !== undefined && !(typeof raw.edgeClearance === 'number' && raw.edgeClearance >= 0 && raw.edgeClearance <= MAX_EDGE_CLEARANCE)) {
+    bad('/edgeClearance', `must be a number from 0 to ${MAX_EDGE_CLEARANCE}: the share of a plant's growing-room radius its center stays in from the bed edge`);
   }
 
   if (raw.prefs !== undefined) {

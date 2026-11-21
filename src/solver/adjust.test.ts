@@ -22,15 +22,17 @@ describe('adjust mode', () => {
   it('leaves a patch alone when nothing asks for a change (stability 1, a spec that wants what is there)', () => {
     const before = planOf([bed('b', 96, 48)]);
     const filled = solve(before, { mode: 'fill', demands: [{ cropId: 'lettuce', weight: 1 }, { cropId: 'pepper', weight: 1 }] }, opts);
-    const spec: PlantingSpec = { mode: 'adjust', prefs: { stability: 1 }, demands: [{ cropId: 'lettuce', weight: 1 }, { cropId: 'pepper', weight: 1 }] };
+    // A spec that wants exactly what is there: each crop's count as its min and max, and no coverage to fill the rest.
+    const wants = (id: string) => filled.crops.find((c) => c.cropId === id)!.placed;
+    const spec: PlantingSpec = { mode: 'adjust', prefs: { stability: 1, coverage: 0 }, demands: ['lettuce', 'pepper'].map((cropId) => ({ cropId, weight: 1, min: wants(cropId), max: wants(cropId) })) };
     const again = solve(filled.plan, spec, opts);
     expect(again.commands).toEqual([]);
     expect(again.hardViolations).toEqual([]);
   });
 
-  it('moves a patch with movePatch (keeping its plants) and resizes with remove + add', () => {
+  it('orders removals before moves before adds, and meets a minimum that needs the room', () => {
     // A lettuce patch hard against a tomato demand that needs its spot.
-    const plan = planOf([bed('b', 60, 24)], [...patch('old', 'b', 'lettuce', 0, 12, 2, 1)]);
+    const plan = planOf([bed('b', 96, 48)], [...patch('old', 'b', 'lettuce', 12, 24, 4, 1)]);
     const spec: PlantingSpec = { mode: 'adjust', prefs: { stability: 0 }, demands: [{ cropId: 'tomato', weight: 3, min: 3 }, { cropId: 'lettuce', weight: 1 }] };
     const p = solve(plan, spec, { ...opts, iterations: 1500 });
     expect(p.hardViolations).toEqual([]);

@@ -30,7 +30,9 @@ export function cropResults(ctx: Ctx, ev: Evaluator): CropResult[] {
   return ctx.spec.demands.map((spec) => {
     const filteredReasons = ctx.filtered.get(spec.cropId);
     if (filteredReasons) return { cropId: spec.cropId, target: 0, placed: 0, status: 'unmet', reasons: filteredReasons };
-    const d = ctx.demands.find((x) => x.cropId === spec.cropId)!;
+    const d = ctx.demands.find((x) => x.cropId === spec.cropId);
+    // A weight of 0 asks to ignore the crop: nothing was wanted, so nothing is missing.
+    if (!d) return { cropId: spec.cropId, target: 0, placed: 0, status: 'met', reasons: [] };
     const placed = ev.count(spec.cropId);
     if (placed >= MET_SHARE * d.target) return { cropId: spec.cropId, target: d.target, placed, status: 'met', reasons: [] };
     const reasons: UnmetReason[] = [];

@@ -51,3 +51,40 @@ describe('edgeSpill', () => {
     expect(edgeSpill({ x: 24, y: 1 }, 12, e)).toBeGreaterThan(0);
   });
 });
+
+import { insideWithClearance } from './rules';
+
+describe('insideWithClearance', () => {
+  const rect = { shape: 'rect' as const, widthIn: 48, heightIn: 24, cornerRadiusIn: 0 };
+  it('is the plain inside test with no clearance', () => {
+    expect(insideWithClearance({ x: 0, y: 0 }, 0, rect)).toBe(true);
+    expect(insideWithClearance({ x: -0.01, y: 0 }, 0, rect)).toBe(false);
+  });
+  it('keeps a rectangle’s plants exactly the clearance from each wall, no closer', () => {
+    expect(insideWithClearance({ x: 6, y: 6 }, 6, rect)).toBe(true);
+    expect(insideWithClearance({ x: 5.99, y: 6 }, 6, rect)).toBe(false);
+    expect(insideWithClearance({ x: 42, y: 18 }, 6, rect)).toBe(true);
+    expect(insideWithClearance({ x: 42, y: 18.01 }, 6, rect)).toBe(false);
+  });
+  it('pulls a rounded corner in along its arc', () => {
+    const rounded = { ...rect, widthIn: 48, heightIn: 48, cornerRadiusIn: 12 };
+    // The arc's center is (12, 12); a plant 4 in clear of the arc is at most 8 in from that center.
+    expect(insideWithClearance({ x: 12 - 8 * Math.SQRT1_2, y: 12 - 8 * Math.SQRT1_2 }, 4, rounded)).toBe(true);
+    expect(insideWithClearance({ x: 12 - 8.2 * Math.SQRT1_2, y: 12 - 8.2 * Math.SQRT1_2 }, 4, rounded)).toBe(false);
+    expect(insideWithClearance({ x: 6, y: 24 }, 4, rounded)).toBe(true);
+  });
+  it('measures from a polygon’s slanted sides', () => {
+    const triangle = { shape: 'polygon' as const, widthIn: 60, heightIn: 60, points: [{ x: 30, y: 0 }, { x: 60, y: 60 }, { x: 0, y: 60 }] };
+    expect(insideWithClearance({ x: 30, y: 40 }, 6, triangle)).toBe(true);
+    expect(insideWithClearance({ x: 30, y: 55 }, 6, triangle)).toBe(false); // 5 in above the base
+    expect(insideWithClearance({ x: 30, y: 54 }, 6, triangle)).toBe(true);
+    expect(insideWithClearance({ x: 30, y: 6 }, 6, triangle)).toBe(false); // near the apex
+  });
+  it('shrinks an ellipse on both axes and refuses a bed too small for the clearance', () => {
+    const e = { shape: 'ellipse' as const, widthIn: 60, heightIn: 40 };
+    expect(insideWithClearance({ x: 30, y: 20 }, 10, e)).toBe(true);
+    expect(insideWithClearance({ x: 30, y: 10.5 }, 10, e)).toBe(true);
+    expect(insideWithClearance({ x: 30, y: 9 }, 10, e)).toBe(false);
+    expect(insideWithClearance({ x: 30, y: 20 }, 25, e)).toBe(false);
+  });
+});

@@ -1,14 +1,15 @@
 import type { Point } from '../types';
 import { getCrop } from '../data/crops';
-import { MAX_PATCH_PLANTS, isInsideOutline } from '../core/geometry';
-import { blockPlantCount, blockPoints, blockSpacing, type Block } from './block';
+import { MAX_PATCH_PLANTS } from '../core/geometry';
+import { bedArea } from './allocate';
+import { blockPlantCount, blockPoints, blockSpacing, meetsMinShape, type Block } from './block';
 import { DiscIndex } from './discIndex';
 import { makeGroup } from './groups';
 import type { Ctx, DemandInfo, Group } from './model';
 import type { ScoreBreakdown } from './proposal';
 import { companionWeight, shades } from './pairRules';
-import { edgeSpill, requiredGap, spacingPenalty, violatesHardSpacing } from './rules';
-import { CHANGE_WEIGHT, CLUSTER_WEIGHT, COMPANION_WEIGHT, SHADE_WEIGHT, SPACING_WEIGHT, SPILL_WEIGHT, SUN_WEIGHT, demandCurve, emptyBreakdown, minMaxPenalty } from './scoring';
+import { edgeSpill, insideWithClearance, requiredGap, spacingPenalty, violatesHardSpacing } from './rules';
+import { CHANGE_WEIGHT, CLUSTER_WEIGHT, COMPANION_WEIGHT, COVERAGE_WEIGHT, MIX_WEIGHT, SHADE_WEIGHT, SPACING_WEIGHT, SPILL_WEIGHT, SUN_WEIGHT, demandCurve, emptyBreakdown, minMaxPenalty } from './scoring';
 
 /** The raw (unweighted) sums behind the pair and per-plant terms. */
 interface Raw {
@@ -28,6 +29,9 @@ const PREVIEW = '__preview__';
 
 /** Negation that never yields -0, so a term that is not charged prints as 0. */
 const neg = (x: number): number => (x === 0 ? 0 : -x);
+
+/** The number of extra crops in a bed beyond the first. */
+const mixOf = (distinct: number): number => Math.max(0, distinct - 1);
 
 /** A two-level memo keyed by two numbers, for the outline tests the search repeats at the same few spots. */
 class Memo<T> {
@@ -67,6 +71,14 @@ export class Evaluator {
   private demand = 0;
   private minMax = 0;
   private seq = 0;
+  /** Growing-room area (spacing squared per plant) in each in-scope bed, fixed plants included. */
+  private readonly covered = new Map<string, number>();
+  private readonly scopeBedArea = new Map<string, number>();
+  private scopeArea = 0;
+  private coverage = 0;
+  /** How many patches of each crop are in each bed, fixed ones included, for the tidiness term. */
+  private readonly presence = new Map<string, Map<string, number>>();
+  private mix = 0;
 
   readonly ctx: Ctx;
 
@@ -75,7 +87,18 @@ export class Evaluator {
     this.partShade = ctx.plan.profile.sunExposure === 'part-shade';
     this.demandOf = new Map(ctx.demands.map((d) => [d.cropId, d]));
     for (const id of ctx.beds.keys()) this.index.set(id, new DiscIndex(ctx.maxSpacingIn));
-    for (const g of ctx.fixed) this.insert(g);
+    for (const [id, info] of ctx.beds) {
+      if (!info.inScope) continue;
+      const a = bedArea(info.bed);
+      this.scopeBedArea.set(id, a);
+      this.scopeArea += a;
+      this.covered.set(id, 0);
+    }
+    for (const g of ctx.fixed) {
+      this.insert(g);
+      this.cover(g.bedId, g.points.length * g.spacingIn * g.spacingIn);
+      this.present(g.bedId, g.cropId, 1);
+    }
     for (const d of ctx.demands) this.counts.set(d.cropId, 0);
     for (const b of ctx.editable) if (b.source !== 'new') this.originals.set(b.source.groupId, b);
     this.originalPlants = ctx.editable.reduce((n, b) => n + blockPlantCount(b), 0);
@@ -114,7 +137,7 @@ export class Evaluator {
 
   /** Whether a plant of `cropId` may sit at (x, y) in the bed: inside its outline and not closer than the hard spacing limit to any plant except those of `ignoreGroup`. */
   pointOk(bedId: string, cropId: string, x: number, y: number, ignoreGroup?: string): boolean {
-    if (!this.inside(bedId, x, y)) return false;
+    if (!this.inside(bedId, x, y, this.ctx.clearanceIn(cropId))) return false;
     const s = this.spacingOf(cropId);
     let ok = true;
     this.index.get(bedId)!.forEachNear(x, y, this.ctx.maxSpacingIn, (d, dist) => {
@@ -123,10 +146,12 @@ export class Evaluator {
     return ok;
   }
 
-  private inside(bedId: string, x: number, y: number): boolean {
-    let memo = this.insideMemo.get(bedId);
-    if (!memo) this.insideMemo.set(bedId, (memo = new Memo()));
-    return memo.get(x, y, () => isInsideOutline({ x, y }, this.ctx.beds.get(bedId)!.outline));
+  /** Whether (x, y) is inside the bed and at least `clearance` from its edge (memoized per bed and clearance). */
+  private inside(bedId: string, x: number, y: number, clearance: number): boolean {
+    const key = `${bedId}|${clearance}`;
+    let memo = this.insideMemo.get(key);
+    if (!memo) this.insideMemo.set(key, (memo = new Memo()));
+    return memo.get(x, y, () => insideWithClearance({ x, y }, clearance, this.ctx.beds.get(bedId)!.outline));
   }
 
   /** The edge-spill share of a plant at (x, y) in a bed (memoized: the search asks about the same spots again and again). */
@@ -141,9 +166,19 @@ export class Evaluator {
     return this.demandOf.get(cropId)?.crop.spacingIn ?? blockSpacing({ cropId });
   }
 
-  /** The hard constraints for a whole block: within the plant cap, every center inside the bed, no problem-level crowding. */
+  /**
+   * Whether a block is big enough for its crop (see `meetsMinShape`). An existing patch that is
+   * already smaller keeps its shape without complaint, since moving it is not what makes it small.
+   */
+  private shapeOk(block: Block): boolean {
+    if (meetsMinShape(block.cropId, block.columns, block.rows)) return true;
+    const o = block.source === 'new' ? undefined : this.originals.get(block.source.groupId);
+    return o !== undefined && o.columns === block.columns && o.rows === block.rows;
+  }
+
+  /** The hard constraints for a whole block: within the plant cap, big enough, every center inside the bed with the edge clearance, no problem-level crowding. */
   canPlace(block: Block, ignoreGroup?: string): boolean {
-    if (blockPlantCount(block) > MAX_PATCH_PLANTS) return false;
+    if (blockPlantCount(block) > MAX_PATCH_PLANTS || !this.shapeOk(block)) return false;
     return blockPoints(block).every((p) => this.pointOk(block.bedId, block.cropId, p.x, p.y, ignoreGroup));
   }
 
@@ -169,6 +204,33 @@ export class Evaluator {
     return out;
   }
 
+  /** The value of a bed being `covered` square inches planted: concave, so every bed gets some before any gets more. */
+  private coverageValue(bedId: string, covered: number): number {
+    const a = this.scopeBedArea.get(bedId);
+    if (a === undefined || this.scopeArea === 0) return 0;
+    const r = Math.min(1, covered / (this.ctx.fillRatio * a));
+    return this.ctx.prefs.coverage * COVERAGE_WEIGHT * (a / this.scopeArea) * (1 - (1 - r) * (1 - r));
+  }
+
+  /** Adds (or, if negative, removes) growing-room area in a bed. */
+  private cover(bedId: string, area: number): void {
+    const before = this.covered.get(bedId);
+    if (before === undefined) return;
+    this.coverage += this.coverageValue(bedId, before + area) - this.coverageValue(bedId, before);
+    this.covered.set(bedId, before + area);
+  }
+
+  /** Counts a patch of a crop in or out of a bed, keeping the number of extra crops per bed. */
+  private present(bedId: string, cropId: string, delta: 1 | -1): void {
+    let crops = this.presence.get(bedId);
+    if (!crops) this.presence.set(bedId, (crops = new Map()));
+    const before = crops.size;
+    const n = (crops.get(cropId) ?? 0) + delta;
+    if (n > 0) crops.set(cropId, n);
+    else crops.delete(cropId);
+    this.mix += mixOf(crops.size) - mixOf(before);
+  }
+
   private cropValue(cropId: string, n: number): { demand: number; minMax: number } {
     const d = this.demandOf.get(cropId)!;
     return { demand: d.weight * demandCurve(n, d.target), minMax: minMaxPenalty(n, d.min, d.max) };
@@ -183,7 +245,13 @@ export class Evaluator {
     const after = this.cropValue(block.cropId, n + blockPlantCount(block));
     const extra = (this.blocksIn.get(`${block.cropId}|${block.bedId}`) ?? 0) > 0 ? 1 : 0;
     const change = this.changePenalty(this.change + this.changeDelta(block)) - this.changePenalty(this.change);
-    return after.demand - before.demand - (after.minMax - before.minMax) - this.penalty(c) - this.ctx.prefs.clustering * CLUSTER_WEIGHT * extra - change;
+    const area = blockPlantCount(block) * g.spacingIn * g.spacingIn;
+    const covered = this.covered.get(block.bedId);
+    const coverage = covered === undefined ? 0 : this.coverageValue(block.bedId, covered + area) - this.coverageValue(block.bedId, covered);
+    const crops = this.presence.get(block.bedId);
+    const newCrop = !crops?.has(block.cropId);
+    const mix = newCrop ? mixOf((crops?.size ?? 0) + 1) - mixOf(crops?.size ?? 0) : 0;
+    return after.demand - before.demand - (after.minMax - before.minMax) + coverage - this.penalty(c) - this.ctx.prefs.clustering * CLUSTER_WEIGHT * extra - this.ctx.prefs.tidiness * MIX_WEIGHT * mix - change;
   }
 
   /**
@@ -210,12 +278,19 @@ export class Evaluator {
     return p.spacing * SPACING_WEIGHT * r.spacing + SPILL_WEIGHT * r.spill + p.shade * SHADE_WEIGHT * r.shade + p.companions * COMPANION_WEIGHT * r.companion + SUN_WEIGHT * r.sun;
   }
 
-  /** The best-case gain from adding `plants` plants of a crop: its demand and limits alone, with no penalties. An upper bound on `previewAdd`. */
-  demandGain(cropId: string, plants: number): number {
+  /**
+   * The best-case gain from adding `plants` plants of a crop to a bed: its demand, limits and the
+   * bed's coverage, with none of the penalties. An upper bound on `previewAdd`, since every
+   * penalty only lowers a score.
+   */
+  demandGain(cropId: string, plants: number, bedId: string): number {
     const n = this.count(cropId);
     const before = this.cropValue(cropId, n);
     const after = this.cropValue(cropId, n + plants);
-    return after.demand - before.demand - (after.minMax - before.minMax);
+    const s = this.spacingOf(cropId);
+    const covered = this.covered.get(bedId);
+    const coverage = covered === undefined ? 0 : this.coverageValue(bedId, covered + plants * s * s) - this.coverageValue(bedId, covered);
+    return after.demand - before.demand - (after.minMax - before.minMax) + coverage;
   }
 
   /** Adds a block (the caller has checked `canPlace`) and returns the id to remove it by. */
@@ -226,6 +301,8 @@ export class Evaluator {
     this.insert(g);
     this.blocks.set(id, block);
     this.addRaw(c, 1);
+    this.cover(block.bedId, blockPlantCount(block) * g.spacingIn * g.spacingIn);
+    this.present(block.bedId, block.cropId, 1);
     this.change += this.changeDelta(block);
     const key = `${block.cropId}|${block.bedId}`;
     const there = this.blocksIn.get(key) ?? 0;
@@ -242,6 +319,8 @@ export class Evaluator {
     // What it contributed is what it would contribute against everything that is left: pairs with
     // blocks added after it are counted in the same way as pairs with blocks added before.
     this.addRaw(this.contribution(g), -1);
+    this.cover(block.bedId, -blockPlantCount(block) * g.spacingIn * g.spacingIn);
+    this.present(block.bedId, block.cropId, -1);
     this.change -= this.changeDelta(block);
     const key = `${block.cropId}|${block.bedId}`;
     const there = this.blocksIn.get(key)!;
@@ -279,8 +358,10 @@ export class Evaluator {
     b.companion = neg(p.companions * COMPANION_WEIGHT * this.raw.companion);
     b.clustering = neg(p.clustering * CLUSTER_WEIGHT * this.clustering);
     b.sun = neg(SUN_WEIGHT * this.raw.sun);
+    b.coverage = this.coverage;
+    b.mixing = neg(p.tidiness * MIX_WEIGHT * this.mix);
     b.change = neg(this.changePenalty(this.change));
-    b.total = b.demand + b.minMax + b.spacing + b.shade + b.companion + b.clustering + b.spill + b.change + b.sun;
+    b.total = b.demand + b.minMax + b.spacing + b.shade + b.companion + b.clustering + b.spill + b.change + b.sun + b.coverage + b.mixing;
     return b;
   }
 

@@ -386,6 +386,7 @@
     "family": "grain",
     "spacingIn": 12,
     "defaultPatch": true,
+    "minBlock": 3,
     "sowMethod": "direct-sow",
     "directSowWeeksRelativeToLastFrost": 1,
     "daysToMaturity": 80,

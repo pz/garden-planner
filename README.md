@@ -109,12 +109,14 @@ says only *what* you want. Its output is ordinary API commands, checked with a d
 | Term | Meaning |
 | --- | --- |
 | **Planting spec** | The request to the solver (`PlantingSpec`): a mode, demands, and optional scope, locks, exclusions and preferences. It says what to plant and what may change, never where. |
-| **Demand** | One crop you want, with a **weight** (its relative share of the planted area, so "lower priority" is a smaller weight), an optional `min` and `max` number of plants, and optionally the beds it may go in. |
+| **Demand** | One crop you want, with a **weight** (its relative share of the planted area, so "lower priority" is a smaller weight, and 0 means ignore the crop), an optional `min` and `max` number of plants, and optionally the beds it may go in. |
 | **Mode** | `fill`: use only free space, touch nothing. `adjust`: existing plants may be moved, resized or removed at a cost. `replace`: clear the scope and plan it from empty. |
 | **Scope** | The beds the solver may plant in. Plants outside it are never touched, but still count for spacing and shade. |
 | **Locked / exclude** | Locked patches are never touched. An excluded crop is not planted, and in `adjust` and `replace` its existing patches in scope are removed. |
 | **Fill ratio** | The share of free space to aim to plant (default 0.85). |
-| **Preferences** | How much the solver minds each cost: spacing, shade, companions, clustering, and (in `adjust`) disturbing what is there. |
+| **Edge clearance** | How far in from a bed's edge a plant's center must stay, as a share of the plant's own growing-room radius: 0.5 by default (about a quarter of the plant may overhang), 1 keeps the whole plant inside, 0 allows plants right on the edge. |
+| **Minimum group** | The smallest block a crop is planted in: corn needs at least 3 by 3 (it is wind-pollinated), crops grown in patches at least 4 plants. A crop that would get fewer is left out and says so. |
+| **Preferences** | How much the solver minds each cost: spacing, shade, companions, clustering, coverage (using each bed's share of the space), tidiness (several crops in one bed), and (in `adjust`) disturbing what is there. |
 | **Block** | The solver's unit of planting: a rectangular grid of one crop at its spacing in one bed, which becomes one patch. |
 | **Target** | How many plants of a crop the solver aims for, from its weight and the space available. |
 | **Proposal** | What `solve` returns: the commands, a result per crop (placed against target, and why if short), the score, and the warnings the commands would cause. Accepting it is `GardenApi.apply`. |

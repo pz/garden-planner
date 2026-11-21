@@ -52,7 +52,7 @@ function randomSpec(next: () => number, plan: GardenPlan, mode: SolveMode): Plan
   const spec: PlantingSpec = {
     mode,
     demands: crops.map((c) => {
-      const d: PlantingSpec['demands'][number] = { cropId: c.id, weight: Math.round((0.2 + next() * 2) * 10) / 10 };
+      const d: PlantingSpec['demands'][number] = { cropId: c.id, weight: next() < 0.08 ? 0 : Math.round((0.2 + next() * 2) * 10) / 10 };
       if (next() < 0.2) d.max = 1 + Math.floor(next() * 10);
       if (next() < 0.15) d.min = 1 + Math.floor(next() * 3);
       if (d.min !== undefined && d.max !== undefined && d.min > d.max) d.min = d.max;
@@ -68,7 +68,8 @@ function randomSpec(next: () => number, plan: GardenPlan, mode: SolveMode): Plan
     if (!spec.demands.some((d) => d.cropId === gone)) spec.exclude = [gone];
   }
   if (next() < 0.3) spec.fillRatio = Math.round((0.3 + next() * 0.7) * 100) / 100;
-  if (next() < 0.3) spec.prefs = { spacing: next() < 0.5 ? 1 : 0.5, shade: next(), clustering: next() };
+  if (next() < 0.3) spec.prefs = { spacing: next() < 0.5 ? 1 : 0.5, shade: next(), clustering: next(), coverage: next(), tidiness: next() };
+  if (next() < 0.25) spec.edgeClearance = Math.round(next() * 20) / 10;
   return spec;
 }
 

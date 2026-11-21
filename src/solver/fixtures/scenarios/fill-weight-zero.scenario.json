@@ -1,0 +1,5 @@
+{
+  "description": "A weight of 0 means ignore the crop: no lettuce is planted, and that is not a shortfall.",
+  "garden": "empty-4x8", "spec": "fill-ignore-lettuce", "options": { "seed": 1 },
+  "expect": [{ "kind": "placed", "crop": "lettuce", "eq": 0 }, { "kind": "status", "crop": "lettuce", "status": "met" }, { "kind": "placed", "crop": "tomato", "gte": 2 }]
+}

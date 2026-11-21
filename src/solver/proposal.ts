@@ -9,7 +9,7 @@ export type { CropStatus, UnmetReason };
 export interface SolveOptions {
   /** Seeds every random choice; the same inputs and seed give the same commands. Default 1. */
   seed?: number;
-  /** Local-search steps after the greedy start. Default 3000; 0 gives the greedy result alone. */
+  /** Local-search steps after the greedy start. Default 5000; 0 gives the greedy result alone. */
   iterations?: number;
   /** Makes ids for the dry run (and so for nothing else: the commands carry none). Default: a counter that skips ids in use. */
   newId?: () => string;
@@ -19,7 +19,7 @@ export interface SolveOptions {
   year?: number;
 }
 
-export const DEFAULT_ITERATIONS = 3000;
+export const DEFAULT_ITERATIONS = 5000;
 
 export interface CropResult {
   cropId: string;
@@ -44,6 +44,10 @@ export interface ScoreBreakdown {
   spill: number;
   change: number;
   sun: number;
+  /** Reward for using each bed's share of the space. */
+  coverage: number;
+  /** Charge for several crops sharing a bed. */
+  mixing: number;
   total: number;
 }
 

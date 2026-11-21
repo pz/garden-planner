@@ -82,3 +82,32 @@ describe('asBlock', () => {
     expect(asBlock(twoBeds)).toBeNull();
   });
 });
+
+import { MIN_PATCH_PLANTS, meetsMinShape, minShape } from './block';
+
+describe('latticeAnchors offset', () => {
+  it('starts the lattice at the offset, so a line of it falls on the margin', () => {
+    const a = latticeAnchors({ shape: 'rect', widthIn: 30, heightIn: 30, cornerRadiusIn: 0 }, LATTICE_IN, 1);
+    expect(Math.min(...a.map((p) => p.x))).toBe(1);
+    expect(Math.min(...a.map((p) => p.y))).toBe(1);
+    expect(a).toContainEqual({ x: 4, y: 28 });
+    expect(a).not.toContainEqual({ x: 0, y: 0 });
+  });
+});
+
+describe('minShape', () => {
+  it('asks a block crop (corn) for 3 plants a side, patch crops for 4 plants, solo crops for 1', () => {
+    expect(minShape('corn')).toEqual({ side: 3, plants: 9 });
+    expect(minShape('lettuce')).toEqual({ side: 1, plants: MIN_PATCH_PLANTS });
+    expect(minShape('tomato')).toEqual({ side: 1, plants: 1 });
+  });
+  it('is met at the minimum and not one below', () => {
+    expect(meetsMinShape('corn', 3, 3)).toBe(true);
+    expect(meetsMinShape('corn', 2, 9)).toBe(false);
+    expect(meetsMinShape('corn', 9, 2)).toBe(false);
+    expect(meetsMinShape('lettuce', 2, 2)).toBe(true);
+    expect(meetsMinShape('lettuce', 1, 4)).toBe(true);
+    expect(meetsMinShape('lettuce', 1, 3)).toBe(false);
+    expect(meetsMinShape('tomato', 1, 1)).toBe(true);
+  });
+});

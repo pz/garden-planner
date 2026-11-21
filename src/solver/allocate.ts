@@ -16,6 +16,31 @@ export function bedArea(bed: Bed): number {
   return w * h - (4 - Math.PI) * r * r;
 }
 
+/** The length of a bed's outline, in inches. */
+export function bedPerimeter(bed: Bed): number {
+  const { widthIn: w, heightIn: h } = bed;
+  if (bed.shape === 'ellipse') {
+    const a = w / 2;
+    const b = h / 2;
+    return Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b))); // Ramanujan's approximation
+  }
+  if (bed.shape === 'polygon' && bed.points) return bed.points.reduce((sum, p, i) => sum + Math.hypot(bed.points![(i + 1) % bed.points!.length].x - p.x, bed.points![(i + 1) % bed.points!.length].y - p.y), 0);
+  return 2 * (w + h);
+}
+
+/**
+ * The area of a bed shrunk by `insetIn` on every side: what is left once a margin that wide is
+ * kept clear. A rectangle and an ellipse shrink exactly (rounded corners ignored); a polygon by
+ * area minus perimeter × inset, which is a little under for a sharp corner.
+ */
+export function insetArea(bed: Bed, insetIn: number): number {
+  if (insetIn <= 0) return bedArea(bed);
+  const { widthIn: w, heightIn: h } = bed;
+  if (bed.shape === 'ellipse') return Math.max(0, w / 2 - insetIn) * Math.max(0, h / 2 - insetIn) * Math.PI;
+  if (bed.shape === 'polygon' && bed.points) return Math.max(0, bedArea(bed) - bedPerimeter(bed) * insetIn);
+  return Math.max(0, w - 2 * insetIn) * Math.max(0, h - 2 * insetIn);
+}
+
 /** The area one plant's growing room takes, in square inches (a disc of radius spacing / 2). */
 export const plantArea = (spacingIn: number): number => (Math.PI * spacingIn * spacingIn) / 4;
 
