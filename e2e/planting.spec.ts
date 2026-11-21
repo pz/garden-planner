@@ -185,6 +185,14 @@ test.describe('planting', () => {
 
     await page.getByRole('button', { name: /^Ungroup/ }).click();
     expect(new Set((await garden.plan()).plants.map((p) => p.groupId)).size).toBe(2);
+
+    // Both plants are still selected; a click (no drag) on one narrows the selection to it.
+    await expect(page.getByRole('complementary', { name: 'Selection' })).toContainText('2 plants');
+    const at = await garden.plantPoint('a');
+    await page.mouse.click(at.x, at.y);
+    await expect(page.getByRole('complementary', { name: 'Selection' })).toContainText('Kale');
+    await expect(page.getByRole('complementary', { name: 'Selection' })).not.toContainText('2 plants');
+    expect((await garden.plan()).plants.map((p) => [p.id, p.x, p.y])).toEqual([['a', 20, 20], ['b', 40, 20]]);
   });
 
   test('Duplicate stamps copies wherever you click, until Done', async ({ page, garden }) => {
@@ -295,6 +303,42 @@ test.describe('spacing warnings', () => {
     const far = await garden.plantPoint('far');
     await page.mouse.click(far.x, far.y);
     await expect(page.getByText('too close to a neighbor')).toHaveCount(0);
+  });
+
+  test('the badge sits on the plant the warning is about, and selecting or hovering shows a labelled line to its neighbor', async ({ page, garden }) => {
+    await garden.seed(crowded());
+    await page.goto('/');
+    // Two warned plants, each with a badge on it; the far one has none, and no line is drawn until one is touched.
+    await expect(page.locator('[data-warning-badge]')).toHaveCount(2);
+    await expect(page.locator('[data-warning-link]')).toHaveCount(0);
+    // On the plant itself: at the top right of the tomato's ring (centre 20, 24 in the garden; radius 12 in).
+    const at = await page.locator('[data-warning-badge="t1"]').getAttribute('transform');
+    const [bx, by] = at!.match(/-?[\d.]+/g)!.map(Number);
+    expect(bx).toBeCloseTo(20 + 12 * 0.72, 1);
+    expect(by).toBeCloseTo(24 - 12 * 0.72, 1);
+    const t1 = await garden.plantPoint('t1');
+
+    await page.mouse.move(t1.x, t1.y);
+    await expect(page.locator('[data-warning-link="spacing"]')).toHaveCount(1);
+    await expect(page.locator('[data-warning-link="spacing"]')).toContainText('Too close');
+    await page.mouse.move(await garden.bedPoint('bed-1', 90, 5).then((p) => p.x), await garden.bedPoint('bed-1', 90, 5).then((p) => p.y));
+    await expect(page.locator('[data-warning-link]')).toHaveCount(0);
+
+    // Selecting the neighbor shows the same line.
+    const t2 = await garden.plantPoint('t2');
+    await page.mouse.click(t2.x, t2.y);
+    await expect(page.locator('[data-warning-link="spacing"]')).toHaveCount(1);
+    await expect(page.getByRole('complementary', { name: 'Selection' })).toContainText('dashed line');
+  });
+
+  test('a dismissed warning has no badge and no line', async ({ page, garden }) => {
+    await garden.seed(crowded());
+    await page.goto('/');
+    const t1 = await garden.plantPoint('t1');
+    await page.mouse.click(t1.x, t1.y);
+    await page.getByRole('button', { name: 'Dismiss this warning' }).click();
+    await expect(page.locator('[data-warning-badge]')).toHaveCount(0);
+    await expect(page.locator('[data-warning-link]')).toHaveCount(0);
   });
 
   test('dismissing the warning is saved and survives a reload', async ({ page, garden }) => {

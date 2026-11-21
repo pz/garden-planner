@@ -191,6 +191,7 @@ export function Inspector({
                   </p>
                 </div>
               ))}
+            <p style={{ font: '400 11.5px/1.4 Figtree', color: 'var(--color-text-muted)', marginBottom: 8 }}>On the garden, a dashed line joins this to the neighbor the warning is about.</p>
             <button type="button" onClick={onDismissWarning} className="btn btn-secondary" style={{ padding: '5px 12px', font: '600 11.5px Figtree' }}>
               Dismiss this warning
             </button>

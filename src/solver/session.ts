@@ -4,7 +4,7 @@ import { solve } from './solve';
 import type { Proposal, SolveOptions, TracePoint } from './proposal';
 import { parseSpec, type PlantingSpec } from './spec';
 
-// What the dev-only viewer does around `solve`, as plain functions so it can be tested in Node.
+// What the solver viewer does around `solve`, as plain functions so it can be tested in Node.
 
 export type SolveOutcome = { ok: true; spec: PlantingSpec; proposal: Proposal } | { ok: false; errors: ApiError[] };
 

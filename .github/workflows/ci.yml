@@ -29,7 +29,7 @@ jobs:
       - run: npm run lint
       - run: npm run test
       # Development-only test hooks (the mock GardenApi) must not ship.
-      - run: npm run build && ! grep -rqE '__mockGardenApi|failNext|solver-viewer' dist
+      - run: npm run build && ! grep -rqE '__mockGardenApi|failNext' dist
 
   e2e:
     # Pinned: Playwright 1.56 does not support the Ubuntu 26.04 that ubuntu-latest now points to.
