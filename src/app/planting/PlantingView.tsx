@@ -13,14 +13,31 @@ import {
   stampOf,
   type StampItem,
 } from '../../core/planting';
+import {
+  NO_REQUESTS,
+  addCrop,
+  adjustRows,
+  changeCount,
+  clearRow,
+  pressArrow,
+  typeTarget,
+  wantsOf,
+  type AdjustRequests,
+  type AdjustRow,
+} from '../../core/adjust';
 import { summarizeSelection } from '../../core/selectionSummary';
+import { placeholderSuggest } from '../../solver/placeholderSuggest';
+import { bedFullness, type Suggestion } from '../../solver/suggestion';
+import { formatLength } from '../layoutInteraction';
 import { Compass } from '../components/Compass';
 import { Icon } from '../components/Icon';
 import { PlantMark } from '../components/PlantMark';
 import { ToastStack, type ToastItem } from '../components/ToastStack';
 import { isContextPress, isReleasedMove } from '../pointer';
 import { fitView, isDrag, panBy, pinchView, screenToGarden, wheelZoomFactor, zoomAt, zoomPercent, PLANTING_PX_PER_INCH, type View } from '../viewport';
-import { GardenSvg, type DrawnPlant, type Ghost, type Tag } from './GardenSvg';
+import { GardenSvg, type DrawnPlant, type Ghost, type SuggestedChange, type Tag } from './GardenSvg';
+import { CropsCard } from './CropsCard';
+import { SuggestionCard } from './SuggestionCard';
 import { Inspector } from './Inspector';
 import { PlantPanel } from './PlantPanel';
 import { ContextMenu, HelpBox, ModeChip, ZoomControls, type MenuItem } from './overlays';
@@ -79,6 +96,12 @@ export function PlantingView() {
   const [armed, setArmed] = useState<string | null>(null);
   const [stamp, setStamp] = useState<StampItem[] | null>(null);
   const [selection, setSelection] = useState<string[]>([]);
+  /** The bed the crops card is scoped to; none means the whole garden. */
+  const [selectedBedId, setSelectedBedId] = useState<string | null>(null);
+  /** What has been asked of the crops, per scope: a bed's id, or `garden`. Kept while switching between scopes. */
+  const [requests, setRequests] = useState<Record<string, AdjustRequests>>({});
+  /** A suggestion on the canvas, not applied yet. It belongs to the plants it was made from. */
+  const [suggestion, setSuggestion] = useState<{ suggestion: Suggestion; bedId: string | null; plants: PlantInstance[] } | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [cursor, setCursor] = useState<Point | null>(null);
   const [overBed, setOverBed] = useState(false);
@@ -141,13 +164,58 @@ export function PlantingView() {
   const selectedGroups = new Set(selectedPlants.map((p) => p.groupId));
   const selectionWarnings = warnings.filter((w) => !w.dismissed && w.subjects.some((g) => selectedGroups.has(g)));
 
+  // --- adjusting the plan ---------------------------------------------------------------
+
+  const scopeBed = selectedBedId ? bedsById.get(selectedBedId) ?? null : null;
+  const scopePlants = useMemo(() => (selectedBedId ? plants.filter((p) => p.bedId === selectedBedId) : plants), [plants, selectedBedId]);
+  const scopeKey = selectedBedId ?? 'garden';
+  const rows = useMemo(() => adjustRows(plants, requests[scopeKey] ?? NO_REQUESTS, selectedBedId ?? undefined), [plants, requests, scopeKey, selectedBedId]);
+  const setScoped = (change: (s: AdjustRequests) => AdjustRequests) => setRequests((r) => ({ ...r, [scopeKey]: change(r[scopeKey] ?? NO_REQUESTS) }));
+  const cardSubtitle = scopeBed
+    ? `${formatLength(scopeBed.widthIn)} × ${formatLength(scopeBed.heightIn)} · ${scopePlants.length} ${scopePlants.length === 1 ? 'plant' : 'plants'} · ${Math.round(bedFullness([scopeBed], scopePlants) * 100)}% full`
+    : `${beds.length} ${beds.length === 1 ? 'bed' : 'beds'} · ${plants.length} ${plants.length === 1 ? 'plant' : 'plants'}`;
+
+  /** Asks for a suggestion for the rows as they are, and shows it on the canvas. */
+  const suggest = (attempt: number) => {
+    const made = placeholderSuggest(plan, { bedId: selectedBedId ?? undefined, wants: wantsOf(rows), attempt });
+    setSuggestion({ suggestion: made, bedId: selectedBedId, plants });
+    setSelection([]);
+    setMenu(null);
+    toSelect();
+  };
+  const applySuggestion = () => {
+    if (!suggestion) return;
+    const made = suggestion.suggestion;
+    if (!run(made.commands)) return;
+    const said = made.rows
+      .filter((r) => r.after !== r.before)
+      .map((r) => `${r.after > r.before ? '+' : '−'}${Math.abs(r.after - r.before)} ${getCrop(r.cropId).name.toLowerCase()}`)
+      .join(', ');
+    setRequests((r) => ({ ...r, [suggestion.bedId ?? 'garden']: NO_REQUESTS }));
+    setSuggestion(null);
+    toast(`Applied: ${said}`, () => undoRef.current());
+  };
+  // A suggestion is made from the plants as they were; if they change under it (an undo, say) it is out of date.
+  useEffect(() => {
+    if (suggestion && suggestion.plants !== plants) setSuggestion(null);
+  }, [suggestion, plants]);
+  const suggested = useMemo<SuggestedChange | null>(() => {
+    if (!suggestion) return null;
+    const adds = suggestion.suggestion.adds.flatMap((a) => {
+      const bed = bedsById.get(a.bedId);
+      return bed ? [{ cropId: a.cropId, ...bedToGarden(bed, a) }] : [];
+    });
+    return { adds, removed: new Set(suggestion.suggestion.removed) };
+  }, [suggestion, bedsById]);
+
   const moving = drag?.kind === 'move' && drag.moved && !drag.copy ? drag : null;
   const moveDelta = moving?.delta;
   const movingIds = useMemo(() => new Set(moving?.ids ?? []), [moving?.ids]);
   const drawn = useMemo<DrawnPlant[]>(() => {
     const discs = discsOf(plants, beds, (id) => (moveDelta && movingIds.has(id) ? moveDelta : undefined));
     const cropOf = new Map(plants.map((p) => [p.id, p.cropId]));
-    return discs.map((d) => ({ ...d, cropId: cropOf.get(d.id)!, bad: !!moveDelta && movingIds.has(d.id) && !bedAt(beds, d) }));
+    const bedOf = new Map(plants.map((p) => [p.id, p.bedId]));
+    return discs.map((d) => ({ ...d, cropId: cropOf.get(d.id)!, bedId: bedOf.get(d.id)!, bad: !!moveDelta && movingIds.has(d.id) && !bedAt(beds, d) }));
   }, [plants, beds, moveDelta, movingIds]);
 
   // --- camera ---------------------------------------------------------------------------
@@ -317,6 +385,9 @@ export function PlantingView() {
       return startPan(e, false);
     }
 
+    // While a suggestion is on show the garden is read-only: dragging still pans.
+    if (suggestion) return startPan(e, false);
+
     const g = screenToGarden(camera, px.x, px.y);
     const hit = hitAt(g);
     const onBed = !!bedAt(beds, g);
@@ -419,7 +490,13 @@ export function PlantingView() {
     if (!commit) return;
 
     if (d.kind === 'pan') {
-      if (d.deselect && !d.moved) setSelection([]);
+      if (d.deselect && !d.moved) {
+        setSelection([]);
+        setSelectedBedId(null);
+      }
+    } else if (d.kind === 'marquee') {
+      // A click on bare soil (not a box dragged out) picks the bed, so the crops card is about that bed.
+      if (d.base.length === 0 && Math.hypot(d.b.x - d.a.x, d.b.y - d.a.y) * camera!.zoom < 4) setSelectedBedId(bedAt(beds, d.a)?.id ?? null);
     } else if (d.kind === 'move') {
       if (!d.moved) {
         if (d.drill) setSelection([d.drill]);
@@ -448,7 +525,7 @@ export function PlantingView() {
 
   function onContextMenu(e: React.MouseEvent) {
     e.preventDefault();
-    if (!camera) return;
+    if (!camera || suggestion) return;
     const g = toGarden(e);
     const at = localPx(e);
     const hit = hitAt(g);
@@ -468,6 +545,11 @@ export function PlantingView() {
     }
     function onKeyDown(e: KeyboardEvent) {
       if (typing(e)) return;
+      // A suggestion on show is decided with its buttons, or discarded with Esc; nothing else edits the garden meanwhile.
+      if (suggestion) {
+        if (e.key === 'Escape') setSuggestion(null);
+        return;
+      }
       const k = e.key.toLowerCase();
       if (isSelectModifierKey(e.key)) return setModDown(true);
       if (hasMod(e)) {
@@ -509,7 +591,8 @@ export function PlantingView() {
       else if (e.key === 'Escape') {
         if (menu) setMenu(null);
         else if (tool !== 'select') toSelect();
-        else setSelection([]);
+        else if (selection.length) setSelection([]);
+        else setSelectedBedId(null);
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selection.length) {
           e.preventDefault();
@@ -617,8 +700,9 @@ export function PlantingView() {
     }
   }
 
-  const tip =
-    tool === 'plant' && armedCrop
+  const tip = suggestion
+    ? 'This is a suggestion, not your garden yet. Apply it, try again, or discard it (Esc).'
+    : tool === 'plant' && armedCrop
       ? `Click in a bed to place ${armedCrop.name.toLowerCase()}, or paint to fill a patch. Click a plant or outside a bed to go back to selecting.`
       : tool === 'stamp'
         ? 'Click in a bed to place copies. Click a plant or outside a bed when you’re done.'
@@ -657,21 +741,26 @@ export function PlantingView() {
             marquee={marquee}
             brush={brush}
             tag={tag}
+            selectedBedId={selectedBedId}
+            suggestion={suggested}
           />
         )}
       </div>
 
-      <PlantPanel
-        crops={crops}
-        armedId={tool === 'plant' ? armed : null}
-        selecting={tool === 'select'}
-        canUndo={history.length > 0}
-        onSelect={toSelect}
-        onUndo={undo}
-        onArm={arm}
-        onAdd={(name) => setDialog({ cropId: null, name: name ?? '' })}
-        onEdit={(cropId) => setDialog({ cropId, name: '' })}
-      />
+      {/* The plant list stands still while a suggestion is on show. */}
+      <div style={{ display: 'contents', pointerEvents: suggestion ? 'none' : undefined }}>
+        <PlantPanel
+          crops={crops}
+          armedId={tool === 'plant' ? armed : null}
+          selecting={tool === 'select'}
+          canUndo={history.length > 0}
+          onSelect={toSelect}
+          onUndo={undo}
+          onArm={arm}
+          onAdd={(name) => setDialog({ cropId: null, name: name ?? '' })}
+          onEdit={(cropId) => setDialog({ cropId, name: '' })}
+        />
+      </div>
 
       {tool === 'plant' && armedCrop && (
         <ModeChip
@@ -685,7 +774,40 @@ export function PlantingView() {
         <ModeChip icon={<Icon name="copy" size={18} />} name={`Duplicating ${stamp.length} plant${stamp.length > 1 ? 's' : ''}`} hint="click in a bed to place copies" onDone={toSelect} />
       )}
 
-      {summary && !(drag?.kind === 'marquee') && (
+      {suggestion && (
+        <SuggestionCard
+          scopeName={suggestion.bedId ? bedsById.get(suggestion.bedId)?.name ?? null : null}
+          suggestion={suggestion.suggestion}
+          plantsBefore={suggestion.bedId ? suggestion.plants.filter((p) => p.bedId === suggestion.bedId).length : suggestion.plants.length}
+          onApply={applySuggestion}
+          onTryAgain={() => suggest(suggestion.suggestion.attempt + 1)}
+          onDiscard={() => setSuggestion(null)}
+        />
+      )}
+
+      {!suggestion && !summary && (
+        <CropsCard
+          title={scopeBed ? scopeBed.name : 'Garden'}
+          subtitle={cardSubtitle}
+          scoped={!!scopeBed}
+          rows={rows}
+          changes={changeCount(rows)}
+          crops={crops}
+          onBack={() => setSelectedBedId(null)}
+          onArrow={(row: AdjustRow, dir) => setScoped((st) => pressArrow(st, row.cropId, row.count, dir))}
+          onType={(row, text) => setScoped((st) => typeTarget(st, row.cropId, row.count, text))}
+          onClear={(row) => setScoped((st) => clearRow(st, row.cropId, row.count))}
+          onAdd={(cropId) => setScoped((st) => addCrop(st, cropId))}
+          onReset={() => setScoped(() => NO_REQUESTS)}
+          onPick={(row) => {
+            const ids = scopePlants.filter((p) => p.cropId === row.cropId).map((p) => p.id);
+            if (ids.length) setSelection(ids);
+          }}
+          onSuggest={() => suggest(0)}
+        />
+      )}
+
+      {!suggestion && summary && !(drag?.kind === 'marquee') && (
         <Inspector
           summary={summary}
           zoneId={profile.zoneId}

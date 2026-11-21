@@ -28,6 +28,12 @@ What it does:
 - **See the season.** A planting calendar shows, for your zone, when to start each crop indoors,
   sow or transplant it outside, and expect the first harvest. Each crop also has a short tip.
 - **Keep several gardens**, saved in your browser, and export a garden to a file (or load one).
+- **Adjust the plan (early, in progress).** With nothing selected, the card on the right lists the
+  garden's crops with their counts. Click a bed to see just its crops. On any row, ask for more
+  (an arrow), fewer (an arrow), or an exact number (type it), or add a crop that isn't planted yet,
+  then press Suggest: the suggestion is drawn on the garden (new plants ringed, removals faded) and
+  you choose Apply, Try again or Discard. Today the suggestions come from a simple placeholder; the
+  planting solver is next.
 - **Plan by asking (in progress).** A planting solver turns a description of what you want
   ("tomatoes, peppers and lettuce, fewer melons") into a proposed set of plantings. It is
   built and tested, and has an experimental viewer (`#/_solver`), but is not yet part of the app's main UI;
@@ -72,6 +78,9 @@ The words below are used the same way in the UI, the code and the docs. Type nam
 
 | Term | Meaning |
 | --- | --- |
+| **Crops card** | The card on the right of the planting view when no plant is selected: the garden's (or one bed's) crops with counts, and where you ask for more, fewer or an exact number of each. |
+| **Request** (adjust) | What was asked of each crop on the card: *more* or *fewer* (a direction; the suggestion decides how many) or an exact target (0 takes the crop out). Not to be confused with an API request below. |
+| **Suggestion** | A proposed change to the garden, drawn on it before it is applied, with the changes crop by crop. Apply sends it as one batch of commands (one Undo); Discard drops it. |
 | **Warning** | A derived problem with the garden as it is now, never stored. Three kinds: **spacing** (two patches closer than the average of their crops' spacing), **shade** (a plant at least 12 in taller sits sun-side of one that needs full sun) and **companion** (two crops usually kept apart are within 24 in). |
 | **Severity** | `caution` (not ideal) or `problem` (spacing closer than 70% of what is wanted, which the planting UI will not let you place). |
 | **Dismissed** | A warning you waved off. It stays readable but is not reported as new. |
