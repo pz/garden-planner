@@ -27,7 +27,7 @@ been built and every decision made while building it that the doc left open or c
 - `scenario.ts`: the scenario file type and `parseScenario`.
 - `catalog.ts`: the fixture registry plus `loadGarden` and `loadScenario`.
 - `fixtures/{gardens,specs,scenarios}/`: plain JSON. A garden is the app's Export file, so a garden made in the app can be dropped in.
-- `session.ts`: what the dev-only viewer does around `solve` (parse a typed spec and solve, which plants are new, score-trace points).
+- `session.ts`: what the solver viewer does around `solve` (parse a typed spec and solve, which plants are new, score-trace points).
 - `cli.node.ts`: `npm run solve -- --list | <scenario> | --all`.
 
 ## Decisions
@@ -72,7 +72,7 @@ Numbered so later milestones can refer to them.
 36. **Over-target planting.** The demand curve still pays 0.05 per extra plant past the target, so once the targets are met the search may keep growing a crop that has room (replace-bed-2 plants 16 basil against a target of 9 because the cucumbers cannot use the space). The `met` status stands; `placed` reports what was planted.
 37. **Invariant: a patch outside the scope is never named in a command**, in addition to the doc's "fixed and locked plants are byte-identical".
 38. **Viewer route is `/_solver` (or `#/_solver`)**, matching the sprite sheet's `/_sprites`, not the doc's `#/solver`, so one convention covers PR previews on hosts that 404 unknown paths.
-39. **Compiled out like the mock API.** `App.tsx` imports the page with `import.meta.env.DEV ? lazy(() => import('./solver/SolverPage')) : null`; in a production build that is `false`, so the page, the solver and its fixtures are dropped (the bundle is byte-identical in size to before). CI's existing grep for the mock API now also greps for `solver-viewer`, the page's test id.
+39. **Compiled out like the mock API (superseded by 52: it now ships).** `App.tsx` imports the page with `import.meta.env.DEV ? lazy(() => import('./solver/SolverPage')) : null`; in a production build that is `false`, so the page, the solver and its fixtures are dropped (the bundle is byte-identical in size to before). CI's existing grep for the mock API now also greps for `solver-viewer`, the page's test id.
 40. **Sources and apply.** A scenario's garden is held in an in-memory `GardenApi` (nothing is saved); "Current garden" uses the real stored garden. Either way "Apply to this garden" calls `apply(commands, { ifRev, scope: 'planting' })` through the same `GardenProvider` the app uses, so a stale revision or a refusal shows up exactly as it would for a real client. Fixtures are imported by name (decision 6), not with `import.meta.glob`, which still works here.
 41. **Before and after use the app's sprite art** (`SpriteArt`) in each bed's own frame, read-only, with a dashed ring on plants the proposal adds. Beds are not drawn turned, since the solver plans in the bed's own frame.
 
@@ -90,3 +90,4 @@ Examples of bad outcomes were collected in the design doc's review and fixed tog
 49. **Viewer.** Hovering a plant names it (crop, spacing, "proposed"), a legend lists the crops and counts in each panel, and proposed plants sit on a light disc with a thin dashed ring that turns slowly (CSS, off under `prefers-reduced-motion`).
 50. **Not done yet, from the same review:** whole-bed moves in the search ("make this bed all lettuce"), shape-specific fill patterns for curved and triangular beds, and block alignment or symmetry terms. Turning "remove the lettuce in the middle bed" into a command is the assistant layer's job (`removePatch` already exists); a spec cannot express a pure removal because it needs at least one demand.
 51. **Adjust mode now fills gaps too.** With the coverage term and a roomier edge, an `adjust` spec that merely repeats what is there no longer emits nothing, because there is space left to plant. The 'no-op with stability 1' test therefore pins each crop's count with `min` and `max` and turns coverage off.
+52. **The viewer ships in production.** It is experimental, there is nothing private in it (the fixtures are sample gardens and "Current garden" only reads the visitor's own browser storage), and it is much easier to try on the hosted site and in PR previews than to run locally. `App.tsx` still imports it lazily, so the solver and fixtures are a separate chunk that only `/_solver` fetches and the main bundle is unchanged. CI no longer greps for `solver-viewer` (it still guards the mock API). On GitHub Pages use the hash form, `#/_solver`, since the host 404s unknown paths.

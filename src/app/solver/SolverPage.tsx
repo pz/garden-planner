@@ -11,8 +11,8 @@ import { GardenProvider, useGarden } from '../state/gardenStore';
 import { GardensProvider, useGardens } from '../state/gardensStore';
 import { BedView, Legend } from './BedView';
 
-// The dev-only solver viewer, reached at /_solver. It is only imported in development builds
-// (see App.tsx), so none of this, nor the fixtures, ships.
+// The solver viewer, reached at /_solver (or #/_solver). It is loaded lazily (see App.tsx), so
+// the solver and its fixtures are a separate chunk that only this route fetches.
 
 const CURRENT = 'current-garden';
 const DEFAULT_SPEC = JSON.stringify({ mode: 'fill', demands: [{ cropId: 'tomato', weight: 1 }, { cropId: 'lettuce', weight: 1 }] }, null, 2);
@@ -250,7 +250,7 @@ export default function SolverPage() {
       `}</style>
       <header style={{ display: 'flex', alignItems: 'baseline', gap: 16, flexWrap: 'wrap', marginBottom: 12 }}>
         <h1 style={{ font: '700 26px Figtree' }}>Planting solver</h1>
-        <span style={muted}>Development only. Pick a scenario, or the garden you are working on, edit the spec, and solve.</span>
+        <span style={muted}>Experimental. Pick a scenario, or the garden you are working on, edit the spec, and solve.</span>
         <label style={{ marginLeft: 'auto', font: '600 13px Figtree' }}>
           Garden{' '}
           <select

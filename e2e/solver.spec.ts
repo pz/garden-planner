@@ -1,6 +1,6 @@
 import { expect, test, gardenWith } from './fixtures';
 
-// The solver viewer is a development-only page (see App.tsx); the dev server these tests run against serves it.
+// The solver viewer is a lazily loaded page (see App.tsx); these tests run against the dev server.
 
 test('/_solver: load a scenario, solve, see the new patches outlined, and apply them', async ({ page }) => {
   await page.goto('/_solver');

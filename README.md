@@ -30,7 +30,7 @@ What it does:
 - **Keep several gardens**, saved in your browser, and export a garden to a file (or load one).
 - **Plan by asking (in progress).** A planting solver turns a description of what you want
   ("tomatoes, peppers and lettuce, fewer melons") into a proposed set of plantings. It is
-  built and tested, and has a development-only viewer, but is not yet part of the app's UI;
+  built and tested, and has an experimental viewer (`#/_solver`), but is not yet part of the app's main UI;
   it is the foundation for an assistant that plans with you.
 
 There is no backend yet: everything runs in the browser and is saved in `localStorage`.
@@ -123,7 +123,7 @@ says only *what* you want. Its output is ordinary API commands, checked with a d
 | **Objective / score** | The number the solver maximizes: reward for meeting each crop's target, minus costs for crowding, shade, companion conflicts, scattered blocks, and plants that spill past a bed's edge. |
 | **Hard constraint** | A rule a proposal never breaks: every plant inside its bed, and no problem-severity spacing. Closer-than-ideal spacing is only a cost. |
 | **Fixture / scenario** | A garden file, a spec, and a scenario pairing them with what the result must satisfy: the test and demo inputs for the solver. |
-| **Solver viewer** | A development-only page (`/_solver`) for running a scenario or your garden and applying the result. |
+| **Solver viewer** | An experimental page (`/_solver`, or `#/_solver` on the hosted site) for running a scenario or your garden and applying the result. It is in the app and in PR previews. |
 
 ## Commands
 
@@ -134,7 +134,7 @@ says only *what* you want. Its output is ordinary API commands, checked with a d
 | `npx tsc -b --noEmit` | Typecheck only |
 | `npm run lint` | [oxlint](https://oxc.rs) |
 | `npm run test` / `npm run test:watch` | Unit tests ([vitest](https://vitest.dev), plain Node) |
-| `npm run solve -- --list` | Planting solver CLI (fixtures only so far; see [`src/solver/README.md`](src/solver/README.md)) |
+| `npm run solve -- --all` | Planting solver CLI: solve fixture scenarios, `--sweep` to compare settings (see [`src/solver/README.md`](src/solver/README.md)) |
 | `npm run test:e2e` | Browser tests ([Playwright](https://playwright.dev), `e2e/`); starts the dev server itself |
 
 CI (`.github/workflows/ci.yml`) runs typecheck, lint, unit tests and the browser tests on every PR.
