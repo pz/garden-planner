@@ -6,10 +6,9 @@ import { BedCanvas } from './components/BedCanvas';
 import { SpritesPage } from './SpritesPage';
 import { isSolverRoute, isSpritesRoute } from './route';
 
-// The solver viewer exists only in development builds: `import.meta.env.DEV` is replaced by `false`
-// in a production build, so this branch, the dynamic import and everything it pulls in (the
-// solver, its fixtures) are dropped. CI greps the built files for `solver-viewer` to keep it so.
-const SolverPage = import.meta.env.DEV ? lazy(() => import('./solver/SolverPage')) : null;
+// The solver viewer ships too (it is experimental, and public is fine for now). It is loaded
+// lazily, so the solver and its fixtures are a separate chunk that only the /_solver route fetches.
+const SolverPage = lazy(() => import('./solver/SolverPage'));
 
 function AppShell() {
   const { plan } = useGarden();
@@ -46,7 +45,7 @@ function ActiveGarden() {
 function App() {
   // The sprite sheet needs no garden, so it sits outside the providers.
   if (isSpritesRoute(window.location.pathname, window.location.hash)) return <SpritesPage />;
-  if (SolverPage && isSolverRoute(window.location.pathname, window.location.hash)) {
+  if (isSolverRoute(window.location.pathname, window.location.hash)) {
     return (
       <Suspense fallback={null}>
         <SolverPage />

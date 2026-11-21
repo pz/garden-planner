@@ -16,6 +16,7 @@ const PATCH_PAD_IN = 1.5;
 
 export interface DrawnPlant extends Disc {
   cropId: string;
+  bedId: string;
   /** Being dragged somewhere that isn't a bed. */
   bad: boolean;
 }
@@ -25,6 +26,13 @@ export interface Ghost {
   x: number;
   y: number;
   ok: boolean;
+}
+
+/** A suggestion drawn on the garden before it is applied: plants it adds, and plants it would take out. */
+export interface SuggestedChange {
+  /** In garden coordinates. */
+  adds: { cropId: string; x: number; y: number }[];
+  removed: ReadonlySet<string>;
 }
 
 export interface Tag {
@@ -48,6 +56,9 @@ export interface GardenSvgProps {
   /** The brush's ring under the pointer. */
   brush: { at: Point; r: number } | null;
   tag: Tag | null;
+  /** The bed the card is scoped to: the others are dimmed. */
+  selectedBedId?: string | null;
+  suggestion?: SuggestedChange | null;
 }
 
 /** One plant's art at one size; it only redraws when the crop, its look, its size or its turn changes, not as the plant is dragged around. */
@@ -78,6 +89,8 @@ export function GardenSvg(p: GardenSvgProps) {
 
   const groups = new Map<string, DrawnPlant[]>();
   for (const pl of p.plants) groups.set(pl.groupId, [...(groups.get(pl.groupId) ?? []), pl]);
+  /** Beds other than the one the card is scoped to fade back. */
+  const dimmed = (bedId: string) => !!p.selectedBedId && p.selectedBedId !== bedId;
   const wholeSelected = (members: DrawnPlant[]) => members.every((m) => p.selected.has(m.id));
   const hoverGroup = p.hoverId ? p.plants.find((q) => q.id === p.hoverId)?.groupId : undefined;
 
@@ -139,10 +152,11 @@ export function GardenSvg(p: GardenSvgProps) {
 
       {p.beds.map((bed) => {
         const label = labelAnchor(bed);
+        const chosen = p.selectedBedId === bed.id;
         return (
-          <g key={bed.id}>
+          <g key={bed.id} style={{ opacity: dimmed(bed.id) ? 0.55 : 1 }}>
             <g transform={bedTransform(bed)}>
-              <BedShape bed={bed} fill="var(--color-neutral-200)" stroke="var(--color-neutral-500)" strokeWidth={px(1.5)} />
+              <BedShape bed={bed} fill="var(--color-neutral-200)" stroke={chosen ? 'var(--color-accent)' : 'var(--color-neutral-500)'} strokeWidth={px(chosen ? 3 : 1.5)} />
               <BedShape bed={bed} fill="url(#planting-dots)" />
               {/* The bed's box exactly, as a stable target for tests and tools; draws nothing. */}
               <rect data-bed-id={bed.id} width={bed.widthIn} height={bed.heightIn} fill="none" />
@@ -165,12 +179,27 @@ export function GardenSvg(p: GardenSvgProps) {
 
       {patches}
 
-      {p.plants.map((pl) => (
-        <g key={pl.id} transform={`translate(${pl.x} ${pl.y})`} style={{ opacity: pl.bad ? 0.45 : 1 }}>
-          <PlantArt cropId={pl.cropId} r={radiusOf(pl.cropId)} rot={spriteRotation(pl.id)} look={findCrop(pl.cropId)?.look} />
-          <circle data-plant-id={pl.id} r={Math.max(pl.r * 0.2, px(2))} fill="none" />
-        </g>
-      ))}
+      {p.plants.map((pl) => {
+        const gone = p.suggestion?.removed.has(pl.id);
+        return (
+          <g key={pl.id} transform={`translate(${pl.x} ${pl.y})`} data-suggested-removal={gone ? '' : undefined} style={{ opacity: gone ? 0.3 : pl.bad ? 0.45 : dimmed(pl.bedId) ? 0.55 : 1 }}>
+            <PlantArt cropId={pl.cropId} r={radiusOf(pl.cropId)} rot={spriteRotation(pl.id)} look={findCrop(pl.cropId)?.look} />
+            {gone && <circle r={pl.r} fill="none" stroke="var(--color-neutral-700)" strokeWidth={px(1.5)} strokeDasharray={`${px(4)} ${px(3)}`} />}
+            <circle data-plant-id={pl.id} r={Math.max(pl.r * 0.2, px(2))} fill="none" />
+          </g>
+        );
+      })}
+
+      {p.suggestion?.adds.map((a, i) => {
+        const r = radiusOf(a.cropId);
+        return (
+          <g key={`add${i}`} data-suggested-add={a.cropId} transform={`translate(${a.x} ${a.y})`} style={{ pointerEvents: 'none' }}>
+            <circle r={r} fill="var(--color-surface-raised)" opacity={0.7} />
+            <PlantArt cropId={a.cropId} r={r} rot={spriteRotation(`suggested-${i}`)} look={findCrop(a.cropId)?.look} />
+            <circle r={r + px(1.5)} fill="none" stroke="var(--color-accent)" strokeWidth={px(2)} strokeDasharray={`${px(5)} ${px(4)}`} strokeLinecap="round" />
+          </g>
+        );
+      })}
 
       {rings}
       {badges}
